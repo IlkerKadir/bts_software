@@ -49,116 +49,207 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ==================== Component Classes ==================== */
+/* ==================== Component Classes (Plain CSS) ==================== */
 
 /* Button base styles */
 .btn {
-  @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: color 0.2s, background-color 0.2s;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-primary {
-  @apply btn bg-accent-700 hover:bg-accent-600 text-white;
+  background-color: var(--color-accent-700);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-accent-600);
 }
 
 .btn-secondary {
-  @apply btn bg-white hover:bg-primary-50 text-primary-700 border border-primary-300;
+  background-color: white;
+  color: var(--color-primary-700);
+  border: 1px solid var(--color-primary-300);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-primary-50);
 }
 
 .btn-danger {
-  @apply btn bg-red-600 hover:bg-red-700 text-white;
+  background-color: #dc2626;
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #b91c1c;
 }
 
 .btn-ghost {
-  @apply btn bg-transparent hover:bg-primary-100 text-primary-700;
+  background-color: transparent;
+  color: var(--color-primary-700);
+}
+
+.btn-ghost:hover {
+  background-color: var(--color-primary-100);
 }
 
 /* Input styles */
 .input {
-  @apply w-full px-3 py-2 border border-primary-300 rounded-lg text-sm text-primary-900 placeholder:text-primary-400 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-shadow duration-200;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-primary-300);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-primary-900);
+  transition: box-shadow 0.2s;
+}
+
+.input::placeholder {
+  color: var(--color-primary-400);
+}
+
+.input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-500);
+  border-color: transparent;
 }
 
 .input-error {
-  @apply input border-red-500 focus:ring-red-500;
+  border-color: #ef4444;
+}
+
+.input-error:focus {
+  box-shadow: 0 0 0 2px #ef4444;
 }
 
 /* Card styles */
 .card {
-  @apply bg-white rounded-xl border border-primary-200 overflow-hidden;
+  background-color: white;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-primary-200);
+  overflow: hidden;
 }
 
 .card-header {
-  @apply px-5 py-4 border-b border-primary-200;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-primary-200);
 }
 
 .card-body {
-  @apply p-5;
+  padding: 1.25rem;
 }
 
 /* Table styles */
 .table-container {
-  @apply overflow-x-auto;
+  overflow-x: auto;
 }
 
 .table {
-  @apply w-full text-sm;
+  width: 100%;
+  font-size: 0.875rem;
 }
 
 .table th {
-  @apply text-left px-4 py-3 font-semibold text-primary-700 bg-primary-50 border-b border-primary-200;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: var(--color-primary-700);
+  background-color: var(--color-primary-50);
+  border-bottom: 1px solid var(--color-primary-200);
 }
 
 .table td {
-  @apply px-4 py-3 text-primary-900 border-b border-primary-100;
+  padding: 0.75rem 1rem;
+  color: var(--color-primary-900);
+  border-bottom: 1px solid var(--color-primary-100);
 }
 
 .table tr:hover td {
-  @apply bg-primary-50;
+  background-color: var(--color-primary-50);
 }
 
 /* Status badges */
 .badge {
-  @apply inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full border;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  border: 1px solid;
 }
 
 .badge-taslak {
-  @apply badge bg-primary-100 text-primary-700 border-primary-300;
+  background-color: var(--color-primary-100);
+  color: var(--color-primary-700);
+  border-color: var(--color-primary-300);
 }
 
 .badge-onay-bekliyor {
-  @apply badge bg-amber-50 text-amber-700 border-amber-300;
+  background-color: #fffbeb;
+  color: #b45309;
+  border-color: #fcd34d;
 }
 
 .badge-onaylandi {
-  @apply badge bg-sky-50 text-sky-700 border-sky-300;
+  background-color: #f0f9ff;
+  color: #0369a1;
+  border-color: #7dd3fc;
 }
 
 .badge-gonderildi {
-  @apply badge bg-blue-50 text-blue-700 border-blue-300;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
 }
 
 .badge-takipte {
-  @apply badge bg-purple-50 text-purple-700 border-purple-300;
+  background-color: #faf5ff;
+  color: #7c3aed;
+  border-color: #c4b5fd;
 }
 
 .badge-revizyon {
-  @apply badge bg-orange-50 text-orange-700 border-orange-300;
+  background-color: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
 }
 
 .badge-kazanildi {
-  @apply badge bg-green-50 text-green-700 border-green-300;
+  background-color: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
 }
 
 .badge-kaybedildi {
-  @apply badge bg-red-50 text-red-700 border-red-300;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
 }
 
 .badge-iptal {
-  @apply badge bg-gray-100 text-gray-500 border-gray-300;
+  background-color: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
 }
 
 /* Focus ring utility */
-.focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2;
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-500), 0 0 0 4px white;
 }
 
 /* Scrollbar styling */
@@ -168,9 +259,15 @@ body {
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  @apply bg-primary-100 rounded;
+  background-color: var(--color-primary-100);
+  border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-primary-300 rounded hover:bg-primary-400;
+  background-color: var(--color-primary-300);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary-400);
 }
