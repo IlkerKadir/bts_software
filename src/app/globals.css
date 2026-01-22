@@ -1,26 +1,176 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* ==================== Design System Theme ==================== */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Primary colors (Slate) */
+  --color-primary-50: #F8FAFC;
+  --color-primary-100: #F1F5F9;
+  --color-primary-200: #E2E8F0;
+  --color-primary-300: #CBD5E1;
+  --color-primary-400: #94A3B8;
+  --color-primary-500: #64748B;
+  --color-primary-600: #475569;
+  --color-primary-700: #334155;
+  --color-primary-800: #1E293B;
+  --color-primary-900: #0F172A;
+  --color-primary-950: #020617;
+
+  /* Accent colors (Sky) */
+  --color-accent-50: #F0F9FF;
+  --color-accent-100: #E0F2FE;
+  --color-accent-200: #BAE6FD;
+  --color-accent-300: #7DD3FC;
+  --color-accent-400: #38BDF8;
+  --color-accent-500: #0EA5E9;
+  --color-accent-600: #0284C7;
+  --color-accent-700: #0369A1;
+  --color-accent-800: #075985;
+  --color-accent-900: #0C4A6E;
+
+  /* Font family */
+  --font-sans: 'Inter', system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ==================== Base Styles ==================== */
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-primary-50);
+  color: var(--color-primary-950);
+}
+
+/* Tabular numbers for data */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==================== Component Classes ==================== */
+
+/* Button base styles */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply btn bg-accent-700 hover:bg-accent-600 text-white;
+}
+
+.btn-secondary {
+  @apply btn bg-white hover:bg-primary-50 text-primary-700 border border-primary-300;
+}
+
+.btn-danger {
+  @apply btn bg-red-600 hover:bg-red-700 text-white;
+}
+
+.btn-ghost {
+  @apply btn bg-transparent hover:bg-primary-100 text-primary-700;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-3 py-2 border border-primary-300 rounded-lg text-sm text-primary-900 placeholder:text-primary-400 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-shadow duration-200;
+}
+
+.input-error {
+  @apply input border-red-500 focus:ring-red-500;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white rounded-xl border border-primary-200 overflow-hidden;
+}
+
+.card-header {
+  @apply px-5 py-4 border-b border-primary-200;
+}
+
+.card-body {
+  @apply p-5;
+}
+
+/* Table styles */
+.table-container {
+  @apply overflow-x-auto;
+}
+
+.table {
+  @apply w-full text-sm;
+}
+
+.table th {
+  @apply text-left px-4 py-3 font-semibold text-primary-700 bg-primary-50 border-b border-primary-200;
+}
+
+.table td {
+  @apply px-4 py-3 text-primary-900 border-b border-primary-100;
+}
+
+.table tr:hover td {
+  @apply bg-primary-50;
+}
+
+/* Status badges */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full border;
+}
+
+.badge-taslak {
+  @apply badge bg-primary-100 text-primary-700 border-primary-300;
+}
+
+.badge-onay-bekliyor {
+  @apply badge bg-amber-50 text-amber-700 border-amber-300;
+}
+
+.badge-onaylandi {
+  @apply badge bg-sky-50 text-sky-700 border-sky-300;
+}
+
+.badge-gonderildi {
+  @apply badge bg-blue-50 text-blue-700 border-blue-300;
+}
+
+.badge-takipte {
+  @apply badge bg-purple-50 text-purple-700 border-purple-300;
+}
+
+.badge-revizyon {
+  @apply badge bg-orange-50 text-orange-700 border-orange-300;
+}
+
+.badge-kazanildi {
+  @apply badge bg-green-50 text-green-700 border-green-300;
+}
+
+.badge-kaybedildi {
+  @apply badge bg-red-50 text-red-700 border-red-300;
+}
+
+.badge-iptal {
+  @apply badge bg-gray-100 text-gray-500 border-gray-300;
+}
+
+/* Focus ring utility */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2;
+}
+
+/* Scrollbar styling */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  @apply bg-primary-100 rounded;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  @apply bg-primary-300 rounded hover:bg-primary-400;
 }
