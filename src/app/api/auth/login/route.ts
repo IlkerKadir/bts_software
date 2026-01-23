@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       data: { lastLogin: new Date() },
     });
 
-    const token = createToken({
+    const token = await createToken({
       userId: user.id,
       username: user.username,
       roleId: user.roleId,
