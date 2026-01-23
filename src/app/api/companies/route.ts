@@ -81,8 +81,14 @@ export async function POST(request: NextRequest) {
       validatedData.email = null;
     }
 
+    // Prepare data for Prisma (handle Json field)
+    const createData = {
+      ...validatedData,
+      contacts: validatedData.contacts ?? Prisma.JsonNull,
+    };
+
     const company = await db.company.create({
-      data: validatedData,
+      data: createData,
     });
 
     return NextResponse.json({ company }, { status: 201 });

@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const companySchema = z.object({
   name: z.string().min(1, 'Firma adı gereklidir'),
   type: z.enum(['CLIENT', 'PARTNER'], {
-    errorMap: () => ({ message: 'Firma tipi geçersiz' }),
+    message: 'Firma tipi geçersiz',
   }),
   address: z.string().optional().nullable(),
   taxNumber: z.string().optional().nullable(),
@@ -25,6 +25,6 @@ export const companyQuerySchema = z.object({
   search: z.string().optional(),
   type: z.enum(['CLIENT', 'PARTNER']).optional(),
   isActive: z.string().transform(val => val === 'true').optional(),
-  page: z.string().transform(Number).optional().default('1'),
-  limit: z.string().transform(Number).optional().default('20'),
+  page: z.coerce.number().default(1),
+  limit: z.coerce.number().default(20),
 });

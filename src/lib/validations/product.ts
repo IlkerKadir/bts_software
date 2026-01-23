@@ -24,6 +24,6 @@ export const productQuerySchema = z.object({
   categoryId: z.string().optional(),
   currency: z.string().optional(),
   isActive: z.string().transform(val => val === 'true').optional(),
-  page: z.string().transform(Number).optional().default('1'),
-  limit: z.string().transform(Number).optional().default('20'),
+  page: z.coerce.number().default(1),
+  limit: z.coerce.number().default(20),
 });

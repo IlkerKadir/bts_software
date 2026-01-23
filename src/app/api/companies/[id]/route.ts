@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { companySchema } from '@/lib/validations/company';
 import { getSession } from '@/lib/session';
+import { Prisma } from '@prisma/client';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -70,9 +71,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Firma bulunamadı' }, { status: 404 });
     }
 
+    // Prepare data for Prisma (handle Json field)
+    const updateData = {
+      ...validatedData,
+      contacts: validatedData.contacts ?? Prisma.JsonNull,
+    };
+
     const company = await db.company.update({
       where: { id },
-      data: validatedData,
+      data: updateData,
     });
 
     return NextResponse.json({ company });

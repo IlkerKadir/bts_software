@@ -120,7 +120,7 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     }
   };
 
-  const handleChange = (field: keyof ProductFormData, value: string | number | boolean) => {
+  const handleChange = (field: keyof ProductFormData, value: string | number | boolean | undefined | null) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
