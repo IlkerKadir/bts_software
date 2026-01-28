@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Upload, Settings, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProductForm } from './ProductForm';
+import { ProductImportModal } from '@/components/products/ProductImportModal';
+import { BrandCoefficientTable } from '@/components/products/BrandCoefficientTable';
 
 interface Brand {
   id: string;
@@ -45,6 +47,9 @@ interface ProductListProps {
   canDelete: boolean;
 }
 
+type SortField = 'code' | 'shortCode' | 'name' | 'brand' | 'model' | 'category' | 'listPrice' | 'costPrice' | 'isActive';
+type SortDirection = 'asc' | 'desc';
+
 export function ProductList({ canViewCosts, canEditProducts, canDelete }: ProductListProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -58,6 +63,10 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCoefficientModalOpen, setIsCoefficientModalOpen] = useState(false);
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const fetchProducts = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -158,6 +167,67 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     }).format(price);
   };
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-primary-300" />;
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-primary-600" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-primary-600" />
+    );
+  };
+
+  const sortedProducts = [...products].sort((a, b) => {
+    if (!sortField) return 0;
+
+    const dir = sortDirection === 'asc' ? 1 : -1;
+
+    switch (sortField) {
+      case 'code':
+        return dir * a.code.localeCompare(b.code, 'tr');
+      case 'shortCode':
+        return dir * (a.shortCode || '').localeCompare(b.shortCode || '', 'tr');
+      case 'name':
+        return dir * a.name.localeCompare(b.name, 'tr');
+      case 'brand':
+        return dir * (a.brand?.name || '').localeCompare(b.brand?.name || '', 'tr');
+      case 'model':
+        return dir * (a.model || '').localeCompare(b.model || '', 'tr');
+      case 'category':
+        return dir * (a.category?.name || '').localeCompare(b.category?.name || '', 'tr');
+      case 'listPrice':
+        return dir * (a.listPrice - b.listPrice);
+      case 'costPrice':
+        return dir * ((a.costPrice || 0) - (b.costPrice || 0));
+      case 'isActive':
+        return dir * (Number(a.isActive) - Number(b.isActive));
+      default:
+        return 0;
+    }
+  });
+
+  const totalColumns =
+    1 + // Kod
+    1 + // Kısa Kod
+    1 + // Ürün Adı
+    1 + // Marka
+    1 + // Model
+    1 + // Kategori
+    1 + // Liste Fiyatı
+    (canViewCosts ? 1 : 0) + // Maliyet
+    1 + // Durum
+    ((canEditProducts || canDelete) ? 1 : 0); // İşlemler
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -166,12 +236,32 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
           <h1 className="text-2xl font-bold text-primary-900">Ürünler</h1>
           <p className="text-primary-500">Ürün kataloğunu yönetin</p>
         </div>
-        {canEditProducts && (
-          <Button onClick={() => setIsFormOpen(true)}>
-            <Plus className="w-4 h-4" />
-            Yeni Ürün
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canViewCosts && (
+            <Button
+              variant="secondary"
+              onClick={() => setIsCoefficientModalOpen(true)}
+            >
+              <Settings className="w-4 h-4" />
+              Katsayı Yönetimi
+            </Button>
+          )}
+          {canEditProducts && (
+            <Button
+              variant="secondary"
+              onClick={() => setIsImportModalOpen(true)}
+            >
+              <Upload className="w-4 h-4" />
+              Excel&apos;den Yükle
+            </Button>
+          )}
+          {canEditProducts && (
+            <Button onClick={() => setIsFormOpen(true)}>
+              <Plus className="w-4 h-4" />
+              Yeni Ürün
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -214,42 +304,117 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
           <table className="table">
             <thead>
               <tr>
-                <th>Kod</th>
-                <th>Ürün Adı</th>
-                <th>Marka</th>
-                <th>Kategori</th>
-                <th className="text-right">Liste Fiyatı</th>
-                {canViewCosts && <th className="text-right">Maliyet</th>}
-                <th>Durum</th>
-                {(canEditProducts || canDelete) && <th className="w-24">İşlemler</th>}
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('code')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Kod
+                    {getSortIcon('code')}
+                  </span>
+                </th>
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('shortCode')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Kısa Kod
+                    {getSortIcon('shortCode')}
+                  </span>
+                </th>
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('name')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Ürün Adı
+                    {getSortIcon('name')}
+                  </span>
+                </th>
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('brand')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Marka
+                    {getSortIcon('brand')}
+                  </span>
+                </th>
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('model')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Model
+                    {getSortIcon('model')}
+                  </span>
+                </th>
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('category')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Kategori
+                    {getSortIcon('category')}
+                  </span>
+                </th>
+                <th
+                  className="text-right uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('listPrice')}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    Liste Fiyatı
+                    {getSortIcon('listPrice')}
+                  </span>
+                </th>
+                {canViewCosts && (
+                  <th
+                    className="text-right uppercase tracking-wider text-xs cursor-pointer select-none"
+                    onClick={() => handleSort('costPrice')}
+                  >
+                    <span className="inline-flex items-center gap-1 justify-end">
+                      Maliyet
+                      {getSortIcon('costPrice')}
+                    </span>
+                  </th>
+                )}
+                <th
+                  className="uppercase tracking-wider text-xs cursor-pointer select-none"
+                  onClick={() => handleSort('isActive')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Durum
+                    {getSortIcon('isActive')}
+                  </span>
+                </th>
+                {(canEditProducts || canDelete) && (
+                  <th className="w-24 uppercase tracking-wider text-xs">İşlemler</th>
+                )}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={canViewCosts ? 8 : 7} className="text-center py-8 text-primary-500">
+                  <td colSpan={totalColumns} className="text-center py-8 text-primary-500">
                     Yükleniyor...
                   </td>
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={canViewCosts ? 8 : 7} className="text-center py-8 text-primary-500">
+                  <td colSpan={totalColumns} className="text-center py-8 text-primary-500">
                     Ürün bulunamadı
                   </td>
                 </tr>
               ) : (
-                products.map((product) => (
+                sortedProducts.map((product) => (
                   <tr key={product.id}>
                     <td className="font-medium font-mono text-sm">{product.code}</td>
+                    <td className="font-mono text-sm text-primary-600">{product.shortCode || '-'}</td>
                     <td>
-                      <div>
-                        <p className="font-medium">{product.name}</p>
-                        {product.model && (
-                          <p className="text-xs text-primary-500">{product.model}</p>
-                        )}
-                      </div>
+                      <p className="font-medium">{product.name}</p>
                     </td>
                     <td>{product.brand?.name || '-'}</td>
+                    <td className="text-sm text-primary-600">{product.model || '-'}</td>
                     <td>{product.category?.name || '-'}</td>
                     <td className="text-right tabular-nums">
                       {formatPrice(product.listPrice, product.currency)}
@@ -371,6 +536,30 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
           </p>
         )}
       </Modal>
+
+      {/* Product Import Modal */}
+      {canEditProducts && (
+        <ProductImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onImportComplete={() => {
+            setIsImportModalOpen(false);
+            fetchProducts();
+          }}
+        />
+      )}
+
+      {/* Brand Coefficient Modal */}
+      {canViewCosts && (
+        <Modal
+          isOpen={isCoefficientModalOpen}
+          onClose={() => setIsCoefficientModalOpen(false)}
+          title="Marka Katsayı Yönetimi"
+          size="lg"
+        >
+          <BrandCoefficientTable canEdit={canEditProducts} />
+        </Modal>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ interface DashboardLayoutProps {
     role: {
       name: string;
       canManageUsers: boolean;
+      canApprove?: boolean;
     };
   };
 }
@@ -16,7 +17,11 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, user }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-primary-50">
-      <Sidebar userRole={user.role} />
+      <Sidebar
+        userRole={user.role}
+        userName={user.fullName}
+        userRoleName={user.role.name}
+      />
 
       <div className="pl-60">
         <Header user={user} />

@@ -1,31 +1,33 @@
 @import "tailwindcss";
 
 /* ==================== Design System Theme ==================== */
+/* Color palette based on btsyangin.com.tr brand */
 @theme inline {
-  /* Primary colors (Slate) */
-  --color-primary-50: #F8FAFC;
-  --color-primary-100: #F1F5F9;
-  --color-primary-200: #E2E8F0;
-  --color-primary-300: #CBD5E1;
-  --color-primary-400: #94A3B8;
-  --color-primary-500: #64748B;
-  --color-primary-600: #475569;
-  --color-primary-700: #334155;
-  --color-primary-800: #1E293B;
-  --color-primary-900: #0F172A;
-  --color-primary-950: #020617;
+  /* Primary colors (Red - BTS Brand) */
+  --color-primary-50: #FEF2F2;
+  --color-primary-100: #FEE2E2;
+  --color-primary-200: #FECACA;
+  --color-primary-300: #FCA5A5;
+  --color-primary-400: #F87171;
+  --color-primary-500: #EF4444;
+  --color-primary-600: #DC2626;
+  --color-primary-700: #E31E24;  /* BTS Brand Red */
+  --color-primary-800: #991B1B;
+  --color-primary-900: #7F1D1D;
+  --color-primary-950: #450A0A;
 
-  /* Accent colors (Sky) */
-  --color-accent-50: #F0F9FF;
-  --color-accent-100: #E0F2FE;
-  --color-accent-200: #BAE6FD;
-  --color-accent-300: #7DD3FC;
-  --color-accent-400: #38BDF8;
-  --color-accent-500: #0EA5E9;
-  --color-accent-600: #0284C7;
-  --color-accent-700: #0369A1;
-  --color-accent-800: #075985;
-  --color-accent-900: #0C4A6E;
+  /* Accent colors (Neutral/Slate - for contrast and text) */
+  --color-accent-50: #F8FAFC;
+  --color-accent-100: #F1F5F9;
+  --color-accent-200: #E2E8F0;
+  --color-accent-300: #CBD5E1;
+  --color-accent-400: #94A3B8;
+  --color-accent-500: #64748B;
+  --color-accent-600: #475569;
+  --color-accent-700: #334155;
+  --color-accent-800: #1E293B;
+  --color-accent-900: #1A1A1A;  /* BTS Dark Text */
+  --color-accent-950: #0F172A;
 
   /* Font family - uses CSS variable from Next.js font optimization */
   --font-sans: var(--font-inter), system-ui, sans-serif;
@@ -39,8 +41,8 @@ html {
 }
 
 body {
-  background-color: var(--color-primary-50);
-  color: var(--color-primary-950);
+  background-color: var(--color-accent-50);
+  color: var(--color-accent-900);
 }
 
 /* Tabular numbers for data */
@@ -69,82 +71,82 @@ body {
 }
 
 .btn-primary {
-  background-color: var(--color-accent-700);
+  background-color: var(--color-primary-700);  /* BTS Brand Red */
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: var(--color-accent-600);
+  background-color: var(--color-primary-600);
 }
 
 .btn-secondary {
   background-color: white;
-  color: var(--color-primary-700);
-  border: 1px solid var(--color-primary-300);
+  color: var(--color-accent-700);
+  border: 1px solid var(--color-accent-300);
 }
 
 .btn-secondary:hover {
-  background-color: var(--color-primary-50);
+  background-color: var(--color-accent-50);
 }
 
 .btn-danger {
-  background-color: #dc2626;
+  background-color: var(--color-primary-800);
   color: white;
 }
 
 .btn-danger:hover {
-  background-color: #b91c1c;
+  background-color: var(--color-primary-900);
 }
 
 .btn-ghost {
   background-color: transparent;
-  color: var(--color-primary-700);
+  color: var(--color-accent-700);
 }
 
 .btn-ghost:hover {
-  background-color: var(--color-primary-100);
+  background-color: var(--color-accent-100);
 }
 
 /* Input styles */
 .input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-primary-300);
+  border: 1px solid var(--color-accent-300);
   border-radius: 0.5rem;
   font-size: 0.875rem;
-  color: var(--color-primary-900);
+  color: var(--color-accent-900);
   transition: box-shadow 0.2s;
 }
 
 .input::placeholder {
-  color: var(--color-primary-400);
+  color: var(--color-accent-400);
 }
 
 .input:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-accent-500);
+  box-shadow: 0 0 0 2px var(--color-primary-500);
   border-color: transparent;
 }
 
 .input-error {
-  border-color: #ef4444;
+  border-color: var(--color-primary-500);
 }
 
 .input-error:focus {
-  box-shadow: 0 0 0 2px #ef4444;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
 }
 
 /* Card styles */
 .card {
   background-color: white;
   border-radius: 0.75rem;
-  border: 1px solid var(--color-primary-200);
+  border: 1px solid var(--color-accent-200);
   overflow: hidden;
 }
 
 .card-header {
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--color-primary-200);
+  border-bottom: 1px solid var(--color-accent-200);
 }
 
 .card-body {
@@ -165,19 +167,19 @@ body {
   text-align: left;
   padding: 0.75rem 1rem;
   font-weight: 600;
-  color: var(--color-primary-700);
-  background-color: var(--color-primary-50);
-  border-bottom: 1px solid var(--color-primary-200);
+  color: var(--color-accent-700);
+  background-color: var(--color-accent-50);
+  border-bottom: 1px solid var(--color-accent-200);
 }
 
 .table td {
   padding: 0.75rem 1rem;
-  color: var(--color-primary-900);
-  border-bottom: 1px solid var(--color-primary-100);
+  color: var(--color-accent-900);
+  border-bottom: 1px solid var(--color-accent-100);
 }
 
 .table tr:hover td {
-  background-color: var(--color-primary-50);
+  background-color: var(--color-accent-50);
 }
 
 /* Status badges */
@@ -192,9 +194,9 @@ body {
 }
 
 .badge-taslak {
-  background-color: var(--color-primary-100);
-  color: var(--color-primary-700);
-  border-color: var(--color-primary-300);
+  background-color: var(--color-accent-100);
+  color: var(--color-accent-700);
+  border-color: var(--color-accent-300);
 }
 
 .badge-onay-bekliyor {
@@ -248,7 +250,7 @@ body {
 /* Focus ring utility */
 .focus-ring:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-accent-500), 0 0 0 4px white;
+  box-shadow: 0 0 0 2px var(--color-primary-500), 0 0 0 4px white;
 }
 
 /* Scrollbar styling */
@@ -258,15 +260,15 @@ body {
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background-color: var(--color-primary-100);
+  background-color: var(--color-accent-100);
   border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: var(--color-primary-300);
+  background-color: var(--color-accent-300);
   border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-primary-400);
+  background-color: var(--color-accent-400);
 }

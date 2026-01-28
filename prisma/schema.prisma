@@ -10,36 +10,37 @@ datasource db {
 // ==================== USERS & AUTH ====================
 
 model Role {
-  id              String   @id @default(cuid())
-  name            String   @unique
-  canViewCosts    Boolean  @default(false)
-  canApprove      Boolean  @default(false)
-  canExport       Boolean  @default(true)
-  canManageUsers  Boolean  @default(false)
-  canEditProducts Boolean  @default(false)
-  canDelete       Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  users           User[]
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  canViewCosts       Boolean  @default(false)
+  canApprove         Boolean  @default(false)
+  canExport          Boolean  @default(true)
+  canManageUsers     Boolean  @default(false)
+  canEditProducts    Boolean  @default(false)
+  canDelete          Boolean  @default(false)
+  canOverrideKatsayi Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  users              User[]
 }
 
 model User {
-  id            String         @id @default(cuid())
-  username      String         @unique
-  passwordHash  String
-  fullName      String
-  email         String?
-  roleId        String
-  role          Role           @relation(fields: [roleId], references: [id])
-  isActive      Boolean        @default(true)
-  lastLogin     DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  quotes        Quote[]        @relation("CreatedBy")
-  approvedQuotes Quote[]       @relation("ApprovedBy")
-  notifications Notification[]
-  quoteHistory  QuoteHistory[]
-  documents     QuoteDocument[]
+  id             String          @id @default(cuid())
+  username       String          @unique
+  passwordHash   String
+  fullName       String
+  email          String?
+  roleId         String
+  role           Role            @relation(fields: [roleId], references: [id])
+  isActive       Boolean         @default(true)
+  lastLogin      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  quotes         Quote[]         @relation("CreatedBy")
+  approvedQuotes Quote[]         @relation("ApprovedBy")
+  notifications  Notification[]
+  quoteHistory   QuoteHistory[]
+  documents      QuoteDocument[]
 }
 
 // ==================== COMPANIES ====================
@@ -50,20 +51,20 @@ enum CompanyType {
 }
 
 model Company {
-  id          String      @id @default(cuid())
-  name        String
-  type        CompanyType
-  address     String?
-  taxNumber   String?
-  phone       String?
-  email       String?
-  contacts    Json?       // Array of {name, title, email, phone}
-  notes       String?
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  projects    Project[]
-  quotes      Quote[]
+  id           String         @id @default(cuid())
+  name         String
+  type         CompanyType
+  address      String?
+  taxNumber    String?
+  phone        String?
+  email        String?
+  contacts     Json? // Array of {name, title, email, phone}
+  notes        String?
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  projects     Project[]
+  quotes       Quote[]
   priceHistory PriceHistory[]
 }
 
@@ -78,16 +79,16 @@ enum ProjectStatus {
 }
 
 model Project {
-  id             String        @id @default(cuid())
+  id             String            @id @default(cuid())
   name           String
   clientId       String
-  client         Company       @relation(fields: [clientId], references: [id])
-  status         ProjectStatus @default(TEKLIF_ASAMASINDA)
+  client         Company           @relation(fields: [clientId], references: [id])
+  status         ProjectStatus     @default(TEKLIF_ASAMASINDA)
   estimatedStart DateTime?
   estimatedEnd   DateTime?
   notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
   quotes         Quote[]
   documents      ProjectDocument[]
   activities     ProjectActivity[]
@@ -126,11 +127,26 @@ model ProductCategory {
 }
 
 model ProductBrand {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  sortOrder Int       @default(0)
-  createdAt DateTime  @default(now())
-  products  Product[]
+  id            String         @id @default(cuid())
+  name          String         @unique
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  products      Product[]
+  brandDiscount BrandDiscount?
+}
+
+enum PricingType {
+  LIST_PRICE
+  PROJECT_BASED
+}
+
+model BrandDiscount {
+  id          String       @id @default(cuid())
+  brandId     String       @unique
+  brand       ProductBrand @relation(fields: [brandId], references: [id])
+  coefficient Decimal      @default(1) @db.Decimal(5, 3)
+  updatedAt   DateTime     @updatedAt
+  updatedById String?
 }
 
 model Product {
@@ -143,7 +159,9 @@ model Product {
   category     ProductCategory? @relation(fields: [categoryId], references: [id])
   model        String?
   name         String
-  nameTr       String?          // Turkish name if different
+  nameTr       String? // Turkish name if different
+  nameEn       String?
+  pricingType  PricingType      @default(LIST_PRICE)
   unit         String           @default("Adet")
   listPrice    Decimal          @db.Decimal(12, 2)
   costPrice    Decimal?         @db.Decimal(12, 2)
@@ -171,36 +189,37 @@ enum QuoteStatus {
 }
 
 model Quote {
-  id              String        @id @default(cuid())
-  quoteNumber     String        @unique
+  id              String                @id @default(cuid())
+  quoteNumber     String                @unique
   projectId       String?
-  project         Project?      @relation(fields: [projectId], references: [id])
+  project         Project?              @relation(fields: [projectId], references: [id])
   companyId       String
-  company         Company       @relation(fields: [companyId], references: [id])
+  company         Company               @relation(fields: [companyId], references: [id])
   subject         String?
-  currency        String        @default("EUR")
-  exchangeRate    Decimal       @db.Decimal(10, 4)
-  protectionPct   Decimal       @default(0) @db.Decimal(5, 2)
-  subtotal        Decimal       @default(0) @db.Decimal(12, 2)
-  discountTotal   Decimal       @default(0) @db.Decimal(12, 2)
-  discountPct     Decimal       @default(0) @db.Decimal(5, 2)
-  vatTotal        Decimal       @default(0) @db.Decimal(12, 2)
-  grandTotal      Decimal       @default(0) @db.Decimal(12, 2)
-  status          QuoteStatus   @default(TASLAK)
+  currency        String                @default("EUR")
+  exchangeRate    Decimal               @db.Decimal(10, 4)
+  protectionPct   Decimal               @default(0) @db.Decimal(5, 2)
+  subtotal        Decimal               @default(0) @db.Decimal(12, 2)
+  discountTotal   Decimal               @default(0) @db.Decimal(12, 2)
+  discountPct     Decimal               @default(0) @db.Decimal(5, 2)
+  vatTotal        Decimal               @default(0) @db.Decimal(12, 2)
+  grandTotal      Decimal               @default(0) @db.Decimal(12, 2)
+  status          QuoteStatus           @default(TASLAK)
   validUntil      DateTime?
-  validityDays    Int           @default(30)
-  version         Int           @default(1)
+  validityDays    Int                   @default(30)
+  version         Int                   @default(1)
   parentQuoteId   String?
-  parentQuote     Quote?        @relation("QuoteRevisions", fields: [parentQuoteId], references: [id])
-  revisions       Quote[]       @relation("QuoteRevisions")
+  parentQuote     Quote?                @relation("QuoteRevisions", fields: [parentQuoteId], references: [id])
+  revisions       Quote[]               @relation("QuoteRevisions")
   createdById     String
-  createdBy       User          @relation("CreatedBy", fields: [createdById], references: [id])
+  createdBy       User                  @relation("CreatedBy", fields: [createdById], references: [id])
   approvedById    String?
-  approvedBy      User?         @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedBy      User?                 @relation("ApprovedBy", fields: [approvedById], references: [id])
   approvedAt      DateTime?
   notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  language        String                @default("TR")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
   items           QuoteItem[]
   documents       QuoteDocument[]
   history         QuoteHistory[]
@@ -217,45 +236,49 @@ enum QuoteItemType {
   HEADER
   NOTE
   CUSTOM
+  SERVICE
 }
 
 model QuoteItem {
-  id          String        @id @default(cuid())
-  quoteId     String
-  quote       Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  productId   String?
-  product     Product?      @relation(fields: [productId], references: [id])
-  itemType    QuoteItemType @default(PRODUCT)
-  sortOrder   Int           @default(0)
-  code        String?
-  brand       String?
-  description String
-  quantity    Decimal       @default(1) @db.Decimal(10, 2)
-  unit        String        @default("Adet")
-  listPrice   Decimal       @default(0) @db.Decimal(12, 2)
-  katsayi     Decimal       @default(1) @db.Decimal(5, 3)
-  unitPrice   Decimal       @default(0) @db.Decimal(12, 2)
-  discountPct Decimal       @default(0) @db.Decimal(5, 2)
-  vatRate     Decimal       @default(20) @db.Decimal(5, 2)
-  totalPrice  Decimal       @default(0) @db.Decimal(12, 2)
-  notes       String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  quoteId       String
+  quote         Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product?      @relation(fields: [productId], references: [id])
+  itemType      QuoteItemType @default(PRODUCT)
+  sortOrder     Int           @default(0)
+  code          String?
+  brand         String?
+  description   String
+  quantity      Decimal       @default(1) @db.Decimal(10, 2)
+  unit          String        @default("Adet")
+  listPrice     Decimal       @default(0) @db.Decimal(12, 2)
+  katsayi       Decimal       @default(1) @db.Decimal(5, 3)
+  unitPrice     Decimal       @default(0) @db.Decimal(12, 2)
+  discountPct   Decimal       @default(0) @db.Decimal(5, 2)
+  vatRate       Decimal       @default(20) @db.Decimal(5, 2)
+  totalPrice    Decimal       @default(0) @db.Decimal(12, 2)
+  notes         String?
+  isManualPrice Boolean       @default(false)
+  costPrice     Decimal?      @db.Decimal(12, 2)
+  serviceMeta   Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@index([quoteId])
 }
 
 model QuoteDocument {
-  id         String   @id @default(cuid())
-  quoteId    String
-  quote      Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  fileName   String
-  filePath   String
-  fileType   String
-  fileSize   Int
+  id           String   @id @default(cuid())
+  quoteId      String
+  quote        Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  fileName     String
+  filePath     String
+  fileType     String
+  fileSize     Int
   uploadedById String
-  uploadedBy User     @relation(fields: [uploadedById], references: [id])
-  createdAt  DateTime @default(now())
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
 }
 
 model QuoteHistory {
@@ -264,8 +287,8 @@ model QuoteHistory {
   quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  action    String   // CREATE, UPDATE, STATUS_CHANGE, APPROVE, EXPORT
-  changes   Json?    // {field: {old, new}}
+  action    String // CREATE, UPDATE, STATUS_CHANGE, APPROVE, EXPORT
+  changes   Json? // {field: {old, new}}
   createdAt DateTime @default(now())
 
   @@index([quoteId])
@@ -275,7 +298,7 @@ model QuoteHistory {
 
 model CommercialTermTemplate {
   id        String   @id @default(cuid())
-  category  String   // payment, delivery, warranty, vat, teslim_yeri
+  category  String // payment, delivery, warranty, vat, teslim_yeri
   name      String
   value     String
   isDefault Boolean  @default(false)
@@ -287,12 +310,12 @@ model CommercialTermTemplate {
 }
 
 model QuoteCommercialTerm {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   quoteId   String
-  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quote     Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   category  String
   value     String
-  sortOrder Int      @default(0)
+  sortOrder Int    @default(0)
 }
 
 // ==================== CURRENCY & EXCHANGE ====================
@@ -314,39 +337,39 @@ model ExchangeRate {
 // ==================== APPROVAL RULES ====================
 
 enum ApprovalConditionType {
-  VALUE_GT        // Grand total greater than
-  VALUE_LT        // Grand total less than
-  DISCOUNT_GT     // Discount percentage greater than
-  KATSAYI_LT      // Any katsayi less than
-  ALWAYS          // Always require approval
+  VALUE_GT // Grand total greater than
+  VALUE_LT // Grand total less than
+  DISCOUNT_GT // Discount percentage greater than
+  KATSAYI_LT // Any katsayi less than
+  ALWAYS // Always require approval
 }
 
 model ApprovalRule {
-  id              String                @id @default(cuid())
-  name            String
-  conditionType   ApprovalConditionType
-  conditionValue  Decimal?              @db.Decimal(12, 2)
-  requiresRoleId  String
-  isActive        Boolean               @default(true)
-  sortOrder       Int                   @default(0)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id             String                @id @default(cuid())
+  name           String
+  conditionType  ApprovalConditionType
+  conditionValue Decimal?              @db.Decimal(12, 2)
+  requiresRoleId String
+  isActive       Boolean               @default(true)
+  sortOrder      Int                   @default(0)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 }
 
 // ==================== PRICE HISTORY ====================
 
 model PriceHistory {
-  id         String   @id @default(cuid())
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
-  companyId  String
-  company    Company  @relation(fields: [companyId], references: [id])
-  quoteId    String
-  unitPrice  Decimal  @db.Decimal(12, 2)
-  katsayi    Decimal  @db.Decimal(5, 3)
-  quantity   Decimal  @db.Decimal(10, 2)
-  currency   String
-  quotedAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  quoteId   String
+  unitPrice Decimal  @db.Decimal(12, 2)
+  katsayi   Decimal  @db.Decimal(5, 3)
+  quantity  Decimal  @db.Decimal(10, 2)
+  currency  String
+  quotedAt  DateTime @default(now())
 
   @@index([productId, companyId])
   @@index([productId])
@@ -375,4 +398,59 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([userId, isRead])
+}
+
+// ==================== SAVED FILTERS ====================
+
+model SavedFilter {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  entity    String // 'quotes', 'products', 'companies', etc.
+  filters   Json // Stores the filter criteria as JSON
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name, entity])
+  @@index([userId, entity])
+}
+
+// ==================== SYSTEM SETTINGS ====================
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==================== SERVICE COSTS ====================
+
+model ServiceCostConfig {
+  id                String   @id @default(cuid())
+  dailySalary       Decimal  @db.Decimal(10, 2)
+  dailyHotel        Decimal  @db.Decimal(10, 2)
+  dailyMealsOutCity Decimal  @db.Decimal(10, 2)
+  dailyMealsOffice  Decimal  @db.Decimal(10, 2)
+  dailyVehicle      Decimal  @db.Decimal(10, 2)
+  perKmCost         Decimal  @db.Decimal(10, 2)
+  distanceBrackets  Json
+  validFrom         DateTime @default(now())
+  isActive          Boolean  @default(true)
+  createdById       String?
+  createdAt         DateTime @default(now())
+
+  @@index([isActive, validFrom])
+}
+
+model LiftingEquipmentRate {
+  id            String   @id @default(cuid())
+  name          String
+  dailyRate     Decimal  @db.Decimal(10, 2)
+  transportCost Decimal  @db.Decimal(10, 2)
+  validFrom     DateTime @default(now())
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
 }

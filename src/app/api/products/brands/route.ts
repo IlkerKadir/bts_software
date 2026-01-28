@@ -11,6 +11,9 @@ export async function GET() {
 
     const brands = await db.productBrand.findMany({
       orderBy: { sortOrder: 'asc' },
+      include: {
+        brandDiscount: { select: { coefficient: true } },
+      },
     });
 
     return NextResponse.json({ brands });

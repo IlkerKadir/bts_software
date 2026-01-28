@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { quoteQuerySchema } from '@/lib/validations/quote';
+import { quoteQuerySchema, createQuoteSchema } from '@/lib/validations/quote';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
+import { generateQuoteNumber, getCurrentYearPrefix, getNextSequence } from '@/lib/quote-number';
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,10 +83,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Helper function to generate quote number
-async function generateQuoteNumber(): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `BTS-${year}-`;
+// Helper function to get next quote number using tested module
+async function getNextQuoteNumber(): Promise<string> {
+  const prefix = getCurrentYearPrefix();
 
   const lastQuote = await db.quote.findFirst({
     where: {
@@ -94,13 +94,8 @@ async function generateQuoteNumber(): Promise<string> {
     orderBy: { quoteNumber: 'desc' },
   });
 
-  let nextNumber = 1;
-  if (lastQuote) {
-    const lastNumber = parseInt(lastQuote.quoteNumber.replace(prefix, ''), 10);
-    nextNumber = lastNumber + 1;
-  }
-
-  return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
+  const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
+  return generateQuoteNumber(nextSequence);
 }
 
 export async function POST(request: NextRequest) {
@@ -112,17 +107,23 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    // Validate required fields
-    if (!body.companyId) {
-      return NextResponse.json({ error: 'Firma seçimi gereklidir' }, { status: 400 });
+    // Validate input using schema
+    const validation = createQuoteSchema.safeParse(body);
+    if (!validation.success) {
+      const firstError = validation.error.issues[0];
+      return NextResponse.json(
+        { error: firstError?.message || 'Geçersiz veri' },
+        { status: 400 }
+      );
     }
+    const data = validation.data;
 
-    const quoteNumber = await generateQuoteNumber();
+    const quoteNumber = await getNextQuoteNumber();
 
     // Get current exchange rate
     const exchangeRate = await db.exchangeRate.findFirst({
       where: {
-        fromCurrency: body.currency || 'EUR',
+        fromCurrency: data.currency,
         toCurrency: 'TRY',
       },
       orderBy: { fetchedAt: 'desc' },
@@ -131,13 +132,14 @@ export async function POST(request: NextRequest) {
     const quote = await db.quote.create({
       data: {
         quoteNumber,
-        companyId: body.companyId,
-        projectId: body.projectId || null,
-        subject: body.subject || null,
-        currency: body.currency || 'EUR',
+        companyId: data.companyId,
+        projectId: data.projectId || null,
+        subject: data.subject || null,
+        currency: data.currency,
         exchangeRate: exchangeRate?.rate || 36.85,
         createdById: user.id,
-        validityDays: 30,
+        validityDays: data.validityDays,
+        notes: data.notes || null,
       },
       include: {
         company: { select: { id: true, name: true } },

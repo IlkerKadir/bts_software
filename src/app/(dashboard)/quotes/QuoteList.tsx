@@ -2,8 +2,18 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, Eye, FileText, Clock } from 'lucide-react';
-import { Button, Select, Card, Badge, Modal } from '@/components/ui';
+import {
+  Plus,
+  Search,
+  Eye,
+  FileText,
+  Clock,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Calendar,
+} from 'lucide-react';
+import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
 
 interface Company {
@@ -19,6 +29,7 @@ interface Quote {
   subject?: string | null;
   currency: string;
   grandTotal: number | { toNumber: () => number };
+  profitMargin?: number | null;
   status: string;
   validUntil?: string | null;
   createdBy: { id: string; fullName: string };
@@ -37,6 +48,9 @@ interface QuoteListProps {
   canApprove: boolean;
   canViewCosts: boolean;
 }
+
+type SortField = 'quoteNumber' | 'company' | 'grandTotal' | 'status' | 'createdAt' | 'createdBy' | 'profitMargin';
+type SortDirection = 'asc' | 'desc';
 
 const statusOptions = [
   { value: '', label: 'Tüm Durumlar' },
@@ -71,10 +85,19 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isNewQuoteModalOpen, setIsNewQuoteModalOpen] = useState(false);
-  const [newQuoteData, setNewQuoteData] = useState({ companyId: '', projectId: '', currency: 'EUR' });
+  const [newQuoteData, setNewQuoteData] = useState({
+    companyId: '',
+    projectId: '',
+    subject: '',
+    currency: 'EUR',
+  });
   const [isCreating, setIsCreating] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   const fetchQuotes = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -83,6 +106,8 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       if (search) params.set('search', search);
       if (statusFilter) params.set('status', statusFilter);
       if (companyFilter) params.set('companyId', companyFilter);
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
       params.set('page', page.toString());
 
       const response = await fetch(`/api/quotes?${params}`);
@@ -97,7 +122,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [search, statusFilter, companyFilter]);
+  }, [search, statusFilter, companyFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -136,8 +161,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
 
       if (response.ok) {
         setIsNewQuoteModalOpen(false);
-        setNewQuoteData({ companyId: '', projectId: '', currency: 'EUR' });
-        // Navigate to quote editor
+        setNewQuoteData({ companyId: '', projectId: '', subject: '', currency: 'EUR' });
         router.push(`/quotes/${data.quote.id}/edit`);
       }
     } catch (error) {
@@ -147,8 +171,15 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     }
   };
 
-  const formatPrice = (price: number | { toNumber: () => number }, currency: string) => {
-    const numPrice = typeof price === 'number' ? price : price.toNumber();
+  const formatPrice = (price: number | string | { toNumber?: () => number } | null | undefined, currency: string) => {
+    let numPrice = 0;
+    if (typeof price === 'number') {
+      numPrice = price;
+    } else if (typeof price === 'string') {
+      numPrice = parseFloat(price) || 0;
+    } else if (price && typeof price.toNumber === 'function') {
+      numPrice = price.toNumber();
+    }
     return new Intl.NumberFormat('tr-TR', {
       style: 'currency',
       currency,
@@ -165,13 +196,64 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     return new Date(validUntil) < new Date();
   };
 
+  const getNumericValue = (val: number | string | { toNumber?: () => number } | null | undefined): number => {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val) || 0;
+    if (val && typeof val.toNumber === 'function') return val.toNumber();
+    return 0;
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedQuotes = [...quotes].sort((a, b) => {
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    switch (sortField) {
+      case 'quoteNumber':
+        return dir * a.quoteNumber.localeCompare(b.quoteNumber, 'tr');
+      case 'company':
+        return dir * a.company.name.localeCompare(b.company.name, 'tr');
+      case 'grandTotal':
+        return dir * (getNumericValue(a.grandTotal) - getNumericValue(b.grandTotal));
+      case 'profitMargin':
+        return dir * ((a.profitMargin ?? 0) - (b.profitMargin ?? 0));
+      case 'status':
+        return dir * a.status.localeCompare(b.status, 'tr');
+      case 'createdBy':
+        return dir * a.createdBy.fullName.localeCompare(b.createdBy.fullName, 'tr');
+      case 'createdAt':
+        return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      default:
+        return 0;
+    }
+  });
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 ml-1 opacity-40" />;
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp className="w-3 h-3 ml-1 text-primary-700" />
+    ) : (
+      <ArrowDown className="w-3 h-3 ml-1 text-primary-700" />
+    );
+  };
+
+  const colCount = canViewCosts ? 9 : 8;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary-900">Teklifler</h1>
-          <p className="text-primary-500">Tüm teklifleri yönetin</p>
+          <p className="text-sm text-primary-500">Tüm teklifleri yönetin</p>
         </div>
         <Button onClick={() => setIsNewQuoteModalOpen(true)}>
           <Plus className="w-4 h-4" />
@@ -181,32 +263,71 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
 
       {/* Filters */}
       <Card>
-        <div className="p-4 flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-400" />
-            <input
-              type="text"
-              placeholder="Teklif no, firma veya proje ara..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+        <div className="p-4 space-y-3">
+          {/* First row: search + company + status */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-400" />
+              <input
+                type="text"
+                placeholder="Teklif no, firma veya proje ara..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+              />
+            </div>
+            <Select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              options={[
+                { value: '', label: 'Tüm Firmalar' },
+                ...companies.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              className="w-full sm:w-48"
+            />
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={statusOptions}
+              className="w-full sm:w-48"
             />
           </div>
-          <Select
-            value={companyFilter}
-            onChange={(e) => setCompanyFilter(e.target.value)}
-            options={[
-              { value: '', label: 'Tüm Firmalar' },
-              ...companies.map(c => ({ value: c.id, label: c.name })),
-            ]}
-            className="w-full sm:w-48"
-          />
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            options={statusOptions}
-            className="w-full sm:w-48"
-          />
+          {/* Second row: date range */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary-400 shrink-0" />
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="px-3 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                  placeholder="Başlangıç"
+                  title="Başlangıç Tarihi"
+                />
+                <span className="text-primary-400 text-sm">-</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="px-3 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                  placeholder="Bitiş"
+                  title="Bitiş Tarihi"
+                />
+              </div>
+            </div>
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => {
+                  setDateFrom('');
+                  setDateTo('');
+                }}
+                className="text-xs text-primary-500 hover:text-primary-700 underline cursor-pointer"
+              >
+                Tarihi Temizle
+              </button>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -216,54 +337,128 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           <table className="table">
             <thead>
               <tr>
-                <th>Teklif No</th>
-                <th>Firma</th>
+                <th
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSort('quoteNumber')}
+                >
+                  <div className="flex items-center">
+                    Teklif No
+                    <SortIcon field="quoteNumber" />
+                  </div>
+                </th>
+                <th
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSort('company')}
+                >
+                  <div className="flex items-center">
+                    Firma
+                    <SortIcon field="company" />
+                  </div>
+                </th>
                 <th>Proje</th>
-                <th className="text-right">Tutar</th>
-                <th>Durum</th>
-                <th>Oluşturan</th>
-                <th>Tarih</th>
-                <th className="w-24">İşlemler</th>
+                <th
+                  className="text-right cursor-pointer select-none"
+                  onClick={() => handleSort('grandTotal')}
+                >
+                  <div className="flex items-center justify-end">
+                    Tutar
+                    <SortIcon field="grandTotal" />
+                  </div>
+                </th>
+                {canViewCosts && (
+                  <th
+                    className="text-right cursor-pointer select-none"
+                    onClick={() => handleSort('profitMargin')}
+                  >
+                    <div className="flex items-center justify-end">
+                      Kar Marjı %
+                      <SortIcon field="profitMargin" />
+                    </div>
+                  </th>
+                )}
+                <th
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSort('status')}
+                >
+                  <div className="flex items-center">
+                    Durum
+                    <SortIcon field="status" />
+                  </div>
+                </th>
+                <th
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSort('createdBy')}
+                >
+                  <div className="flex items-center">
+                    Oluşturan
+                    <SortIcon field="createdBy" />
+                  </div>
+                </th>
+                <th
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSort('createdAt')}
+                >
+                  <div className="flex items-center">
+                    Tarih
+                    <SortIcon field="createdAt" />
+                  </div>
+                </th>
+                <th className="w-20">İşlemler</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-primary-500">
+                  <td colSpan={colCount} className="text-center py-8 text-primary-500">
                     Yükleniyor...
                   </td>
                 </tr>
-              ) : quotes.length === 0 ? (
+              ) : sortedQuotes.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-primary-500">
+                  <td colSpan={colCount} className="text-center py-8 text-primary-500">
                     Teklif bulunamadı
                   </td>
                 </tr>
               ) : (
-                quotes.map((quote) => (
-                  <tr key={quote.id} className="cursor-pointer hover:bg-primary-50">
-                    <td className="font-medium font-mono text-sm">{quote.quoteNumber}</td>
-                    <td>{quote.company.name}</td>
-                    <td>{quote.project?.name || '-'}</td>
-                    <td className="text-right tabular-nums">
+                sortedQuotes.map((quote) => (
+                  <tr
+                    key={quote.id}
+                    className="cursor-pointer hover:bg-primary-50 transition-colors"
+                    onClick={() => router.push(`/quotes/${quote.id}`)}
+                  >
+                    <td className="font-medium font-mono text-xs tabular-nums">
+                      {quote.quoteNumber}
+                    </td>
+                    <td className="text-xs">{quote.company.name}</td>
+                    <td className="text-xs text-primary-600">
+                      {quote.project?.name || '-'}
+                    </td>
+                    <td className="text-right text-xs tabular-nums font-medium">
                       {formatPrice(quote.grandTotal, quote.currency)}
                     </td>
+                    {canViewCosts && (
+                      <td className="text-right text-xs tabular-nums">
+                        {quote.profitMargin != null
+                          ? `%${Number(quote.profitMargin).toFixed(1)}`
+                          : '-'}
+                      </td>
+                    )}
                     <td>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <Badge variant={statusVariants[quote.status] || 'default'}>
                           {quoteStatusLabels[quote.status] || quote.status}
                         </Badge>
                         {quote.validUntil && isExpired(quote.validUntil) && (
                           <span title="Geçerlilik süresi doldu">
-                            <Clock className="w-4 h-4 text-red-500" />
+                            <Clock className="w-3.5 h-3.5 text-red-500" />
                           </span>
                         )}
                       </div>
                     </td>
-                    <td>{quote.createdBy.fullName}</td>
-                    <td>{formatDate(quote.createdAt)}</td>
-                    <td>
-                      <div className="flex items-center gap-1">
+                    <td className="text-xs">{quote.createdBy.fullName}</td>
+                    <td className="text-xs tabular-nums">{formatDate(quote.createdAt)}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-0.5">
                         <button
                           onClick={() => router.push(`/quotes/${quote.id}`)}
                           className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
@@ -293,7 +488,10 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
             <p className="text-sm text-primary-500">
               Toplam {pagination.total} teklif
             </p>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-primary-500">
+                Sayfa {pagination.page} / {pagination.totalPages}
+              </span>
               <Button
                 variant="secondary"
                 size="sm"
@@ -347,8 +545,15 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
             onChange={(e) => setNewQuoteData({ ...newQuoteData, companyId: e.target.value })}
             options={[
               { value: '', label: 'Firma Seçin' },
-              ...companies.map(c => ({ value: c.id, label: c.name })),
+              ...companies.map((c) => ({ value: c.id, label: c.name })),
             ]}
+          />
+
+          <Input
+            label="Konu"
+            placeholder="Teklif konusu girin"
+            value={newQuoteData.subject}
+            onChange={(e) => setNewQuoteData({ ...newQuoteData, subject: e.target.value })}
           />
 
           <Select

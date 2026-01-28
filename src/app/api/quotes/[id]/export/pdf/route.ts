@@ -59,11 +59,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       company: {
         name: quote.company.name,
         address: quote.company.address,
-        taxId: quote.company.taxId,
+        taxId: quote.company.taxNumber,
       },
       project: quote.project ? {
         name: quote.project.name,
-        location: quote.project.location,
+        location: null,
       } : null,
       items: quote.items.map(item => ({
         itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM',
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
       commercialTerms: quote.commercialTerms.map(term => ({
         category: term.category,
-        content: term.content,
+        content: term.value,
       })),
     };
 
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Return PDF as download
     const filename = `${quote.quoteNumber}.pdf`;
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

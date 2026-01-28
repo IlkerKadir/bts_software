@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -13,11 +14,16 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Coins,
+  Shield,
+  Clock,
+  FileImage,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const menuItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard', label: 'Anasayfa', icon: LayoutDashboard },
   { href: '/quotes', label: 'Teklifler', icon: FileText },
   { href: '/projects', label: 'Projeler', icon: FolderOpen },
   { href: '/companies', label: 'Firmalar', icon: Building2 },
@@ -26,20 +32,35 @@ const menuItems = [
 
 const adminItems = [
   { href: '/users', label: 'Kullanıcılar', icon: Users },
+  { href: '/settings/roles', label: 'Roller', icon: Shield },
+  { href: '/settings/exchange-rates', label: 'Döviz Kurları', icon: Coins },
+  { href: '/settings/templates', label: 'Şablonlar', icon: FileImage },
+  { href: '/settings/service-costs', label: 'Hizmet Maliyetleri', icon: Wrench },
   { href: '/settings', label: 'Ayarlar', icon: Settings },
 ];
 
 interface SidebarProps {
   userRole?: {
     canManageUsers: boolean;
+    canApprove?: boolean;
   };
+  userName?: string;
+  userRoleName?: string;
 }
 
-export function Sidebar({ userRole }: SidebarProps) {
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((part) => part.charAt(0).toUpperCase())
+    .slice(0, 2)
+    .join('');
+}
+
+export function Sidebar({ userRole, userName, userRoleName }: SidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const NavItem = ({ href, label, icon: Icon }: typeof menuItems[0]) => {
+  const NavItem = ({ href, label, icon: Icon }: (typeof menuItems)[0]) => {
     const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
 
     return (
@@ -48,8 +69,8 @@ export function Sidebar({ userRole }: SidebarProps) {
         className={cn(
           'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer',
           isActive
-            ? 'bg-accent-700 text-white'
-            : 'text-primary-300 hover:bg-primary-800 hover:text-white'
+            ? 'bg-primary-700 text-white'
+            : 'text-accent-300 hover:bg-accent-800 hover:text-white'
         )}
       >
         <Icon className="w-5 h-5 flex-shrink-0" />
@@ -61,18 +82,35 @@ export function Sidebar({ userRole }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 h-screen bg-primary-900 flex flex-col transition-all duration-300 z-40',
+        'fixed left-0 top-0 h-screen bg-accent-900 flex flex-col transition-all duration-300 z-40',
         isCollapsed ? 'w-16' : 'w-60'
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-primary-800">
+      <div className="h-16 flex items-center justify-between px-4 border-b border-accent-800">
         {!isCollapsed && (
-          <span className="text-xl font-bold text-white">BTS Teklif</span>
+          <Link href="/dashboard" className="flex items-center">
+            <Image
+              src="/btslogo.svg"
+              alt="BTS Logo"
+              width={120}
+              height={42}
+              className="brightness-0 invert"
+              priority
+            />
+          </Link>
+        )}
+        {isCollapsed && (
+          <Link href="/dashboard" className="flex items-center justify-center w-full">
+            <span className="text-xl font-bold text-primary-500">B</span>
+          </Link>
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1.5 rounded-lg text-primary-400 hover:bg-primary-800 hover:text-white cursor-pointer transition-colors"
+          className={cn(
+            'p-1.5 rounded-lg text-accent-400 hover:bg-accent-800 hover:text-white cursor-pointer transition-colors',
+            isCollapsed && 'absolute right-2'
+          )}
         >
           {isCollapsed ? (
             <ChevronRight className="w-5 h-5" />
@@ -88,9 +126,18 @@ export function Sidebar({ userRole }: SidebarProps) {
           <NavItem key={item.href} {...item} />
         ))}
 
+        {userRole?.canApprove && (
+          <NavItem href="/approvals" label="Onay Bekleyenler" icon={Clock} />
+        )}
+
         {userRole?.canManageUsers && (
           <>
-            <div className="my-4 border-t border-primary-800" />
+            <div className="my-4 border-t border-accent-800" />
+            {!isCollapsed && (
+              <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-accent-500">
+                Yönetim
+              </p>
+            )}
             {adminItems.map((item) => (
               <NavItem key={item.href} {...item} />
             ))}
@@ -98,12 +145,24 @@ export function Sidebar({ userRole }: SidebarProps) {
         )}
       </nav>
 
-      {/* Version */}
-      {!isCollapsed && (
-        <div className="p-4 border-t border-primary-800">
-          <p className="text-xs text-primary-500">v1.0.0</p>
-        </div>
-      )}
+      {/* User info & version */}
+      <div className="border-t border-accent-800 p-3">
+        {userName ? (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-primary-700 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+              {getInitials(userName)}
+            </div>
+            {!isCollapsed && (
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-accent-200 truncate">{userName}</p>
+                <p className="text-xs text-accent-500 truncate">{userRoleName}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          !isCollapsed && <p className="text-xs text-accent-500">v1.0.0</p>
+        )}
+      </div>
     </aside>
   );
 }
