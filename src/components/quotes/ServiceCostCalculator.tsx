@@ -145,7 +145,7 @@ export function ServiceCostCalculator({
     () =>
       liftingRates.map((rate) => ({
         value: rate.id,
-        label: `${rate.name} (${new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(rate.dailyRate)}/gun)`,
+        label: `${rate.name} (${new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(rate.dailyRate))}/gün)`,
       })),
     [liftingRates]
   );
@@ -155,18 +155,19 @@ export function ServiceCostCalculator({
     if (!config || days === '' || days < 1) return null;
 
     const daysNum = Number(days);
-    const salary = config.dailySalary;
-    const hotel = locationType === 'OUT_CITY' ? config.dailyHotel : 0;
+    // Convert Prisma Decimal values (which come as strings) to numbers
+    const salary = Number(config.dailySalary);
+    const hotel = locationType === 'OUT_CITY' ? Number(config.dailyHotel) : 0;
     const meals =
       locationType === 'OUT_CITY'
-        ? config.dailyMealsOutCity
+        ? Number(config.dailyMealsOutCity)
         : locationType === 'OFFICE'
-          ? config.dailyMealsOffice
+          ? Number(config.dailyMealsOffice)
           : 0;
-    const vehicle = config.dailyVehicle;
+    const vehicle = Number(config.dailyVehicle);
 
     const distance = locationType === 'OUT_CITY' && distanceKm !== '' ? Number(distanceKm) : 0;
-    const kmCost = distance * config.perKmCost;
+    const kmCost = distance * Number(config.perKmCost);
 
     const dailyTotal = salary + hotel + meals + vehicle + kmCost;
     const subtotal = dailyTotal * daysNum * teamSize;
@@ -175,7 +176,7 @@ export function ServiceCostCalculator({
     if (includeLiftingEquipment && selectedLiftingId && liftingDays !== '' && Number(liftingDays) > 0) {
       const rate = liftingRates.find((r) => r.id === selectedLiftingId);
       if (rate) {
-        liftingCost = rate.dailyRate * Number(liftingDays);
+        liftingCost = Number(rate.dailyRate) * Number(liftingDays);
       }
     }
 
