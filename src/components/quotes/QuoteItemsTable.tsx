@@ -168,11 +168,11 @@ export function QuoteItemsTable({
       <div className="flex items-center gap-2">
         <Button variant="primary" size="sm" onClick={onAddProduct}>
           <Plus className="h-4 w-4" />
-          \u00dcr\u00fcn Ekle
+          Ürün Ekle
         </Button>
         <Button variant="secondary" size="sm" onClick={onAddHeader}>
           <Type className="h-4 w-4" />
-          Ba\u015fl\u0131k Ekle
+          Başlık Ekle
         </Button>
         <Button variant="secondary" size="sm" onClick={onAddNote}>
           <StickyNote className="h-4 w-4" />
@@ -189,13 +189,13 @@ export function QuoteItemsTable({
               {/* Drag handle col */}
               <th className="w-8 px-1 py-2" />
               <th className="px-2 py-2 text-center whitespace-nowrap">Poz No</th>
-              <th className="px-2 py-2 text-left whitespace-nowrap">A\u00e7\u0131klama</th>
+              <th className="px-2 py-2 text-left whitespace-nowrap">Açıklama</th>
               <th className="px-2 py-2 text-right whitespace-nowrap">Miktar</th>
 
               {canViewCosts && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Katsay\u0131</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Liste Fiyat\u0131</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Katsayı</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Liste Fiyatı</th>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Maliyet</th>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Kar</th>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Kar %</th>
@@ -216,7 +216,7 @@ export function QuoteItemsTable({
                   colSpan={totalColCount}
                   className="px-4 py-8 text-center text-accent-500"
                 >
-                  Hen\u00fcz kalem eklenmedi. Yukar\u0131daki butonlarla kalem ekleyebilirsiniz.
+                  Henüz kalem eklenmedi. Yukarıdaki butonlarla kalem ekleyebilirsiniz.
                 </td>
               </tr>
             )}
@@ -262,7 +262,7 @@ export function QuoteItemsTable({
             <tr>
               <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-700">
                 <span className="inline-flex items-center gap-2">
-                  \u0130skonto %
+                  İskonto %
                   <input
                     type="number"
                     min={0}
@@ -335,7 +335,7 @@ export function QuoteItemsTable({
                 </tr>
                 <tr>
                   <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-600">
-                    Kar Marj\u0131 %
+                    Kar Marjı %
                   </td>
                   <td
                     className={cn(

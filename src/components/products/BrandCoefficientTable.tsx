@@ -39,10 +39,10 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
       if (response.ok) {
         setBrands(data.brands || []);
       } else {
-        setMessage({ type: 'error', text: 'Markalar y\u00FCklenirken bir hata olu\u015Ftu.' });
+        setMessage({ type: 'error', text: 'Markalar yüklenirken bir hata oluştu.' });
       }
     } catch {
-      setMessage({ type: 'error', text: 'Markalar y\u00FCklenirken bir hata olu\u015Ftu.' });
+      setMessage({ type: 'error', text: 'Markalar yüklenirken bir hata oluştu.' });
     } finally {
       setIsLoading(false);
     }
@@ -79,7 +79,7 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
 
   const formatCoefficient = (brand: BrandWithDiscount): string => {
     const value = brand.brandDiscount?.coefficient ?? 1;
-    return value.toFixed(3);
+    return Number(value).toFixed(3);
   };
 
   const formatDate = (dateStr?: string | null): string => {
@@ -116,7 +116,7 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
 
   const handleSave = async (brandId: string) => {
     if (!validateCoefficient(editValue)) {
-      showMessage('error', 'Katsay\u0131 0.001 ile 9.999 aras\u0131nda olmal\u0131d\u0131r.');
+      showMessage('error', 'Katsayı 0.001 ile 9.999 arasında olmalıdır.');
       return;
     }
 
@@ -145,14 +145,14 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
           )
         );
         const brand = brands.find((b) => b.id === brandId);
-        showMessage('success', `${brand?.name ?? 'Marka'} markas\u0131 katsay\u0131s\u0131 g\u00FCncellendi`);
+        showMessage('success', `${brand?.name ?? 'Marka'} markası katsayısı güncellendi`);
         setEditingId(null);
         setEditValue('');
       } else {
-        showMessage('error', data.error || 'Katsay\u0131 g\u00FCncellenirken bir hata olu\u015Ftu.');
+        showMessage('error', data.error || 'Katsayı güncellenirken bir hata oluştu.');
       }
     } catch {
-      showMessage('error', 'Katsay\u0131 g\u00FCncellenirken bir hata olu\u015Ftu.');
+      showMessage('error', 'Katsayı güncellenirken bir hata oluştu.');
     } finally {
       setSavingId(null);
     }
@@ -176,7 +176,7 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Marka Katsay\u0131lar\u0131</CardTitle>
+        <CardTitle>Marka Katsayıları</CardTitle>
         <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isLoading}>
           <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
           Yenile
@@ -205,8 +205,8 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
               <tr>
                 <th>MARKA</th>
                 <th>VARSAYILAN KATSAYI</th>
-                <th>SON G\u00DCNCELLEME</th>
-                {canEdit && <th className="w-28">\u0130\u015ELEM</th>}
+                <th>SON GÜNCELLEME</th>
+                {canEdit && <th className="w-28">İŞLEM</th>}
               </tr>
             </thead>
             <tbody>
@@ -215,14 +215,14 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
                   <td colSpan={canEdit ? 4 : 3} className="text-center py-12">
                     <div className="flex items-center justify-center gap-3">
                       <Spinner size="sm" />
-                      <span className="text-primary-500">Y\u00FCkleniyor...</span>
+                      <span className="text-primary-500">Yükleniyor...</span>
                     </div>
                   </td>
                 </tr>
               ) : brands.length === 0 ? (
                 <tr>
                   <td colSpan={canEdit ? 4 : 3} className="text-center py-12 text-primary-500">
-                    Marka bulunamad\u0131
+                    Marka bulunamadı
                   </td>
                 </tr>
               ) : (
@@ -278,7 +278,7 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
                                   onClick={cancelEditing}
                                   disabled={isSaving}
                                   className="p-1.5 rounded hover:bg-red-50 text-red-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="\u0130ptal"
+                                  title="İptal"
                                 >
                                   <X className="w-4 h-4" />
                                 </button>
@@ -288,7 +288,7 @@ export function BrandCoefficientTable({ canEdit }: BrandCoefficientTableProps) {
                                 onClick={() => startEditing(brand)}
                                 disabled={savingId !== null}
                                 className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="D\u00FCzenle"
+                                title="Düzenle"
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>

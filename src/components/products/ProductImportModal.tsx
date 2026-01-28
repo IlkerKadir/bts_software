@@ -64,10 +64,10 @@ function formatFileSize(bytes: number): string {
 
 function formatPrice(price: number, currency: string): string {
   const symbols: Record<string, string> = {
-    EUR: '\u20AC',
+    EUR: '€',
     USD: '$',
-    TRY: '\u20BA',
-    GBP: '\u00A3',
+    TRY: '₺',
+    GBP: '£',
   };
   const symbol = symbols[currency] ?? currency;
   return `${symbol}${price.toLocaleString('tr-TR', {
@@ -109,10 +109,10 @@ function SummaryCard({
 // ---------------------------------------------------------------------------
 
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
-  { key: 'all', label: 'T\u00FCm\u00FC' },
+  { key: 'all', label: 'Tümü' },
   { key: 'new', label: 'Yeni' },
-  { key: 'price_change', label: 'Fiyat De\u011Fi\u015Fikli\u011Fi' },
-  { key: 'unchanged', label: 'De\u011Fi\u015Fmemi\u015F' },
+  { key: 'price_change', label: 'Fiyat Değişikliği' },
+  { key: 'unchanged', label: 'Değişmemiş' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ export function ProductImportModal({
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
       !f.name.endsWith('.xlsx')
     ) {
-      setError('Yaln\u0131zca .xlsx dosyalar\u0131 kabul edilmektedir.');
+      setError('Yalnızca .xlsx dosyaları kabul edilmektedir.');
       return;
     }
     setFile(f);
@@ -214,14 +214,14 @@ export function ProductImportModal({
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || '\u00D6nizleme ba\u015Far\u0131s\u0131z oldu.');
+        throw new Error(data.error || 'Önizleme başarısız oldu.');
       }
 
       setPreview(data.preview);
       setStep('preview');
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Dosya i\u015Flenirken bir hata olu\u015Ftu.',
+        err instanceof Error ? err.message : 'Dosya işlenirken bir hata oluştu.',
       );
     } finally {
       setIsLoading(false);
@@ -247,7 +247,7 @@ export function ProductImportModal({
 
       if (!res.ok) {
         throw new Error(
-          data.error || '\u0130\u00E7eri aktarma ba\u015Far\u0131s\u0131z oldu.',
+          data.error || 'İçeri aktarma başarısız oldu.',
         );
       }
 
@@ -258,7 +258,7 @@ export function ProductImportModal({
       setError(
         err instanceof Error
           ? err.message
-          : '\u0130\u00E7eri aktarma s\u0131ras\u0131nda bir hata olu\u015Ftu.',
+          : 'İçeri aktarma sırasında bir hata oluştu.',
       );
       setStep('preview');
     }
@@ -287,7 +287,7 @@ export function ProductImportModal({
         return (
           <>
             <Button variant="secondary" onClick={handleClose}>
-              \u0130ptal
+              İptal
             </Button>
             <Button
               onClick={handlePreview}
@@ -295,7 +295,7 @@ export function ProductImportModal({
               isLoading={isLoading}
             >
               <FileSpreadsheet className="w-4 h-4" />
-              \u00D6nizleme
+              Önizleme
             </Button>
           </>
         );
@@ -303,11 +303,11 @@ export function ProductImportModal({
         return (
           <>
             <Button variant="secondary" onClick={handleClose}>
-              \u0130ptal
+              İptal
             </Button>
             <Button onClick={handleConfirmImport}>
               <Check className="w-4 h-4" />
-              Onayla ve \u0130\u00E7eri Aktar
+              Onayla ve İçeri Aktar
             </Button>
           </>
         );
@@ -354,11 +354,11 @@ export function ProductImportModal({
               />
               <div className="text-center">
                 <p className="text-sm font-medium text-primary-800">
-                  Dosyay\u0131 s\u00FCr\u00FCkleyip b\u0131rak\u0131n veya{' '}
-                  <span className="text-primary-600 underline">dosya se\u00E7in</span>
+                  Dosyayı sürükleyip bırakın veya{' '}
+                  <span className="text-primary-600 underline">dosya seçin</span>
                 </p>
                 <p className="text-xs text-accent-500 mt-1">
-                  Yaln\u0131zca .xlsx dosyalar\u0131 kabul edilir
+                  Yalnızca .xlsx dosyaları kabul edilir
                 </p>
               </div>
               <input
@@ -426,22 +426,22 @@ export function ProductImportModal({
             {preview && (
               <div className="grid grid-cols-4 gap-3">
                 <SummaryCard
-                  label="Toplam \u00DCr\u00FCn"
+                  label="Toplam Ürün"
                   count={preview.totalProducts}
                   colorClass="bg-blue-100 text-blue-700"
                 />
                 <SummaryCard
-                  label="Yeni \u00DCr\u00FCn"
+                  label="Yeni Ürün"
                   count={preview.newProducts}
                   colorClass="bg-green-100 text-green-700"
                 />
                 <SummaryCard
-                  label="Fiyat De\u011Fi\u015Fikli\u011Fi"
+                  label="Fiyat Değişikliği"
                   count={preview.priceChanges}
                   colorClass="bg-amber-100 text-amber-700"
                 />
                 <SummaryCard
-                  label="De\u011Fi\u015Fmemi\u015F"
+                  label="Değişmemiş"
                   count={preview.unchanged}
                   colorClass="bg-gray-100 text-gray-600"
                 />
@@ -487,13 +487,13 @@ export function ProductImportModal({
                   <thead className="bg-primary-50 sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2.5 text-xs font-semibold text-primary-700 uppercase tracking-wider">
-                        \u00DCr\u00FCn Kodu
+                        Ürün Kodu
                       </th>
                       <th className="text-left px-3 py-2.5 text-xs font-semibold text-primary-700 uppercase tracking-wider">
                         Marka
                       </th>
                       <th className="text-left px-3 py-2.5 text-xs font-semibold text-primary-700 uppercase tracking-wider">
-                        \u00DCr\u00FCn Ad\u0131
+                        Ürün Adı
                       </th>
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-primary-700 uppercase tracking-wider">
                         Liste Fiyat
@@ -513,7 +513,7 @@ export function ProductImportModal({
                           colSpan={6}
                           className="text-center py-8 text-accent-400 text-sm"
                         >
-                          Bu filtreye uygun \u00FCr\u00FCn bulunamad\u0131.
+                          Bu filtreye uygun ürün bulunamadı.
                         </td>
                       </tr>
                     ) : (
@@ -569,12 +569,12 @@ export function ProductImportModal({
                             )}
                             {product.status === 'price_change' && (
                               <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-amber-50 text-amber-700 border border-amber-300">
-                                Fiyat De\u011Fi\u015Fti
+                                Fiyat Değişti
                               </span>
                             )}
                             {product.status === 'unchanged' && (
                               <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500 border border-gray-300">
-                                De\u011Fi\u015Fmedi
+                                Değişmedi
                               </span>
                             )}
                           </td>
@@ -614,10 +614,10 @@ export function ProductImportModal({
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <Spinner size="lg" />
             <p className="text-sm font-medium text-primary-700">
-              \u0130\u00E7eri aktar\u0131l\u0131yor...
+              İçeri aktarılıyor...
             </p>
             <p className="text-xs text-accent-500">
-              L\u00FCtfen bekleyin, bu i\u015Flem biraz zaman alabilir.
+              Lütfen bekleyin, bu işlem biraz zaman alabilir.
             </p>
           </div>
         );
@@ -633,11 +633,11 @@ export function ProductImportModal({
             </div>
             <div className="text-center">
               <h3 className="text-lg font-semibold text-primary-900 mb-1">
-                \u0130\u00E7eri Aktarma Tamamland\u0131
+                İçeri Aktarma Tamamlandı
               </h3>
               {result && (
                 <p className="text-sm text-accent-600">
-                  {result.total} \u00FCr\u00FCn ba\u015Far\u0131yla i\u00E7eri aktar\u0131ld\u0131 ({result.created} yeni, {result.updated} g\u00FCncellendi)
+                  {result.total} ürün başarıyla içeri aktarıldı ({result.created} yeni, {result.updated} güncellendi)
                 </p>
               )}
             </div>
@@ -654,7 +654,7 @@ export function ProductImportModal({
     <Modal
       isOpen={isOpen}
       onClose={step === 'importing' ? () => {} : handleClose}
-      title="\u00DCr\u00FCn \u0130\u00E7eri Aktar"
+      title="Ürün İçeri Aktar"
       size="xl"
       footer={renderFooter()}
     >

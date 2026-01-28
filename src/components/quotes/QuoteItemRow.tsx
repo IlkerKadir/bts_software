@@ -373,7 +373,7 @@ export function QuoteItemRow({
                 type="button"
                 onClick={onShowPriceHistory}
                 className="shrink-0 text-accent-400 hover:text-blue-600 transition-colors"
-                title="Fiyat Ge\u00e7mi\u015fi"
+                title="Fiyat Geçmişi"
               >
                 <Clock className="h-3.5 w-3.5" />
               </button>
