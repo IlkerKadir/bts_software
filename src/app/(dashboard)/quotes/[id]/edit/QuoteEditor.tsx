@@ -11,9 +11,6 @@ import { CommercialTermsSection } from '@/components/quotes/CommercialTermsSecti
 import type { QuoteItemData } from '@/components/quotes/QuoteItemRow';
 import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
 
-// ── Legacy re-export for backward compatibility with edit/QuoteItemRow.tsx ──
-export type { QuoteItemData as QuoteItem } from '@/components/quotes/QuoteItemRow';
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface QuoteData {
@@ -269,6 +266,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             currency: headerFields.currency,
             exchangeRate: headerFields.exchangeRate,
             protectionPct: headerFields.protectionPct,
+            language: headerFields.language,
             validityDays: headerFields.validityDays,
             discountPct: headerFields.discountPct,
             notes: headerFields.notes,
@@ -781,7 +779,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Render: Main ───────────────────────────────────────────────────────────
 
   const canSubmitForApproval =
-    isEditable && !hasChanges ? handleSubmitForApproval : undefined;
+    isEditable && !hasChanges && user.role.canApprove ? handleSubmitForApproval : undefined;
 
   const canExport = user.role.canExport ? handleExport : undefined;
 
