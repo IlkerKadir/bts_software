@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { fetchTcmbRates, tcmbRateToExchangeRate } from '@/lib/services/tcmb-service';
+import { fetchTcmbRates, calculateAllExchangeRates } from '@/lib/services/tcmb-service';
 
 export async function POST() {
   try {
@@ -20,18 +20,19 @@ export async function POST() {
       );
     }
 
+    // Calculate all cross rates (USD/EUR, EUR/GBP, TRY/USD, etc.)
+    const allRates = calculateAllExchangeRates(tcmbRates);
+
     const now = new Date();
     const createdRates = [];
 
     // Store each rate in the database
-    for (const tcmbRate of tcmbRates) {
-      const exchangeRateData = tcmbRateToExchangeRate(tcmbRate);
-
+    for (const rateData of allRates) {
       const rate = await db.exchangeRate.create({
         data: {
-          fromCurrency: exchangeRateData.fromCurrency,
-          toCurrency: exchangeRateData.toCurrency,
-          rate: exchangeRateData.rate,
+          fromCurrency: rateData.fromCurrency,
+          toCurrency: rateData.toCurrency,
+          rate: rateData.rate,
           source: 'TCMB',
           isManual: false,
           fetchedAt: now,
@@ -49,7 +50,7 @@ export async function POST() {
     }
 
     return NextResponse.json({
-      message: `${createdRates.length} döviz kuru TCMB'den güncellendi`,
+      message: `${createdRates.length} döviz kuru TCMB'den güncellendi (tüm çapraz kurlar dahil)`,
       rates: createdRates,
       syncedAt: now,
     });
@@ -85,12 +86,20 @@ export async function GET() {
       select: { fetchedAt: true },
     });
 
-    // Get latest rates for each currency
+    // Get latest rates for each currency pair
     const latestRates = await db.exchangeRate.findMany({
-      where: { toCurrency: 'TRY' },
       orderBy: { fetchedAt: 'desc' },
-      distinct: ['fromCurrency'],
+      distinct: ['fromCurrency', 'toCurrency'],
     });
+
+    // Group rates for easier reading
+    const ratesByBase: Record<string, Record<string, number>> = {};
+    for (const rate of latestRates) {
+      if (!ratesByBase[rate.fromCurrency]) {
+        ratesByBase[rate.fromCurrency] = {};
+      }
+      ratesByBase[rate.fromCurrency][rate.toCurrency] = Number(rate.rate);
+    }
 
     return NextResponse.json({
       lastSyncAt: lastSync?.fetchedAt || null,
@@ -101,6 +110,7 @@ export async function GET() {
         source: rate.source,
         fetchedAt: rate.fetchedAt,
       })),
+      rateMatrix: ratesByBase,
     });
   } catch (error) {
     console.error('Sync status error:', error);

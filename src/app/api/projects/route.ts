@@ -34,7 +34,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (query.status) {
-      where.status = query.status;
+      // Support comma-separated statuses
+      const statuses = query.status.split(',').map(s => s.trim());
+      if (statuses.length === 1) {
+        where.status = statuses[0] as any;
+      } else {
+        where.status = { in: statuses as any[] };
+      }
     }
 
     const [projects, total] = await Promise.all([

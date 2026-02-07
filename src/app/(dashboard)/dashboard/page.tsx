@@ -48,9 +48,10 @@ async function getProfitSummary() {
   let totalRevenue = 0;
   let totalCost = 0;
 
+  // Calculate revenue and cost from actual items (not quote.grandTotal which includes VAT)
   for (const quote of sentThisMonth) {
-    totalRevenue += Number(quote.grandTotal);
     for (const item of quote.items) {
+      totalRevenue += Number(item.totalPrice);
       if (item.costPrice) {
         totalCost += Number(item.costPrice) * Number(item.quantity);
       }

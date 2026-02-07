@@ -213,10 +213,12 @@ export function QuoteItemRow({
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  // Margin helpers
+  // Margin helpers - convert Prisma Decimal values (strings) to numbers
+  const unitPriceNum = Number(item.unitPrice) || 0;
+  const costPriceNum = item.costPrice != null ? Number(item.costPrice) : null;
   const margin =
-    item.costPrice != null && item.costPrice > 0
-      ? ((item.unitPrice - item.costPrice) / item.unitPrice) * 100
+    costPriceNum != null && costPriceNum > 0 && unitPriceNum > 0
+      ? ((unitPriceNum - costPriceNum) / unitPriceNum) * 100
       : null;
   const isLowMargin = margin !== null && margin < 15;
 
@@ -387,14 +389,14 @@ export function QuoteItemRow({
         {/* MIKTAR */}
         <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
           <EditableCell
-            value={item.quantity}
+            value={Number(item.quantity)}
             type="number"
             onChange={(v) => {
               const qty = Number(v);
-              const total = qty * item.unitPrice * (1 - item.discountPct / 100);
+              const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
               onUpdate({ quantity: qty, totalPrice: total });
             }}
-            displayValue={formatNumber(item.quantity, 2)}
+            displayValue={formatNumber(Number(item.quantity), 2)}
             className="text-right"
           />
           <span className="ml-1 text-xs text-accent-500">{item.unit}</span>
@@ -406,34 +408,34 @@ export function QuoteItemRow({
             {/* KATSAYI */}
             <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
               <EditableCell
-                value={item.katsayi}
+                value={Number(item.katsayi)}
                 type="number"
                 onChange={(v) => {
                   const k = Number(v);
-                  const newUnitPrice = item.isManualPrice ? item.unitPrice : item.listPrice * k;
-                  const total = item.quantity * newUnitPrice * (1 - item.discountPct / 100);
+                  const newUnitPrice = item.isManualPrice ? Number(item.unitPrice) : Number(item.listPrice) * k;
+                  const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
                   onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
                 }}
-                displayValue={formatNumber(item.katsayi, 4)}
+                displayValue={formatNumber(Number(item.katsayi), 4)}
                 className="text-right"
               />
             </td>
 
             {/* LISTE FIYATI */}
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
-              {formatPrice(item.listPrice, currency)}
+              {formatPrice(Number(item.listPrice), currency)}
             </td>
 
             {/* MALIYET */}
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
-              {item.costPrice != null ? formatPrice(item.costPrice, currency) : '-'}
+              {item.costPrice != null ? formatPrice(Number(item.costPrice), currency) : '-'}
             </td>
 
             {/* KAR */}
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
               <span className={cn(isLowMargin && 'text-red-600 font-medium')}>
                 {item.costPrice != null
-                  ? formatPrice(item.unitPrice - item.costPrice, currency)
+                  ? formatPrice(Number(item.unitPrice) - Number(item.costPrice), currency)
                   : '-'}
               </span>
             </td>
@@ -450,22 +452,22 @@ export function QuoteItemRow({
         {/* BIRIM FIYAT */}
         <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
           <EditableCell
-            value={item.unitPrice}
+            value={Number(item.unitPrice)}
             type="number"
             readOnly={!item.isManualPrice}
             onChange={(v) => {
               const up = Number(v);
-              const total = item.quantity * up * (1 - item.discountPct / 100);
+              const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
               onUpdate({ unitPrice: up, totalPrice: total });
             }}
-            displayValue={formatPrice(item.unitPrice, currency)}
+            displayValue={formatPrice(Number(item.unitPrice), currency)}
             className="text-right"
           />
         </td>
 
         {/* TOPLAM FIYAT */}
         <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
-          {formatPrice(item.totalPrice, currency)}
+          {formatPrice(Number(item.totalPrice), currency)}
         </td>
 
         {/* Delete */}

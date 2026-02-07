@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import {
   Building2,
   FolderKanban,
@@ -10,6 +12,8 @@ import {
   TrendingUp,
   ShieldCheck,
   Clock,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Input, Select, Card, Badge } from '@/components/ui';
@@ -27,10 +31,18 @@ type QuoteStatus =
   | 'KAYBEDILDI'
   | 'IPTAL';
 
+interface ProjectOption {
+  id: string;
+  name: string;
+  client?: { id: string; name: string };
+}
+
 export interface QuoteEditorHeaderProps {
   quoteNumber: string;
   status: string;
   companyName: string;
+  companyId: string;
+  projectId?: string | null;
   projectName?: string | null;
   systemBrand: string;
   date: string;
@@ -41,6 +53,7 @@ export interface QuoteEditorHeaderProps {
   validityDays: number;
   hasChanges: boolean;
   isSaving: boolean;
+  onProjectChange: (projectId: string | null) => void;
   onSystemBrandChange: (value: string) => void;
   onCurrencyChange: (value: string) => void;
   onExchangeRateChange: (value: number) => void;
@@ -79,6 +92,8 @@ export function QuoteEditorHeader({
   quoteNumber,
   status,
   companyName,
+  companyId,
+  projectId,
   projectName,
   systemBrand,
   date,
@@ -89,6 +104,7 @@ export function QuoteEditorHeader({
   validityDays,
   hasChanges,
   isSaving,
+  onProjectChange,
   onSystemBrandChange,
   onCurrencyChange,
   onExchangeRateChange,
@@ -100,6 +116,54 @@ export function QuoteEditorHeader({
   onExport,
 }: QuoteEditorHeaderProps) {
   const isEditable = status === 'TASLAK' || status === 'REVIZYON';
+
+  // Project selection state
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    }
+    if (showProjectDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showProjectDropdown]);
+
+  // Fetch all active projects (a quote can be for any project, sent to any company)
+  useEffect(() => {
+    async function fetchProjects() {
+      setIsLoadingProjects(true);
+      try {
+        const res = await fetch('/api/projects?status=AKTIF,TEKLIF_ASAMASINDA,DEVAM_EDIYOR');
+        if (res.ok) {
+          const data = await res.json();
+          setProjects(data.projects || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch projects:', err);
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    }
+    fetchProjects();
+  }, []);
+
+  const handleProjectSelect = (id: string | null) => {
+    onProjectChange(id);
+    setShowProjectDropdown(false);
+  };
+
+  // Get current project name (from props or from loaded projects)
+  const currentProjectName = projectName ||
+    (projectId ? projects.find(p => p.id === projectId)?.name : null) ||
+    'Proje Yok';
 
   return (
     <Card className="rounded-xl">
@@ -116,12 +180,86 @@ export function QuoteEditorHeader({
           {/* Divider */}
           <span className="hidden sm:block h-4 w-px bg-primary-200" aria-hidden />
 
-          {/* Project */}
-          <div className="flex items-center gap-1.5 text-sm text-primary-600">
-            <FolderKanban className="h-4 w-4 shrink-0 text-primary-400" />
-            <span className="truncate max-w-[180px]">
-              {projectName || 'Proje Yok'}
-            </span>
+          {/* Project Selector */}
+          <div className="flex items-center gap-1">
+            <div className="relative" ref={projectDropdownRef}>
+              <button
+                type="button"
+                onClick={() => isEditable && setShowProjectDropdown(!showProjectDropdown)}
+                disabled={!isEditable}
+                className={cn(
+                  'flex items-center gap-1.5 text-sm text-primary-600 px-2 py-1 rounded-md transition-colors',
+                  isEditable && 'hover:bg-primary-100 cursor-pointer',
+                  !isEditable && 'cursor-default'
+                )}
+              >
+                <FolderKanban className="h-4 w-4 shrink-0 text-primary-400" />
+                <span className="truncate max-w-[180px]">
+                  {currentProjectName}
+                </span>
+                {isEditable && (
+                  <ChevronDown className={cn(
+                    'h-3.5 w-3.5 text-primary-400 transition-transform',
+                    showProjectDropdown && 'rotate-180'
+                  )} />
+                )}
+              </button>
+
+            {/* Dropdown */}
+            {showProjectDropdown && (
+              <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-primary-200 rounded-lg shadow-lg z-50 py-1 max-h-60 overflow-y-auto">
+                {/* No project option */}
+                <button
+                  type="button"
+                  onClick={() => handleProjectSelect(null)}
+                  className={cn(
+                    'w-full text-left px-3 py-2 text-sm hover:bg-primary-50 cursor-pointer',
+                    !projectId && 'bg-primary-100 font-medium'
+                  )}
+                >
+                  Proje Yok
+                </button>
+
+                {isLoadingProjects ? (
+                  <div className="px-3 py-2 text-sm text-primary-500">
+                    Yükleniyor...
+                  </div>
+                ) : projects.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-primary-500">
+                    Aktif proje bulunamadı
+                  </div>
+                ) : (
+                  projects.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => handleProjectSelect(project.id)}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-sm hover:bg-primary-50 cursor-pointer',
+                        projectId === project.id && 'bg-primary-100 font-medium'
+                      )}
+                    >
+                      <div className="font-medium">{project.name}</div>
+                      {project.client && (
+                        <div className="text-xs text-primary-500">{project.client.name}</div>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+            </div>
+
+            {/* Link to project details */}
+            {projectId && (
+              <Link
+                href={`/projects/${projectId}`}
+                className="p-1 rounded hover:bg-primary-100 transition-colors"
+                title="Proje detaylarını görüntüle"
+              >
+                <ExternalLink className="h-3.5 w-3.5 text-primary-400" />
+              </Link>
+            )}
           </div>
 
           {/* Divider */}

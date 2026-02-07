@@ -84,9 +84,10 @@ export function QuoteItemsTable({
 
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
-      araTotal += item.totalPrice;
+      // Convert Prisma Decimal values (strings) to numbers
+      araTotal += Number(item.totalPrice) || 0;
       if (item.costPrice != null) {
-        totalCost += item.costPrice * item.quantity;
+        totalCost += Number(item.costPrice) * Number(item.quantity);
       }
     }
 
@@ -95,8 +96,8 @@ export function QuoteItemsTable({
 
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
-      const itemAfterDiscount = item.totalPrice * (1 - discountPct / 100);
-      totalVat += itemAfterDiscount * (item.vatRate / 100);
+      const itemAfterDiscount = (Number(item.totalPrice) || 0) * (1 - discountPct / 100);
+      totalVat += itemAfterDiscount * (Number(item.vatRate) / 100);
     }
 
     const grandTotal = afterDiscount + totalVat;

@@ -54,6 +54,7 @@ interface HeaderFields {
   validityDays: number;
   discountPct: number;
   notes: string;
+  projectId: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     validityDays: 30,
     discountPct: 0,
     notes: '',
+    projectId: null,
   });
   const savedHeaderRef = useRef<HeaderFields | null>(null);
 
@@ -162,6 +164,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         validityDays: q.validityDays,
         discountPct: Number(q.discountPct),
         notes: q.notes || '',
+        projectId: q.project?.id || null,
       };
       setHeaderFields(hf);
       savedHeaderRef.current = { ...hf };
@@ -195,7 +198,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       fields.language !== saved.language ||
       fields.validityDays !== saved.validityDays ||
       fields.discountPct !== saved.discountPct ||
-      fields.notes !== saved.notes
+      fields.notes !== saved.notes ||
+      fields.projectId !== saved.projectId
     );
   }, []);
 
@@ -270,6 +274,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             validityDays: headerFields.validityDays,
             discountPct: headerFields.discountPct,
             notes: headerFields.notes,
+            projectId: headerFields.projectId,
           }),
         });
 
@@ -806,7 +811,13 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         quoteNumber={quote.quoteNumber}
         status={quote.status}
         companyName={quote.company.name}
-        projectName={quote.project?.name ?? null}
+        companyId={quote.company.id}
+        projectId={headerFields.projectId}
+        projectName={
+          headerFields.projectId === quote.project?.id
+            ? quote.project?.name
+            : undefined
+        }
         systemBrand={headerFields.subject}
         date={new Date(quote.createdAt).toLocaleDateString('tr-TR')}
         currency={headerFields.currency}
@@ -816,6 +827,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         validityDays={headerFields.validityDays}
         hasChanges={hasChanges}
         isSaving={isSaving}
+        onProjectChange={(v) => updateHeaderField('projectId', v)}
         onSystemBrandChange={(v) => updateHeaderField('subject', v)}
         onCurrencyChange={(v) => updateHeaderField('currency', v)}
         onExchangeRateChange={(v) => updateHeaderField('exchangeRate', v)}

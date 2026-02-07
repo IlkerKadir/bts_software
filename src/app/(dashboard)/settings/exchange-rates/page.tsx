@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Plus, Trash2, Clock, AlertCircle, Check } from 'lucide-react';
+import { RefreshCw, Plus, Trash2, Clock, AlertCircle, Check, Edit2, Save, X } from 'lucide-react';
 import { Button, Card, Spinner } from '@/components/ui';
 
 interface ExchangeRate {
@@ -17,9 +17,10 @@ interface ExchangeRate {
 interface SyncStatus {
   lastSyncAt: string | null;
   rates: ExchangeRate[];
+  rateMatrix?: Record<string, Record<string, number>>;
 }
 
-const CURRENCIES = ['EUR', 'USD', 'GBP'];
+const CURRENCIES = ['TRY', 'EUR', 'USD', 'GBP'];
 
 export default function ExchangeRatesPage() {
   const [rates, setRates] = useState<ExchangeRate[]>([]);
@@ -33,18 +34,29 @@ export default function ExchangeRatesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newRate, setNewRate] = useState({
     fromCurrency: 'EUR',
-    toCurrency: 'TRY',
+    toCurrency: 'USD',
     rate: '',
   });
   const [isAdding, setIsAdding] = useState(false);
 
+  // Edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
   const fetchRates = useCallback(async () => {
     try {
-      const response = await fetch('/api/exchange-rates/sync');
+      const response = await fetch('/api/exchange-rates?latestOnly=true');
       if (response.ok) {
-        const data: SyncStatus = await response.json();
-        setRates(data.rates);
-        setLastSyncAt(data.lastSyncAt);
+        const data = await response.json();
+        setRates(data.rates || []);
+      }
+
+      // Also get last sync time
+      const syncResponse = await fetch('/api/exchange-rates/sync');
+      if (syncResponse.ok) {
+        const syncData: SyncStatus = await syncResponse.json();
+        setLastSyncAt(syncData.lastSyncAt);
       }
     } catch (err) {
       console.error('Failed to fetch rates:', err);
@@ -56,6 +68,17 @@ export default function ExchangeRatesPage() {
   useEffect(() => {
     fetchRates();
   }, [fetchRates]);
+
+  // Clear messages after 5 seconds
+  useEffect(() => {
+    if (successMessage || error) {
+      const timer = setTimeout(() => {
+        setSuccessMessage(null);
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage, error]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -81,6 +104,12 @@ export default function ExchangeRatesPage() {
 
   const handleAddRate = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (newRate.fromCurrency === newRate.toCurrency) {
+      setError('Kaynak ve hedef para birimi aynı olamaz');
+      return;
+    }
+
     setIsAdding(true);
     setError(null);
 
@@ -101,14 +130,63 @@ export default function ExchangeRatesPage() {
         throw new Error(data.error || 'Ekleme başarısız');
       }
 
-      setSuccessMessage('Döviz kuru eklendi');
+      setSuccessMessage(`${newRate.fromCurrency}/${newRate.toCurrency} kuru eklendi`);
       setShowAddForm(false);
-      setNewRate({ fromCurrency: 'EUR', toCurrency: 'TRY', rate: '' });
+      setNewRate({ fromCurrency: 'EUR', toCurrency: 'USD', rate: '' });
       fetchRates();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bir hata oluştu');
     } finally {
       setIsAdding(false);
+    }
+  };
+
+  const handleEdit = (rate: ExchangeRate) => {
+    setEditingId(rate.id);
+    setEditValue(rate.rate.toString());
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditValue('');
+  };
+
+  const handleSaveEdit = async (rate: ExchangeRate) => {
+    const newRateValue = parseFloat(editValue);
+    if (isNaN(newRateValue) || newRateValue <= 0) {
+      setError('Geçerli bir kur değeri girin');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      // Create a new rate entry (rates are immutable, we add new ones)
+      const response = await fetch('/api/exchange-rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromCurrency: rate.fromCurrency,
+          toCurrency: rate.toCurrency,
+          rate: newRateValue,
+          source: 'MANUAL',
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Güncelleme başarısız');
+      }
+
+      setSuccessMessage(`${rate.fromCurrency}/${rate.toCurrency} kuru güncellendi`);
+      setEditingId(null);
+      setEditValue('');
+      fetchRates();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bir hata oluştu');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -142,6 +220,23 @@ export default function ExchangeRatesPage() {
     });
   };
 
+  const formatRate = (rate: number) => {
+    // Use more decimals for small rates (like TRY/USD)
+    const decimals = rate < 1 ? 6 : 4;
+    return rate.toLocaleString('tr-TR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  };
+
+  // Group rates by base currency for better display
+  const groupedRates = rates.reduce((acc, rate) => {
+    const key = rate.fromCurrency;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(rate);
+    return acc;
+  }, {} as Record<string, ExchangeRate[]>);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -151,7 +246,7 @@ export default function ExchangeRatesPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -175,14 +270,14 @@ export default function ExchangeRatesPage() {
       {/* Messages */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-red-700">
-          <AlertCircle className="w-5 h-5" />
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
           {error}
         </div>
       )}
 
       {successMessage && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3 text-green-700">
-          <Check className="w-5 h-5" />
+          <Check className="w-5 h-5 flex-shrink-0" />
           {successMessage}
         </div>
       )}
@@ -191,7 +286,7 @@ export default function ExchangeRatesPage() {
       {lastSyncAt && (
         <div className="flex items-center gap-2 text-sm text-primary-500">
           <Clock className="w-4 h-4" />
-          Son güncelleme: {formatDate(lastSyncAt)}
+          Son TCMB güncellemesi: {formatDate(lastSyncAt)}
         </div>
       )}
 
@@ -200,32 +295,35 @@ export default function ExchangeRatesPage() {
         <Card>
           <div className="p-4">
             <h3 className="font-semibold text-primary-900 mb-4">Manuel Döviz Kuru Ekle</h3>
-            <form onSubmit={handleAddRate} className="flex items-end gap-4">
+            <form onSubmit={handleAddRate} className="flex items-end gap-4 flex-wrap">
               <div>
                 <label className="block text-sm font-medium text-primary-700 mb-1">
-                  Para Birimi
+                  Kaynak
                 </label>
                 <select
                   value={newRate.fromCurrency}
                   onChange={(e) => setNewRate({ ...newRate, fromCurrency: e.target.value })}
-                  className="input w-32"
+                  className="input w-28"
                 >
                   {CURRENCIES.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
-              <div className="text-primary-500 pb-2">→</div>
+              <div className="text-primary-500 pb-2 text-xl">→</div>
               <div>
                 <label className="block text-sm font-medium text-primary-700 mb-1">
                   Hedef
                 </label>
-                <input
-                  type="text"
+                <select
                   value={newRate.toCurrency}
-                  disabled
-                  className="input w-20 bg-primary-50"
-                />
+                  onChange={(e) => setNewRate({ ...newRate, toCurrency: e.target.value })}
+                  className="input w-28"
+                >
+                  {CURRENCIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary-700 mb-1">
@@ -233,11 +331,12 @@ export default function ExchangeRatesPage() {
                 </label>
                 <input
                   type="number"
-                  step="0.0001"
+                  step="0.000001"
+                  min="0.000001"
                   value={newRate.rate}
                   onChange={(e) => setNewRate({ ...newRate, rate: e.target.value })}
-                  placeholder="36.8500"
-                  className="input w-32"
+                  placeholder="1.1878"
+                  className="input w-36"
                   required
                 />
               </div>
@@ -252,72 +351,162 @@ export default function ExchangeRatesPage() {
                 İptal
               </Button>
             </form>
+            <p className="text-xs text-primary-500 mt-3">
+              Örnek: EUR → USD = 1.1878 (1 EUR = 1.1878 USD)
+            </p>
           </div>
         </Card>
       )}
 
-      {/* Rates Table */}
+      {/* Rates Table - Grouped by base currency */}
+      {Object.keys(groupedRates).length === 0 ? (
+        <Card>
+          <div className="p-8 text-center text-primary-500">
+            Henüz döviz kuru bulunmuyor. TCMB'den güncelleyebilir veya manuel ekleyebilirsiniz.
+          </div>
+        </Card>
+      ) : (
+        Object.entries(groupedRates)
+          .sort(([a], [b]) => {
+            // Sort order: TRY, USD, EUR, GBP
+            const order = ['TRY', 'USD', 'EUR', 'GBP'];
+            return order.indexOf(a) - order.indexOf(b);
+          })
+          .map(([baseCurrency, currencyRates]) => (
+            <Card key={baseCurrency}>
+              <div className="p-4 border-b border-primary-100 bg-primary-50">
+                <h3 className="font-semibold text-primary-900">
+                  {baseCurrency} Kurları
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th className="w-32">Çeviri</th>
+                      <th className="text-right">Kur</th>
+                      <th className="w-24">Kaynak</th>
+                      <th>Güncelleme</th>
+                      <th className="w-24 text-right">İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currencyRates
+                      .sort((a, b) => {
+                        const order = ['TRY', 'USD', 'EUR', 'GBP'];
+                        return order.indexOf(a.toCurrency) - order.indexOf(b.toCurrency);
+                      })
+                      .map((rate) => (
+                        <tr key={rate.id}>
+                          <td>
+                            <span className="font-mono font-medium text-primary-900">
+                              {rate.fromCurrency}
+                            </span>
+                            <span className="text-primary-400 mx-2">→</span>
+                            <span className="font-mono font-medium text-primary-700">
+                              {rate.toCurrency}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            {editingId === rate.id ? (
+                              <input
+                                type="number"
+                                step="0.000001"
+                                min="0.000001"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="input w-36 text-right font-mono"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveEdit(rate);
+                                  if (e.key === 'Escape') handleCancelEdit();
+                                }}
+                              />
+                            ) : (
+                              <span className="font-mono tabular-nums text-primary-900">
+                                {formatRate(rate.rate)}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 text-xs rounded-full ${
+                                rate.source === 'TCMB'
+                                  ? 'bg-blue-50 text-blue-700'
+                                  : 'bg-amber-50 text-amber-700'
+                              }`}
+                            >
+                              {rate.source === 'TCMB' ? 'TCMB' : 'Manuel'}
+                            </span>
+                          </td>
+                          <td className="text-sm text-primary-500">
+                            {formatDate(rate.fetchedAt)}
+                          </td>
+                          <td>
+                            <div className="flex items-center justify-end gap-1">
+                              {editingId === rate.id ? (
+                                <>
+                                  <button
+                                    onClick={() => handleSaveEdit(rate)}
+                                    disabled={isSaving}
+                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors disabled:opacity-50"
+                                    title="Kaydet"
+                                  >
+                                    <Save className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={handleCancelEdit}
+                                    disabled={isSaving}
+                                    className="p-1.5 text-primary-400 hover:bg-primary-100 rounded transition-colors disabled:opacity-50"
+                                    title="İptal"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(rate)}
+                                    className="p-1.5 text-primary-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    title="Düzenle"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(rate.id)}
+                                    className="p-1.5 text-primary-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                    title="Sil"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ))
+      )}
+
+      {/* Quick Reference */}
       <Card>
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Para Birimi</th>
-                <th className="text-right">Kur (TRY)</th>
-                <th>Kaynak</th>
-                <th>Güncelleme</th>
-                <th className="w-16"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rates.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center text-primary-500 py-8">
-                    Henüz döviz kuru bulunmuyor. TCMB'den güncelleyebilir veya manuel ekleyebilirsiniz.
-                  </td>
-                </tr>
-              ) : (
-                rates.map((rate) => (
-                  <tr key={rate.id}>
-                    <td>
-                      <span className="font-mono font-medium">{rate.fromCurrency}</span>
-                      <span className="text-primary-400 mx-2">→</span>
-                      <span className="font-mono text-primary-500">{rate.toCurrency}</span>
-                    </td>
-                    <td className="text-right font-mono tabular-nums">
-                      {rate.rate.toLocaleString('tr-TR', {
-                        minimumFractionDigits: 4,
-                        maximumFractionDigits: 4,
-                      })}
-                    </td>
-                    <td>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 text-xs rounded-full ${
-                          rate.source === 'TCMB'
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {rate.source === 'TCMB' ? 'TCMB' : 'Manuel'}
-                      </span>
-                    </td>
-                    <td className="text-sm text-primary-500">
-                      {formatDate(rate.fetchedAt)}
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleDelete(rate.id)}
-                        className="p-1 text-primary-400 hover:text-red-500 transition-colors"
-                        title="Sil"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="p-4">
+          <h3 className="font-semibold text-primary-900 mb-3">Kur Kullanım Rehberi</h3>
+          <div className="text-sm text-primary-600 space-y-2">
+            <p>
+              <strong>EUR → USD = 1.1878</strong> demek: 1 EUR = 1.1878 USD
+            </p>
+            <p>
+              <strong>USD → TRY = 43.35</strong> demek: 1 USD = 43.35 TRY
+            </p>
+            <p>
+              Teklifte USD ürün EUR'a çevrilecekse: USD tutarı × (USD → EUR kuru) = EUR tutarı
+            </p>
+          </div>
         </div>
       </Card>
     </div>

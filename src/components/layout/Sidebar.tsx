@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -46,6 +45,8 @@ interface SidebarProps {
   };
   userName?: string;
   userRoleName?: string;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 function getInitials(name: string): string {
@@ -56,9 +57,8 @@ function getInitials(name: string): string {
     .join('');
 }
 
-export function Sidebar({ userRole, userName, userRoleName }: SidebarProps) {
+export function Sidebar({ userRole, userName, userRoleName, isCollapsed, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
-  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const NavItem = ({ href, label, icon: Icon }: (typeof menuItems)[0]) => {
     const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
@@ -87,9 +87,9 @@ export function Sidebar({ userRole, userName, userRoleName }: SidebarProps) {
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-accent-800">
+      <div className="h-16 flex items-center justify-center px-4 border-b border-accent-800">
         {!isCollapsed && (
-          <Link href="/dashboard" className="flex items-center">
+          <Link href="/dashboard" className="flex items-center flex-1">
             <Image
               src="/btslogo.svg"
               alt="BTS Logo"
@@ -100,17 +100,9 @@ export function Sidebar({ userRole, userName, userRoleName }: SidebarProps) {
             />
           </Link>
         )}
-        {isCollapsed && (
-          <Link href="/dashboard" className="flex items-center justify-center w-full">
-            <span className="text-xl font-bold text-primary-500">B</span>
-          </Link>
-        )}
         <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className={cn(
-            'p-1.5 rounded-lg text-accent-400 hover:bg-accent-800 hover:text-white cursor-pointer transition-colors',
-            isCollapsed && 'absolute right-2'
-          )}
+          onClick={onToggleCollapse}
+          className="p-1.5 rounded-lg text-accent-400 hover:bg-accent-800 hover:text-white cursor-pointer transition-colors"
         >
           {isCollapsed ? (
             <ChevronRight className="w-5 h-5" />
