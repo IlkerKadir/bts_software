@@ -11,6 +11,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Permission check: only users with canViewCosts or canManageUsers can view reports
+    if (!user.role.canViewCosts && !user.role.canManageUsers) {
+      return NextResponse.json(
+        { error: 'Rapor görüntüleme yetkiniz bulunmamaktadır' },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const query = reportQuerySchema.parse({
       startDate: searchParams.get('startDate') || undefined,
@@ -55,6 +63,11 @@ export async function GET(request: NextRequest) {
 
     if (query.currency) {
       where.currency = query.currency;
+    }
+
+    // Sales reps can only see their own quotes in reports
+    if (!user.role.canManageUsers && !user.role.canApprove) {
+      where.createdById = user.id;
     }
 
     // Get quotes with relations

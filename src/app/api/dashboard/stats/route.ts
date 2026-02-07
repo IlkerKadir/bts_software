@@ -61,7 +61,8 @@ export async function GET() {
       let totalCost = 0;
 
       for (const quote of sentThisMonth) {
-        totalRevenue += Number(quote.grandTotal);
+        // Revenue = subtotal - discount (pre-VAT, post-discount)
+        totalRevenue += Number(quote.subtotal) - Number(quote.discountTotal);
         for (const item of quote.items) {
           if (item.costPrice) {
             totalCost += Number(item.costPrice) * Number(item.quantity);

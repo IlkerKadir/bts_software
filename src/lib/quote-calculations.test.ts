@@ -251,17 +251,32 @@ describe('Quote Calculations', () => {
   });
 
   describe('calculateQuoteProfitSummary', () => {
-    it('calculates summary for multiple items', () => {
+    it('calculates summary from pre-VAT totalPrice (excludes SERVICE from profit)', () => {
       const items = [
+        // totalPrice is pre-VAT: qty * unitPrice * (1 - disc/100)
         { totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT' },
         { totalPrice: 500, costPrice: 300, quantity: 1, itemType: 'PRODUCT' },
         { totalPrice: 200, costPrice: null, quantity: 1, itemType: 'SERVICE' },
       ];
       const result = calculateQuoteProfitSummary(items);
-      expect(result.totalRevenue).toBe(1700);
+      // SERVICE excluded → revenue = 1000 + 500 = 1500
+      expect(result.totalRevenue).toBe(1500);
       expect(result.totalCost).toBe(900);
-      expect(result.totalProfit).toBe(800);
-      expect(result.overallMarginPct).toBeCloseTo(47.06, 1);
+      expect(result.totalProfit).toBe(600);
+      expect(result.overallMarginPct).toBe(40);
+    });
+
+    it('applies overall discount to revenue', () => {
+      const items = [
+        { totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT' },
+      ];
+      const result = calculateQuoteProfitSummary(items, 10); // 10% overall discount
+      // Revenue after 10% discount: 1000 * 0.9 = 900
+      expect(result.totalRevenue).toBe(900);
+      expect(result.totalCost).toBe(600);
+      expect(result.totalProfit).toBe(300);
+      // 300 / 900 * 100 = 33.33
+      expect(result.overallMarginPct).toBe(33.33);
     });
 
     it('excludes HEADER and NOTE items from calculations', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import { FileText, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { Button, Spinner } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -30,17 +30,22 @@ interface TemplateOption {
   value: string;
 }
 
+export interface CommercialTermsSectionHandle {
+  save: () => Promise<void>;
+  hasChanges: () => boolean;
+}
+
 interface CommercialTermsSectionProps {
   quoteId: string;
   initialTerms?: TermData[];
   onTermsChange?: () => void;
 }
 
-export function CommercialTermsSection({
+export const CommercialTermsSection = forwardRef<CommercialTermsSectionHandle, CommercialTermsSectionProps>(function CommercialTermsSection({
   quoteId,
   initialTerms,
   onTermsChange,
-}: CommercialTermsSectionProps) {
+}: CommercialTermsSectionProps, ref) {
   // Terms state: map of category key -> value
   const [terms, setTerms] = useState<Record<string, string>>({});
   // Snapshot of saved terms for reset functionality
@@ -164,7 +169,7 @@ export function CommercialTermsSection({
   };
 
   // Save all terms
-  const handleSave = async () => {
+  const handleSaveInternal = useCallback(async () => {
     setIsSaving(true);
     setError(null);
     setSaveSuccess(false);
@@ -198,7 +203,13 @@ export function CommercialTermsSection({
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [quoteId, terms]);
+
+  // Expose save method to parent via ref
+  useImperativeHandle(ref, () => ({
+    save: handleSaveInternal,
+    hasChanges: () => JSON.stringify(terms) !== JSON.stringify(savedTerms),
+  }), [handleSaveInternal, terms, savedTerms]);
 
   // Reset to saved values
   const handleReset = () => {
@@ -414,7 +425,7 @@ export function CommercialTermsSection({
             <Button
               variant="primary"
               size="sm"
-              onClick={handleSave}
+              onClick={handleSaveInternal}
               disabled={!hasChanges}
               isLoading={isSaving}
             >
@@ -425,4 +436,4 @@ export function CommercialTermsSection({
       )}
     </div>
   );
-}
+});

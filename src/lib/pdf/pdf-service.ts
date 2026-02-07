@@ -11,8 +11,11 @@ export interface PdfOptions {
   landscape?: boolean;
 }
 
+const IDLE_TIMEOUT_MS = 60_000; // 60 seconds
+
 export class PdfService {
   private browser: Browser | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   private async getBrowser(): Promise<Browser> {
     if (!this.browser) {
@@ -22,6 +25,17 @@ export class PdfService {
       });
     }
     return this.browser;
+  }
+
+  private resetIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+    }
+    this.idleTimer = setTimeout(() => {
+      this.close().catch((err) => {
+        console.warn('PdfService: Error closing idle browser:', err);
+      });
+    }, IDLE_TIMEOUT_MS);
   }
 
   async generatePdf(html: string, options: PdfOptions = {}): Promise<Buffer> {
@@ -47,10 +61,15 @@ export class PdfService {
       return Buffer.from(pdfBuffer);
     } finally {
       await page.close();
+      this.resetIdleTimer();
     }
   }
 
   async close(): Promise<void> {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
     if (this.browser) {
       await this.browser.close();
       this.browser = null;
@@ -67,3 +86,15 @@ export function getPdfService(): PdfService {
   }
   return pdfServiceInstance;
 }
+
+// Close browser on process exit
+const handleExit = () => {
+  if (pdfServiceInstance) {
+    pdfServiceInstance.close().catch(() => {});
+  }
+};
+
+process.on('exit', handleExit);
+process.on('SIGINT', handleExit);
+process.on('SIGTERM', handleExit);
+process.on('uncaughtException', handleExit);

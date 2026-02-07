@@ -91,3 +91,45 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     );
   }
 }
+
+// PATCH - Update document metadata (e.g. fileName)
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await getSession();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id: quoteId, docId } = await params;
+    const body = await request.json();
+    const { fileName } = body;
+
+    if (!fileName || typeof fileName !== 'string') {
+      return NextResponse.json(
+        { error: 'Geçerli bir dosya adı giriniz' },
+        { status: 400 }
+      );
+    }
+
+    const document = await db.quoteDocument.findFirst({
+      where: { id: docId, quoteId },
+    });
+
+    if (!document) {
+      return NextResponse.json({ error: 'Döküman bulunamadı' }, { status: 404 });
+    }
+
+    const updated = await db.quoteDocument.update({
+      where: { id: docId },
+      data: { fileName },
+    });
+
+    return NextResponse.json({ document: updated });
+  } catch (error) {
+    console.error('Document PATCH error:', error);
+    return NextResponse.json(
+      { error: 'Döküman güncellenirken bir hata oluştu' },
+      { status: 500 }
+    );
+  }
+}

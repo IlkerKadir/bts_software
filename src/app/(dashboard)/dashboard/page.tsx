@@ -4,6 +4,8 @@ import { QuotePipeline } from '@/components/dashboard/QuotePipeline';
 import { RecentQuotes } from '@/components/dashboard/RecentQuotes';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { ProfitSummary } from '@/components/dashboard/ProfitSummary';
+import { DashboardCharts } from '@/components/dashboard/DashboardCharts';
+import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 
 async function getPipelineCounts() {
   const [taslak, onayBekliyor, onaylandi, gonderildi, takipte] = await Promise.all([
@@ -103,6 +105,12 @@ export default async function DashboardPage() {
 
       {/* Profit Summary - conditional on canViewCosts */}
       {canViewCosts && <ProfitSummary data={profitData} />}
+
+      {/* Charts - conditional on canViewCosts */}
+      {canViewCosts && <DashboardCharts />}
+
+      {/* Activity Feed */}
+      <ActivityFeed />
     </div>
   );
 }

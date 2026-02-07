@@ -14,7 +14,7 @@ export const quoteStatusEnum = z.enum([
 
 export const currencyEnum = z.enum(['EUR', 'USD', 'GBP', 'TRY']);
 
-export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM']);
+export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SERVICE']);
 
 export const quoteQuerySchema = z.object({
   search: z.string().optional(),
@@ -37,9 +37,9 @@ export const createQuoteSchema = z.object({
 
 export const quoteItemSchema = z.object({
   itemType: quoteItemTypeEnum,
-  productId: z.string().optional(),
-  code: z.string().optional(),
-  brand: z.string().optional(),
+  productId: z.string().nullish(),
+  code: z.string().nullish(),
+  brand: z.string().nullish(),
   description: z.string().min(1, 'Description is required'),
   quantity: z.number().min(0, 'Quantity must be non-negative').default(1),
   unit: z.string().default('Adet'),
@@ -47,12 +47,15 @@ export const quoteItemSchema = z.object({
   katsayi: z.number().positive('Katsayi must be positive').default(1),
   discountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').default(0),
   vatRate: z.number().min(0).max(100).default(20),
-  notes: z.string().optional(),
+  notes: z.string().nullish(),
 });
 
 export const quoteItemUpdateSchema = quoteItemSchema.extend({
   id: z.string().min(1, 'Item ID is required'),
   sortOrder: z.number().int().optional(),
+  isManualPrice: z.boolean().optional(),
+  unitPrice: z.number().optional(),
+  totalPrice: z.number().optional(),
 });
 
 export const bulkQuoteItemUpdateSchema = z.object({

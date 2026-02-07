@@ -45,21 +45,29 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
   const [brands, setBrands] = useState<Brand[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
 
-  const [formData, setFormData] = useState<ProductFormData>({
-    code: initialData?.code || '',
-    shortCode: initialData?.shortCode || '',
-    brandId: initialData?.brandId || '',
-    categoryId: initialData?.categoryId || '',
-    model: initialData?.model || '',
-    name: initialData?.name || '',
-    nameTr: initialData?.nameTr || '',
-    unit: initialData?.unit || 'Adet',
-    listPrice: initialData?.listPrice || 0,
-    costPrice: initialData?.costPrice || undefined,
-    currency: initialData?.currency || 'EUR',
-    supplier: initialData?.supplier || '',
-    isActive: initialData?.isActive ?? true,
+  const buildFormData = (data?: ProductFormData | null): ProductFormData => ({
+    code: data?.code || '',
+    shortCode: data?.shortCode || '',
+    brandId: data?.brandId || '',
+    categoryId: data?.categoryId || '',
+    model: data?.model || '',
+    name: data?.name || '',
+    nameTr: data?.nameTr || '',
+    unit: data?.unit || 'Adet',
+    listPrice: data?.listPrice || 0,
+    costPrice: data?.costPrice || undefined,
+    currency: data?.currency || 'EUR',
+    supplier: data?.supplier || '',
+    isActive: data?.isActive ?? true,
   });
+
+  const [formData, setFormData] = useState<ProductFormData>(buildFormData(initialData));
+
+  // Reset form when initialData changes (e.g. opening edit for a different product)
+  useEffect(() => {
+    setFormData(buildFormData(initialData));
+    setError('');
+  }, [initialData]);
 
   useEffect(() => {
     const fetchLookups = async () => {

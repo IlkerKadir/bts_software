@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
+import { recalculateAndPersistQuoteTotals } from '@/lib/quote-calculations';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -55,14 +56,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     let profitSummary = null;
     if (user.role.canViewCosts) {
       const { calculateQuoteProfitSummary } = await import('@/lib/quote-calculations');
-      profitSummary = calculateQuoteProfitSummary(
+      const raw = calculateQuoteProfitSummary(
         quote.items.map(item => ({
           totalPrice: Number(item.totalPrice),
           costPrice: item.costPrice ? Number(item.costPrice) : null,
           quantity: Number(item.quantity),
           itemType: item.itemType,
-        }))
+        })),
+        Number(quote.discountPct) || 0
       );
+      profitSummary = {
+        totalCost: raw.totalCost,
+        totalProfit: raw.totalProfit,
+        profitMargin: raw.overallMarginPct,
+      };
     }
 
     // Strip costPrice from items if user does not have canViewCosts permission
@@ -117,15 +124,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (body.validityDays !== undefined) updateData.validityDays = body.validityDays;
     if (body.notes !== undefined) updateData.notes = body.notes;
 
-    // Recalculate totals if items were updated
-    if (body.subtotal !== undefined) updateData.subtotal = body.subtotal;
-    if (body.discountTotal !== undefined) updateData.discountTotal = body.discountTotal;
-    if (body.vatTotal !== undefined) updateData.vatTotal = body.vatTotal;
-    if (body.grandTotal !== undefined) updateData.grandTotal = body.grandTotal;
-
-    const quote = await db.quote.update({
+    await db.quote.update({
       where: { id },
       data: updateData,
+    });
+
+    // Always recalculate totals to keep them in sync
+    await recalculateAndPersistQuoteTotals(id);
+
+    // Re-fetch with includes after all updates
+    const quote = await db.quote.findUniqueOrThrow({
+      where: { id },
       include: {
         company: true,
         project: true,

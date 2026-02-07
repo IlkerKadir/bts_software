@@ -34,17 +34,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadi' }, { status: 404 });
     }
 
-    // Calculate totals
-    const productItems = quote.items.filter(item => item.itemType === 'PRODUCT');
-    const subtotal = productItems.reduce((sum, item) => sum + Number(item.totalPrice), 0);
-    const totalDiscount = productItems.reduce((sum, item) => {
-      const beforeDiscount = Number(item.quantity) * Number(item.unitPrice);
-      return sum + (beforeDiscount - Number(item.totalPrice));
-    }, 0);
-    const totalVat = productItems.reduce((sum, item) => {
-      return sum + (Number(item.totalPrice) * Number(item.vatRate) / 100);
-    }, 0);
-    const grandTotal = subtotal + totalVat;
+    // Use the quote's persisted totals (computed by recalculateAndPersistQuoteTotals)
+    const subtotal = Number(quote.subtotal);
+    const totalDiscount = Number(quote.discountTotal);
+    const totalVat = Number(quote.vatTotal);
+    const grandTotal = Number(quote.grandTotal);
 
     // Prepare data for template
     const pdfData: QuoteDataForPdf = {

@@ -16,7 +16,7 @@ export type ProjectInput = z.infer<typeof projectSchema>;
 export const projectQuerySchema = z.object({
   search: z.string().optional(),
   clientId: z.string().optional(),
-  status: z.enum(['TEKLIF_ASAMASINDA', 'ONAYLANDI', 'DEVAM_EDIYOR', 'TAMAMLANDI', 'IPTAL']).optional(),
+  status: z.string().optional(),
   page: z.coerce.number().default(1),
   limit: z.coerce.number().default(20),
 });

@@ -73,7 +73,15 @@ const COLORS = {
   TEXT_GRAY: 'FF666666',
 };
 
-const BTS_COMPANY = {
+export interface CompanyInfo {
+  name: string;
+  address: string;
+  phone: string;
+  contact: string;
+  ticaret: string;
+}
+
+const BTS_COMPANY_DEFAULT: CompanyInfo = {
   name: 'BTS YANGIN GUVENLIK YAPI TEKNOLOJILERI LTD. STI.',
   address: 'Resitpasa Mah. Katar Cad. Ari 4 Teknokent No:2/2 Ic Kapi No: B-2/205 Sariyer / ISTANBUL',
   phone: 'Tel: 0212 285 60 55  Fax: 0212 285 97 50',
@@ -139,9 +147,9 @@ export class ExcelService {
           return;
         }
       }
-    } catch {
-      // Logo not found, continue without it
-      console.log('Logo not found, continuing without it');
+    } catch (err) {
+      // Logo not found or failed to load, continue without it
+      console.warn('Excel export: Failed to load BTS logo, continuing without it.', err);
     }
   }
 
@@ -149,35 +157,35 @@ export class ExcelService {
    * Build BTS company header (rows 1-4)
    * Logo on left (A1:B4), company info on right (C1:E4)
    */
-  private buildCompanyHeader(sheet: ExcelJS.Worksheet): void {
+  private buildCompanyHeader(sheet: ExcelJS.Worksheet, companyInfo: CompanyInfo): void {
     // Merge logo area A1:B4
     sheet.mergeCells('A1:B4');
 
     // Row 1: Company name (C1:E1)
     sheet.mergeCells('C1:E1');
     const nameCell = sheet.getCell('C1');
-    nameCell.value = BTS_COMPANY.name;
+    nameCell.value = companyInfo.name;
     nameCell.font = { bold: true, size: 11 };
     nameCell.alignment = { vertical: 'middle' };
 
     // Row 2: Address (C2:E2)
     sheet.mergeCells('C2:E2');
     const addrCell = sheet.getCell('C2');
-    addrCell.value = BTS_COMPANY.address;
+    addrCell.value = companyInfo.address;
     addrCell.font = { size: 9, color: { argb: COLORS.TEXT_GRAY } };
     addrCell.alignment = { vertical: 'middle', wrapText: true };
 
     // Row 3: Phone/Fax (C3:E3)
     sheet.mergeCells('C3:E3');
     const phoneCell = sheet.getCell('C3');
-    phoneCell.value = BTS_COMPANY.phone;
+    phoneCell.value = companyInfo.phone;
     phoneCell.font = { size: 9, color: { argb: COLORS.TEXT_GRAY } };
     phoneCell.alignment = { vertical: 'middle' };
 
     // Row 4: Email/Web + Ticaret Sicil (C4:E4)
     sheet.mergeCells('C4:E4');
     const contactCell = sheet.getCell('C4');
-    contactCell.value = `${BTS_COMPANY.contact}   ${BTS_COMPANY.ticaret}`;
+    contactCell.value = `${companyInfo.contact}   ${companyInfo.ticaret}`;
     contactCell.font = { size: 9, color: { argb: COLORS.TEXT_GRAY } };
     contactCell.alignment = { vertical: 'middle' };
 
@@ -578,8 +586,12 @@ export class ExcelService {
 
   /**
    * Generate the complete proforma fatura Excel file.
+   * @param data - Quote data for the Excel file
+   * @param companyInfo - Optional company info override. Falls back to BTS defaults.
    */
-  async generateQuoteExcel(data: QuoteDataForExcel): Promise<Buffer> {
+  async generateQuoteExcel(data: QuoteDataForExcel, companyInfo?: CompanyInfo): Promise<Buffer> {
+    const resolvedCompanyInfo = companyInfo || BTS_COMPANY_DEFAULT;
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'BTS Teklif Sistemi';
     workbook.created = new Date();
@@ -596,7 +608,7 @@ export class ExcelService {
     await this.addLogo(workbook, sheet);
 
     // --- Section 1: BTS Company Header (rows 1-4) ---
-    this.buildCompanyHeader(sheet);
+    this.buildCompanyHeader(sheet, resolvedCompanyInfo);
 
     // --- Section 2: Customer Block (rows 6-10) ---
     this.buildCustomerBlock(sheet, data);

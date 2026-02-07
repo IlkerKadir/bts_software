@@ -68,8 +68,8 @@ export function getApprovalReasons(
     reasons.push('HIGH_DISCOUNT');
   }
 
-  // Check if katsayi is below threshold
-  if (input.minKatsayi < thresholds.minKatsayiWithoutApproval) {
+  // Check if katsayi is below threshold (guard against Infinity/NaN)
+  if (isFinite(input.minKatsayi) && input.minKatsayi < thresholds.minKatsayiWithoutApproval) {
     reasons.push('LOW_KATSAYI');
   }
 

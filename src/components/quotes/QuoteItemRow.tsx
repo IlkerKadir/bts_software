@@ -42,6 +42,7 @@ export interface QuoteItemRowProps {
   pozNo: number | null;
   currency: string;
   canViewCosts: boolean;
+  canOverrideKatsayi?: boolean;
   isDragging?: boolean;
   onUpdate: (updates: Partial<QuoteItemData>) => void;
   onDelete: () => void;
@@ -132,6 +133,7 @@ function EditableCell({
       <span
         role="button"
         tabIndex={0}
+        data-editable="true"
         className={cn(
           'tabular-nums cursor-pointer rounded px-1 -mx-1 hover:bg-blue-50 transition-colors',
           className,
@@ -151,6 +153,7 @@ function EditableCell({
       ref={inputRef}
       type={type === 'number' ? 'text' : 'text'}
       inputMode={type === 'number' ? 'decimal' : 'text'}
+      data-editable="true"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -159,6 +162,20 @@ function EditableCell({
         if (e.key === 'Escape') {
           setDraft(String(value));
           setEditing(false);
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          commit();
+          const currentElement = e.target as HTMLElement;
+          const allEditables = Array.from(
+            document.querySelectorAll('[data-editable="true"]')
+          ) as HTMLElement[];
+          const currentIndex = allEditables.indexOf(currentElement);
+          const nextIndex = e.shiftKey ? currentIndex - 1 : currentIndex + 1;
+          if (nextIndex >= 0 && nextIndex < allEditables.length) {
+            allEditables[nextIndex]?.focus();
+            allEditables[nextIndex]?.click();
+          }
         }
       }}
       className={cn(
@@ -187,6 +204,7 @@ export function QuoteItemRow({
   pozNo,
   currency,
   canViewCosts,
+  canOverrideKatsayi,
   isDragging = false,
   onUpdate,
   onDelete,
@@ -215,10 +233,12 @@ export function QuoteItemRow({
 
   // Margin helpers - convert Prisma Decimal values (strings) to numbers
   const unitPriceNum = Number(item.unitPrice) || 0;
+  const discPct = Number(item.discountPct) || 0;
+  const effectiveUnitPrice = unitPriceNum * (1 - discPct / 100);
   const costPriceNum = item.costPrice != null ? Number(item.costPrice) : null;
   const margin =
-    costPriceNum != null && costPriceNum > 0 && unitPriceNum > 0
-      ? ((unitPriceNum - costPriceNum) / unitPriceNum) * 100
+    costPriceNum != null && costPriceNum > 0 && effectiveUnitPrice > 0
+      ? ((effectiveUnitPrice - costPriceNum) / effectiveUnitPrice) * 100
       : null;
   const isLowMargin = margin !== null && margin < 15;
 
@@ -410,6 +430,7 @@ export function QuoteItemRow({
               <EditableCell
                 value={Number(item.katsayi)}
                 type="number"
+                readOnly={!canOverrideKatsayi}
                 onChange={(v) => {
                   const k = Number(v);
                   const newUnitPrice = item.isManualPrice ? Number(item.unitPrice) : Number(item.listPrice) * k;
@@ -435,7 +456,7 @@ export function QuoteItemRow({
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
               <span className={cn(isLowMargin && 'text-red-600 font-medium')}>
                 {item.costPrice != null
-                  ? formatPrice(Number(item.unitPrice) - Number(item.costPrice), currency)
+                  ? formatPrice(effectiveUnitPrice - Number(item.costPrice), currency)
                   : '-'}
               </span>
             </td>
@@ -467,7 +488,18 @@ export function QuoteItemRow({
 
         {/* TOPLAM FIYAT */}
         <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
-          {formatPrice(Number(item.totalPrice), currency)}
+          {discPct > 0 ? (
+            <div className="flex flex-col items-end">
+              <span className="text-xs text-accent-400 line-through">
+                {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
+              </span>
+              <span className="text-green-700">
+                {formatPrice(Number(item.totalPrice), currency)}
+              </span>
+            </div>
+          ) : (
+            formatPrice(Number(item.totalPrice), currency)
+          )}
         </td>
 
         {/* Delete */}

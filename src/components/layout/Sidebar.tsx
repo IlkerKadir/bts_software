@@ -18,12 +18,14 @@ import {
   Clock,
   FileImage,
   Wrench,
+  ClipboardCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const menuItems = [
   { href: '/dashboard', label: 'Anasayfa', icon: LayoutDashboard },
   { href: '/quotes', label: 'Teklifler', icon: FileText },
+  { href: '/orders', label: 'Siparisler', icon: ClipboardCheck },
   { href: '/projects', label: 'Projeler', icon: FolderOpen },
   { href: '/companies', label: 'Firmalar', icon: Building2 },
   { href: '/products', label: 'Ürünler', icon: Package },

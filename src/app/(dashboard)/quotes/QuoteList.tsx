@@ -12,9 +12,11 @@ import {
   ArrowUp,
   ArrowDown,
   Calendar,
+  Trash2,
 } from 'lucide-react';
 import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
+import { BulkStatusModal } from '@/components/quotes/BulkStatusModal';
 
 interface Company {
   id: string;
@@ -96,8 +98,13 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     currency: 'EUR',
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [selectedQuoteIds, setSelectedQuoteIds] = useState<Set<string>>(new Set());
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [deletingQuote, setDeletingQuote] = useState<Quote | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   const fetchQuotes = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -150,6 +157,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     if (!newQuoteData.companyId) return;
 
     setIsCreating(true);
+    setCreateError(null);
     try {
       const response = await fetch('/api/quotes', {
         method: 'POST',
@@ -163,11 +171,33 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
         setIsNewQuoteModalOpen(false);
         setNewQuoteData({ companyId: '', projectId: '', subject: '', currency: 'EUR' });
         router.push(`/quotes/${data.quote.id}/edit`);
+      } else {
+        setCreateError(data.error || 'Teklif oluşturulurken bir hata oluştu');
       }
     } catch (error) {
       console.error('Error creating quote:', error);
+      setCreateError('Sunucu ile bağlantı kurulamadı');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingQuote) return;
+    try {
+      const response = await fetch(`/api/quotes/${deletingQuote.id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setDeleteError(data.error || 'Silme işlemi başarısız');
+        return;
+      }
+      setDeletingQuote(null);
+      setDeleteError('');
+      fetchQuotes();
+    } catch {
+      setDeleteError('Bir hata oluştu');
     }
   };
 
@@ -245,7 +275,27 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     );
   };
 
-  const colCount = canViewCosts ? 9 : 8;
+  const colCount = canViewCosts ? 10 : 9;
+
+  const toggleQuoteSelection = (quoteId: string) => {
+    setSelectedQuoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(quoteId)) {
+        next.delete(quoteId);
+      } else {
+        next.add(quoteId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedQuoteIds.size === sortedQuotes.length) {
+      setSelectedQuoteIds(new Set());
+    } else {
+      setSelectedQuoteIds(new Set(sortedQuotes.map((q) => q.id)));
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -331,12 +381,35 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
         </div>
       </Card>
 
+      {/* Bulk Selection Toolbar */}
+      {selectedQuoteIds.size > 0 && (
+        <div className="bg-accent-50 border border-accent-200 rounded-lg px-4 py-2 flex items-center justify-between">
+          <span className="text-sm text-accent-800">{selectedQuoteIds.size} teklif secildi</span>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setSelectedQuoteIds(new Set())}>
+              Secimi Temizle
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setShowBulkModal(true)}>
+              Toplu Durum Degistir
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <Card>
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
               <tr>
+                <th className="w-10" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={sortedQuotes.length > 0 && selectedQuoteIds.size === sortedQuotes.length}
+                    onChange={toggleSelectAll}
+                    className="rounded border-primary-300 cursor-pointer"
+                  />
+                </th>
                 <th
                   className="cursor-pointer select-none"
                   onClick={() => handleSort('quoteNumber')}
@@ -426,6 +499,14 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                     className="cursor-pointer hover:bg-primary-50 transition-colors"
                     onClick={() => router.push(`/quotes/${quote.id}`)}
                   >
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedQuoteIds.has(quote.id)}
+                        onChange={() => toggleQuoteSelection(quote.id)}
+                        className="rounded border-primary-300 cursor-pointer"
+                      />
+                    </td>
                     <td className="font-medium font-mono text-xs tabular-nums">
                       {quote.quoteNumber}
                     </td>
@@ -473,6 +554,15 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                         >
                           <FileText className="w-4 h-4" />
                         </button>
+                        {quote.status === 'TASLAK' && (
+                          <button
+                            onClick={() => setDeletingQuote(quote)}
+                            className="p-1.5 rounded hover:bg-red-50 text-red-500 cursor-pointer"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -539,6 +629,11 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
         }
       >
         <div className="space-y-4">
+          {createError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
           <Select
             label="Firma *"
             value={newQuoteData.companyId}
@@ -569,6 +664,52 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           />
         </div>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!deletingQuote}
+        onClose={() => { setDeletingQuote(null); setDeleteError(''); }}
+        title="Teklifi Sil"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setDeletingQuote(null); setDeleteError(''); }}>
+              İptal
+            </Button>
+            <Button variant="danger" onClick={handleDelete}>
+              Sil
+            </Button>
+          </>
+        }
+      >
+        {deleteError ? (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {deleteError}
+          </div>
+        ) : (
+          <p className="text-primary-700">
+            <strong>{deletingQuote?.quoteNumber}</strong> numaralı teklifi silmek istediğinize emin misiniz?
+            Bu işlem geri alınamaz.
+          </p>
+        )}
+      </Modal>
+
+      {/* Bulk Status Modal */}
+      {showBulkModal && (
+        <BulkStatusModal
+          quotes={quotes.filter((q) => selectedQuoteIds.has(q.id)).map((q) => ({
+            id: q.id,
+            quoteNumber: q.quoteNumber,
+            status: q.status,
+          }))}
+          onClose={() => setShowBulkModal(false)}
+          onSuccess={() => {
+            setShowBulkModal(false);
+            setSelectedQuoteIds(new Set());
+            fetchQuotes();
+          }}
+        />
+      )}
     </div>
   );
 }

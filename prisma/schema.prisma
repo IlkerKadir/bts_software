@@ -36,11 +36,12 @@ model User {
   lastLogin      DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  quotes         Quote[]         @relation("CreatedBy")
-  approvedQuotes Quote[]         @relation("ApprovedBy")
+  quotes         Quote[]              @relation("CreatedBy")
+  approvedQuotes Quote[]              @relation("ApprovedBy")
   notifications  Notification[]
   quoteHistory   QuoteHistory[]
   documents      QuoteDocument[]
+  orders         OrderConfirmation[]  @relation("OrderCreatedBy")
 }
 
 // ==================== COMPANIES ====================
@@ -63,9 +64,10 @@ model Company {
   isActive     Boolean        @default(true)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
-  projects     Project[]
-  quotes       Quote[]
-  priceHistory PriceHistory[]
+  projects           Project[]
+  quotes             Quote[]
+  priceHistory       PriceHistory[]
+  orderConfirmations OrderConfirmation[]
 }
 
 // ==================== PROJECTS ====================
@@ -220,10 +222,11 @@ model Quote {
   language        String                @default("TR")
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
-  items           QuoteItem[]
-  documents       QuoteDocument[]
-  history         QuoteHistory[]
-  commercialTerms QuoteCommercialTerm[]
+  items              QuoteItem[]
+  documents          QuoteDocument[]
+  history            QuoteHistory[]
+  commercialTerms    QuoteCommercialTerm[]
+  orderConfirmations OrderConfirmation[]
 
   @@index([companyId])
   @@index([projectId])
@@ -453,4 +456,33 @@ model LiftingEquipmentRate {
   validFrom     DateTime @default(now())
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
+}
+
+// ==================== ORDER CONFIRMATIONS ====================
+
+enum OrderStatus {
+  HAZIRLANIYOR
+  ONAYLANDI
+  GONDERILDI
+  TAMAMLANDI
+  IPTAL
+}
+
+model OrderConfirmation {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  quoteId       String
+  quote         Quote       @relation(fields: [quoteId], references: [id])
+  companyId     String
+  company       Company     @relation(fields: [companyId], references: [id])
+  status        OrderStatus @default(HAZIRLANIYOR)
+  notes         String?
+  deliveryDate  DateTime?
+  createdById   String
+  createdBy     User        @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([quoteId])
+  @@index([companyId])
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { getExcelService, QuoteDataForExcel, QuoteItemForExcel } from '@/lib/excel/excel-service';
+import { getExcelService, QuoteDataForExcel, QuoteItemForExcel, CompanyInfo } from '@/lib/excel/excel-service';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -65,15 +65,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadi' }, { status: 404 });
     }
 
-    // Include PRODUCT, CUSTOM, and SERVICE items in totals
-    const pricedItems = quote.items.filter(
-      item => item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SERVICE'
-    );
-    const subtotal = pricedItems.reduce((sum, item) => sum + Number(item.totalPrice), 0);
-    const totalVat = pricedItems.reduce((sum, item) => {
-      return sum + (Number(item.totalPrice) * Number(item.vatRate) / 100);
-    }, 0);
-    const grandTotal = subtotal + totalVat;
+    // Use the quote's persisted totals (computed by recalculateAndPersistQuoteTotals)
+    const subtotal = Number(quote.subtotal);
+    const totalVat = Number(quote.vatTotal);
+    const grandTotal = Number(quote.grandTotal);
 
     // Format date
     const formatDate = (date: Date) => date.toLocaleDateString('tr-TR');
@@ -136,8 +131,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       notes: notes.length > 0 ? notes : undefined,
     };
 
+    // Load optional company info override from system settings
+    let companyInfo: CompanyInfo | undefined;
+    try {
+      const templateSettings = await db.systemSetting.findFirst({ where: { key: 'template_settings' } });
+      if (templateSettings) {
+        companyInfo = JSON.parse(String(templateSettings.value)) as CompanyInfo;
+      }
+    } catch {
+      // Fallback to default company info if settings can't be loaded
+    }
+
     const excelService = getExcelService();
-    const buffer = await excelService.generateQuoteExcel(excelData);
+    const buffer = await excelService.generateQuoteExcel(excelData, companyInfo);
 
     const filename = `${quote.quoteNumber}.xlsx`;
     return new NextResponse(new Uint8Array(buffer), {

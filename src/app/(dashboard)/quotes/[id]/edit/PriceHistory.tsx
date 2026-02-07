@@ -30,6 +30,7 @@ interface PriceHistoryProps {
   productId: string;
   currentPrice?: number;
   currency?: string;
+  onApplyPrice?: (unitPrice: number, katsayi: number) => void;
 }
 
 const statusLabels: Record<string, string> = {
@@ -52,7 +53,7 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
   KAYBEDILDI: 'error',
 };
 
-export function PriceHistory({ productId, currentPrice, currency = 'EUR' }: PriceHistoryProps) {
+export function PriceHistory({ productId, currentPrice, currency = 'EUR', onApplyPrice }: PriceHistoryProps) {
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [stats, setStats] = useState<PriceStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -207,6 +208,15 @@ export function PriceHistory({ productId, currentPrice, currency = 'EUR' }: Pric
                         <trend.icon className="w-3 h-3" />
                         <span>{trend.label}</span>
                       </div>
+                    )}
+                    {onApplyPrice && (
+                      <button
+                        type="button"
+                        onClick={() => onApplyPrice(Number(entry.unitPrice), Number(entry.katsayi))}
+                        className="text-xs text-accent-600 hover:text-accent-800 hover:underline cursor-pointer mt-1"
+                      >
+                        Uygula
+                      </button>
                     )}
                   </div>
                 </div>

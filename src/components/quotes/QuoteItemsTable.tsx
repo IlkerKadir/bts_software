@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Plus, Type, StickyNote } from 'lucide-react';
+import { Plus, Type, StickyNote, Wrench, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui';
 import {
@@ -27,7 +27,9 @@ export interface QuoteItemsTableProps {
   onAddProduct: () => void;
   onAddHeader: () => void;
   onAddNote: () => void;
+  onAddCustomItem?: () => void;
   onShowPriceHistory?: (productId: string) => void;
+  canOverrideKatsayi?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +60,9 @@ export function QuoteItemsTable({
   onAddProduct,
   onAddHeader,
   onAddNote,
+  onAddCustomItem,
   onShowPriceHistory,
+  canOverrideKatsayi,
 }: QuoteItemsTableProps) {
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -78,16 +82,20 @@ export function QuoteItemsTable({
 
   // Summary calculations
   const summary = useMemo(() => {
-    let araTotal = 0;
+    let araTotal = 0; // subtotal before VAT
     let totalCost = 0;
     let totalVat = 0;
 
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
-      // Convert Prisma Decimal values (strings) to numbers
-      araTotal += Number(item.totalPrice) || 0;
+      // Calculate item total before VAT: qty * unitPrice * (1 - itemDiscount/100)
+      const qty = Number(item.quantity) || 0;
+      const up = Number(item.unitPrice) || 0;
+      const disc = Number(item.discountPct) || 0;
+      const itemBeforeVat = qty * up * (1 - disc / 100);
+      araTotal += itemBeforeVat;
       if (item.costPrice != null) {
-        totalCost += Number(item.costPrice) * Number(item.quantity);
+        totalCost += Number(item.costPrice) * qty;
       }
     }
 
@@ -96,8 +104,13 @@ export function QuoteItemsTable({
 
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
-      const itemAfterDiscount = (Number(item.totalPrice) || 0) * (1 - discountPct / 100);
-      totalVat += itemAfterDiscount * (Number(item.vatRate) / 100);
+      const qty = Number(item.quantity) || 0;
+      const up = Number(item.unitPrice) || 0;
+      const disc = Number(item.discountPct) || 0;
+      const itemBeforeVat = qty * up * (1 - disc / 100);
+      // Apply overall discount proportionally, then calculate VAT
+      const itemAfterOverallDiscount = itemBeforeVat * (1 - discountPct / 100);
+      totalVat += itemAfterOverallDiscount * (Number(item.vatRate) / 100);
     }
 
     const grandTotal = afterDiscount + totalVat;
@@ -179,7 +192,23 @@ export function QuoteItemsTable({
           <StickyNote className="h-4 w-4" />
           Not Ekle
         </Button>
+        {onAddCustomItem && (
+          <Button variant="secondary" size="sm" onClick={onAddCustomItem}>
+            <Wrench className="h-4 w-4" />
+            Serbest Kalem
+          </Button>
+        )}
       </div>
+
+      {/* ---- Profit margin warning ---- */}
+      {canViewCosts && summary.profitMargin < 15 && summary.profitMargin > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          <span className="text-sm text-amber-800">
+            Dikkat: Genel kar marji dusuk (%{summary.profitMargin.toFixed(1)})
+          </span>
+        </div>
+      )}
 
       {/* ---- Table ---- */}
       <div className="overflow-x-auto rounded-lg border border-accent-200 bg-white">
@@ -236,6 +265,7 @@ export function QuoteItemsTable({
                 onDragStart={handleDragStart(index)}
                 onDragOver={handleDragOver(index)}
                 onDrop={handleDrop(index)}
+                canOverrideKatsayi={canOverrideKatsayi}
                 onShowPriceHistory={
                   item.productId && onShowPriceHistory
                     ? () => onShowPriceHistory(item.productId!)

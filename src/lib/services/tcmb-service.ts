@@ -148,11 +148,21 @@ export function calculateAllExchangeRates(tcmbRates: TcmbRate[]): ExchangeRateDa
   const eurTry = (eurRate.forexBuying + eurRate.forexSelling) / 2;
   const gbpTry = (gbpRate.forexBuying + gbpRate.forexSelling) / 2;
 
+  // Guard against zero values before any division
+  if (usdTry === 0 || eurTry === 0 || gbpTry === 0) {
+    throw new Error('TCMB kur verileri geçersiz: sıfır değer tespit edildi');
+  }
+
   // Get official TCMB cross rates
   // CrossRateOther for EUR = EUR/USD (1 EUR = X USD)
   // CrossRateOther for GBP = GBP/USD (1 GBP = X USD)
   const eurUsd = eurRate.crossRateOther ?? (eurTry / usdTry);
   const gbpUsd = gbpRate.crossRateOther ?? (gbpTry / usdTry);
+
+  // Guard against zero cross rates before division
+  if (eurUsd === 0 || gbpUsd === 0) {
+    throw new Error('TCMB kur verileri geçersiz: çapraz kur sıfır değer tespit edildi');
+  }
 
   // Calculate GBP/EUR from official rates
   const gbpEur = gbpUsd / eurUsd;

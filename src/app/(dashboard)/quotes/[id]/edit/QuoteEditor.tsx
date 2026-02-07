@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Spinner } from '@/components/ui';
 import { QuoteEditorHeader } from '@/components/quotes/QuoteEditorHeader';
 import { QuoteItemsTable } from '@/components/quotes/QuoteItemsTable';
 import { ProductCatalogPanel } from '@/components/quotes/ProductCatalogPanel';
 import { ServiceCostSection } from '@/components/quotes/ServiceCostSection';
-import { CommercialTermsSection } from '@/components/quotes/CommercialTermsSection';
+import { CommercialTermsSection, type CommercialTermsSectionHandle } from '@/components/quotes/CommercialTermsSection';
 import type { QuoteItemData } from '@/components/quotes/QuoteItemRow';
 import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
+import { PriceHistory } from './PriceHistory';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // Items dirty tracking for reorder/bulk update
   const itemsDirtyRef = useRef(false);
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commercialTermsRef = useRef<CommercialTermsSectionHandle>(null);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -304,8 +307,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           unit: item.unit,
           listPrice: item.listPrice,
           katsayi: item.katsayi,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
           discountPct: item.discountPct,
           vatRate: item.vatRate,
+          isManualPrice: item.isManualPrice || false,
           notes: item.notes || '',
         }));
 
@@ -328,7 +334,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         }
       }
 
-      // 3. Reset change tracking
+      // 3. Save commercial terms if changed
+      if (commercialTermsRef.current?.hasChanges()) {
+        await commercialTermsRef.current.save();
+      }
+
+      // 4. Reset change tracking
       savedHeaderRef.current = { ...headerFields };
       itemsDirtyRef.current = false;
       setHasChanges(false);
@@ -341,6 +352,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       setIsSaving(false);
     }
   }, [quote, quoteId, headerFields, items, checkHeaderChanges]);
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────
+
+  const shortcuts = useMemo(() => ({
+    'Ctrl+S': () => handleSave(),
+  }), [handleSave]);
+
+  useKeyboardShortcuts(shortcuts);
 
   // ── Item operations ────────────────────────────────────────────────────────
 
@@ -492,6 +511,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           unit: item.unit,
           listPrice: item.listPrice,
           katsayi: item.katsayi,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          isManualPrice: item.isManualPrice || false,
           discountPct: item.discountPct,
           vatRate: item.vatRate,
           notes: item.notes || '',
@@ -693,6 +715,87 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     }
   }, [quoteId, items.length]);
 
+  // ── Add custom item ──────────────────────────────────────────────────────
+
+  const handleAddCustomItem = useCallback(async () => {
+    const tempId = crypto.randomUUID();
+    const newItem: QuoteItemData = {
+      id: tempId,
+      itemType: 'CUSTOM',
+      sortOrder: items.length + 1,
+      description: 'Serbest Kalem',
+      quantity: 1,
+      unit: 'Adet',
+      listPrice: 0,
+      katsayi: 1,
+      unitPrice: 0,
+      discountPct: 0,
+      vatRate: 20,
+      totalPrice: 0,
+      isManualPrice: true,
+    };
+
+    setItems((prev) => [...prev, newItem]);
+
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: 'CUSTOM',
+          description: 'Serbest Kalem',
+          quantity: 1,
+          unit: 'Adet',
+          listPrice: 0,
+          katsayi: 1,
+          unitPrice: 0,
+          totalPrice: 0,
+          vatRate: 20,
+          discountPct: 0,
+          sortOrder: newItem.sortOrder,
+          isManualPrice: true,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId ? mapApiItemToLocal(data.item) : item
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Add custom item error:', err);
+    }
+  }, [quoteId, items.length]);
+
+  // ── Price history ─────────────────────────────────────────────────────────
+
+  const [priceHistoryProductId, setPriceHistoryProductId] = useState<string | null>(null);
+
+  const handleShowPriceHistory = useCallback((productId: string) => {
+    setPriceHistoryProductId(productId);
+  }, []);
+
+  const handleApplyPrice = useCallback(
+    (productId: string, unitPrice: number, katsayi: number) => {
+      // Find the item(s) that match this productId and update them
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.productId !== productId) return item;
+          const newUnitPrice = item.isManualPrice ? unitPrice : item.listPrice * katsayi;
+          const total = item.quantity * newUnitPrice * (1 - item.discountPct / 100);
+          return { ...item, katsayi, unitPrice: newUnitPrice, totalPrice: total };
+        })
+      );
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+      setPriceHistoryProductId(null);
+    },
+    []
+  );
+
   // ── Submit for approval ────────────────────────────────────────────────────
 
   const handleSubmitForApproval = useCallback(async () => {
@@ -845,6 +948,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         currency={headerFields.currency}
         discountPct={headerFields.discountPct}
         canViewCosts={user.role.canViewCosts}
+        canOverrideKatsayi={user.role.canOverrideKatsayi}
         onItemUpdate={handleItemUpdate}
         onItemDelete={handleItemDelete}
         onItemDuplicate={handleItemDuplicate}
@@ -853,7 +957,40 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddProduct={() => setCatalogOpen(true)}
         onAddHeader={handleAddHeader}
         onAddNote={handleAddNote}
+        onAddCustomItem={handleAddCustomItem}
+        onShowPriceHistory={handleShowPriceHistory}
       />
+
+      {/* Price History Slide-over */}
+      {priceHistoryProductId && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setPriceHistoryProductId(null)}
+          />
+          <div className="relative w-full max-w-md bg-white shadow-xl overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-primary-200 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-primary-900">Fiyat Gecmisi</h3>
+              <button
+                type="button"
+                onClick={() => setPriceHistoryProductId(null)}
+                className="text-primary-500 hover:text-primary-700 text-lg leading-none cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="p-4">
+              <PriceHistory
+                productId={priceHistoryProductId}
+                currency={headerFields.currency}
+                onApplyPrice={(unitPrice, katsayi) =>
+                  handleApplyPrice(priceHistoryProductId, unitPrice, katsayi)
+                }
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Service cost section (collapsible) */}
       <ServiceCostSection
@@ -866,6 +1003,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
       {/* Commercial terms section (collapsible) */}
       <CommercialTermsSection
+        ref={commercialTermsRef}
         quoteId={quoteId}
         initialTerms={quote.commercialTerms?.map((t: any) => ({
           id: t.id,
@@ -873,6 +1011,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           value: t.value,
           sortOrder: Number(t.sortOrder),
         }))}
+        onTermsChange={() => setHasChanges(true)}
       />
 
       {/* Product catalog slide-over panel */}

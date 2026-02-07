@@ -95,19 +95,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Update terms in a transaction
+    // Replace all terms in a transaction (delete + create)
     await db.$transaction(async (tx) => {
-      for (const term of body.terms) {
-        if (term.id) {
-          await tx.quoteCommercialTerm.update({
-            where: { id: term.id },
-            data: {
-              sortOrder: term.sortOrder,
-              category: term.category,
-              value: term.value,
-            },
-          });
-        }
+      await tx.quoteCommercialTerm.deleteMany({ where: { quoteId } });
+
+      const termsToCreate = body.terms
+        .filter((t: any) => t.value && t.value.trim().length > 0)
+        .map((t: any, index: number) => ({
+          quoteId,
+          category: t.category,
+          value: t.value,
+          sortOrder: t.sortOrder ?? index + 1,
+        }));
+
+      if (termsToCreate.length > 0) {
+        await tx.quoteCommercialTerm.createMany({ data: termsToCreate });
       }
     });
 

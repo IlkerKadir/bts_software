@@ -235,18 +235,15 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
     const existing = products.get(code);
 
     if (existing) {
-      // Merge: fill in whichever language name is missing
+      // Merge: overwrite the corresponding language field when detected
       if (language === 'TR' && name) {
         existing.nameTr = name;
       } else if (language === 'EN' && name) {
         existing.nameEn = name;
       } else if (!language && name) {
-        // No language column or unknown language - fill whichever is empty
-        if (!existing.nameTr) {
-          existing.nameTr = name;
-        } else if (!existing.nameEn) {
-          existing.nameEn = name;
-        }
+        // No language column or unknown language - set BOTH fields
+        existing.nameTr = name;
+        existing.nameEn = name;
       }
 
       // Update other fields if they were empty before
@@ -260,21 +257,28 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
       }
     } else {
       // New product entry
+      let nameTr = '';
+      let nameEn = '';
+      if (language === 'TR') {
+        nameTr = name;
+      } else if (language === 'EN') {
+        nameEn = name;
+      } else {
+        // No language detection - set both fields
+        nameTr = name;
+        nameEn = name;
+      }
+
       const product: ImportedProduct = {
         code,
         shortCode,
         brandName,
         model,
-        nameTr: language === 'EN' ? '' : name,
-        nameEn: language === 'EN' ? name : '',
+        nameTr,
+        nameEn,
         listPrice,
         currency,
       };
-
-      // If no language detection, put name in nameTr by default
-      if (!language && name) {
-        product.nameTr = name;
-      }
 
       products.set(code, product);
     }

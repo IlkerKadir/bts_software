@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check admin permission
-    if (!user.role.canManageUsers) {
+    if (!user.role.canEditProducts) {
       return NextResponse.json(
         { error: 'Bu işlem için yetkiniz bulunmamaktadır' },
         { status: 403 }
@@ -97,7 +97,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!user.role.canManageUsers) {
+    if (!user.role.canEditProducts) {
       return NextResponse.json(
         { error: 'Bu işlem için yetkiniz bulunmamaktadır' },
         { status: 403 }

@@ -234,13 +234,20 @@ function ServiceMetaBreakdown({
   meta: any;
   currency: string;
 }) {
-  const formatCurrency = (val: number) =>
+  const formatTRY = (val: number) =>
     new Intl.NumberFormat('tr-TR', {
       style: 'currency',
-      currency: currency === 'TRY' ? 'TRY' : currency,
+      currency: 'TRY',
+    }).format(val);
+
+  const formatQuoteCurrency = (val: number) =>
+    new Intl.NumberFormat('tr-TR', {
+      style: 'currency',
+      currency,
     }).format(val);
 
   const breakdown = meta.breakdown || meta;
+  const hasConversion = meta.originalTotalTRY != null && currency !== 'TRY';
 
   return (
     <div className="space-y-2 text-sm">
@@ -267,44 +274,58 @@ function ServiceMetaBreakdown({
         )}
       </div>
 
-      {/* Cost rows */}
+      {/* Cost rows (always shown in TRY) */}
       <div className="divide-y divide-primary-200 border border-primary-200 rounded-lg bg-white overflow-hidden">
         {breakdown.salary != null && (
-          <MetaRow label="Maas (gunluk)" value={formatCurrency(breakdown.salary)} />
+          <MetaRow label="Maas (gunluk)" value={formatTRY(breakdown.salary)} />
         )}
         {breakdown.hotel != null && breakdown.hotel > 0 && (
-          <MetaRow label="Otel (gunluk)" value={formatCurrency(breakdown.hotel)} />
+          <MetaRow label="Otel (gunluk)" value={formatTRY(breakdown.hotel)} />
         )}
         {breakdown.meals != null && breakdown.meals > 0 && (
-          <MetaRow label="Yemek (gunluk)" value={formatCurrency(breakdown.meals)} />
+          <MetaRow label="Yemek (gunluk)" value={formatTRY(breakdown.meals)} />
         )}
         {breakdown.vehicle != null && (
-          <MetaRow label="Arac (gunluk)" value={formatCurrency(breakdown.vehicle)} />
+          <MetaRow label="Arac (gunluk)" value={formatTRY(breakdown.vehicle)} />
         )}
         {breakdown.kmCost != null && breakdown.kmCost > 0 && (
-          <MetaRow label="KM Maliyeti" value={formatCurrency(breakdown.kmCost)} />
+          <MetaRow label="KM Maliyeti" value={formatTRY(breakdown.kmCost)} />
         )}
         {breakdown.dailyTotal != null && (
           <div className="flex items-center justify-between px-3 py-2 bg-primary-50">
             <span className="font-medium text-primary-700">Gunluk Toplam</span>
             <span className="font-semibold text-primary-900 tabular-nums">
-              {formatCurrency(breakdown.dailyTotal)}
+              {formatTRY(breakdown.dailyTotal)}
             </span>
           </div>
         )}
         {breakdown.subtotal != null && (
-          <MetaRow label="Ara Toplam" value={formatCurrency(breakdown.subtotal)} />
+          <MetaRow label="Ara Toplam" value={formatTRY(breakdown.subtotal)} />
         )}
         {breakdown.liftingCost != null && breakdown.liftingCost > 0 && (
-          <MetaRow label="Kaldirma Ekipmani" value={formatCurrency(breakdown.liftingCost)} />
+          <MetaRow label="Kaldirma Ekipmani" value={formatTRY(breakdown.liftingCost)} />
         )}
         {breakdown.grandTotal != null && (
-          <div className="flex items-center justify-between px-3 py-2.5 bg-primary-700">
-            <span className="font-bold text-white">Genel Toplam</span>
+          <div className="flex items-center justify-between px-3 py-2.5 bg-amber-600">
+            <span className="font-bold text-white">Toplam (TL)</span>
             <span className="font-bold text-white tabular-nums">
-              {formatCurrency(breakdown.grandTotal)}
+              {formatTRY(breakdown.grandTotal)}
             </span>
           </div>
+        )}
+        {hasConversion && (
+          <>
+            <div className="flex items-center justify-between px-3 py-1.5 bg-primary-50 text-xs text-primary-500">
+              <span>Kur: {meta.conversionRate} {currency}/TRY</span>
+              {meta.protectionPct > 0 && <span>Koruma: %{meta.protectionPct}</span>}
+            </div>
+            <div className="flex items-center justify-between px-3 py-2.5 bg-primary-700">
+              <span className="font-bold text-white">Teklif Tutari ({currency})</span>
+              <span className="font-bold text-white tabular-nums">
+                {formatQuoteCurrency(meta.convertedTotal)}
+              </span>
+            </div>
+          </>
         )}
       </div>
     </div>

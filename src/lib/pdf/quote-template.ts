@@ -75,6 +75,7 @@ function escapeHtml(text: string): string {
 
 export function generateQuoteHtml(data: QuoteDataForPdf): string {
   const { quote, company, project, items, totals, commercialTerms } = data;
+  const safeTerms = commercialTerms || [];
   const currency = quote.currency;
 
   let itemNumber = 0;
@@ -116,7 +117,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     teslim_yeri: 'Teslim Yeri',
   };
 
-  const termsHtml = commercialTerms.map(term => `
+  const termsHtml = safeTerms.map(term => `
     <div class="term">
       <strong>${categoryLabels[term.category] || term.category}:</strong> ${escapeHtml(term.content)}
     </div>
@@ -400,7 +401,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       </table>
     </div>
 
-    ${commercialTerms.length > 0 ? `
+    ${safeTerms.length > 0 ? `
       <div class="terms">
         <div class="terms-title">Ticari Kosullar</div>
         ${termsHtml}

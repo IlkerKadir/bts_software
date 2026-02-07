@@ -3,8 +3,10 @@
  * Implements the Katsayı (coefficient) pricing model used by BTS
  */
 
+import { db } from './db';
+
 export interface QuoteItem {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE';
   quantity: number;
   unitPrice: number;
   discountPct: number;
@@ -38,7 +40,7 @@ export function calculateItemTotal(params: {
   const { quantity, unitPrice, discountPct } = params;
   const subtotal = quantity * unitPrice;
   const discount = subtotal * (discountPct / 100);
-  return subtotal - discount;
+  return Math.round((subtotal - discount) * 100) / 100;
 }
 
 /**
@@ -64,8 +66,8 @@ export function calculateQuoteTotals(
   items: QuoteItem[],
   overallDiscountPct: number
 ): QuoteTotals {
-  // Filter only product items
-  const productItems = items.filter((item) => item.itemType === 'PRODUCT');
+  // Filter only priced items (PRODUCT and CUSTOM)
+  const productItems = items.filter((item) => item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM');
 
   if (productItems.length === 0) {
     return {
@@ -91,13 +93,6 @@ export function calculateQuoteTotals(
 
   // Calculate VAT based on each item's VAT rate (applied to discounted amounts)
   let vatTotal = 0;
-  const totalBeforeDiscount = productItems.reduce((sum, item) => {
-    return sum + calculateItemTotal({
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discountPct: item.discountPct,
-    });
-  }, 0);
 
   for (const item of productItems) {
     const itemTotal = calculateItemTotal({
@@ -105,8 +100,8 @@ export function calculateQuoteTotals(
       unitPrice: item.unitPrice,
       discountPct: item.discountPct,
     });
-    // Proportional share of overall discount
-    const itemShare = totalBeforeDiscount > 0 ? itemTotal / totalBeforeDiscount : 0;
+    // Proportional share of overall discount (subtotal already equals sum of item totals)
+    const itemShare = subtotal > 0 ? itemTotal / subtotal : 0;
     const itemAfterOverallDiscount = itemTotal - (discountTotal * itemShare);
     vatTotal += itemAfterOverallDiscount * (item.vatRate / 100);
   }
@@ -114,10 +109,10 @@ export function calculateQuoteTotals(
   const grandTotal = netAfterDiscount + vatTotal;
 
   return {
-    subtotal,
-    discountTotal,
-    vatTotal,
-    grandTotal,
+    subtotal: Math.round(subtotal * 100) / 100,
+    discountTotal: Math.round(discountTotal * 100) / 100,
+    vatTotal: Math.round(vatTotal * 100) / 100,
+    grandTotal: Math.round(grandTotal * 100) / 100,
   };
 }
 
@@ -161,18 +156,23 @@ export function calculateQuoteProfitSummary(
     costPrice?: number | null;
     quantity: number;
     itemType: string;
-  }>
+  }>,
+  overallDiscountPct: number = 0
 ): QuoteProfitSummary {
-  let totalRevenue = 0;
+  let itemRevenue = 0;
   let totalCost = 0;
 
   for (const item of items) {
-    if (item.itemType === 'PRODUCT' || item.itemType === 'SERVICE' || item.itemType === 'CUSTOM') {
-      totalRevenue += item.totalPrice;
+    // Exclude SERVICE items from profit calculation — their profitability is unknown
+    if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM') {
+      // totalPrice is pre-VAT (qty * unitPrice * (1 - itemDiscountPct/100))
+      itemRevenue += item.totalPrice;
       totalCost += (item.costPrice || 0) * item.quantity;
     }
   }
 
+  // Apply overall quote discount to revenue
+  const totalRevenue = itemRevenue * (1 - overallDiscountPct / 100);
   const totalProfit = totalRevenue - totalCost;
   const overallMarginPct = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
@@ -182,4 +182,42 @@ export function calculateQuoteProfitSummary(
     totalProfit: Math.round(totalProfit * 100) / 100,
     overallMarginPct: Math.round(overallMarginPct * 100) / 100,
   };
+}
+
+// --- Recalculate & Persist Quote Totals ---
+
+export async function recalculateAndPersistQuoteTotals(quoteId: string) {
+  const items = await db.quoteItem.findMany({
+    where: { quoteId },
+  });
+
+  const quote = await db.quote.findUnique({
+    where: { id: quoteId },
+    select: { discountPct: true },
+  });
+
+  const quoteItems = items.map(item => ({
+    itemType: item.itemType as QuoteItem['itemType'],
+    quantity: Number(item.quantity),
+    unitPrice: Number(item.unitPrice),
+    discountPct: Number(item.discountPct),
+    vatRate: Number(item.vatRate),
+    totalPrice: Number(item.totalPrice),
+    listPrice: Number(item.listPrice),
+    katsayi: Number(item.katsayi),
+  }));
+
+  const totals = calculateQuoteTotals(quoteItems, Number(quote?.discountPct || 0));
+
+  await db.quote.update({
+    where: { id: quoteId },
+    data: {
+      subtotal: totals.subtotal,
+      discountTotal: totals.discountTotal,
+      vatTotal: totals.vatTotal,
+      grandTotal: totals.grandTotal,
+    },
+  });
+
+  return totals;
 }

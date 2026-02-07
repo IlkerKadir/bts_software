@@ -50,6 +50,11 @@ export async function GET(request: NextRequest) {
       where.createdById = query.createdById;
     }
 
+    // Sales reps can only see their own quotes
+    if (!user.role.canManageUsers && !user.role.canApprove) {
+      where.createdById = user.id;
+    }
+
     const [quotes, total] = await Promise.all([
       db.quote.findMany({
         where,
@@ -129,6 +134,19 @@ export async function POST(request: NextRequest) {
       orderBy: { fetchedAt: 'desc' },
     });
 
+    // Determine exchange rate
+    let resolvedExchangeRate: number;
+    if (data.currency === 'TRY') {
+      resolvedExchangeRate = 1.0;
+    } else if (exchangeRate?.rate) {
+      resolvedExchangeRate = Number(exchangeRate.rate);
+    } else {
+      return NextResponse.json(
+        { error: 'Döviz kuru bulunamadı. Lütfen önce kurları güncelleyin.' },
+        { status: 400 }
+      );
+    }
+
     const quote = await db.quote.create({
       data: {
         quoteNumber,
@@ -136,7 +154,7 @@ export async function POST(request: NextRequest) {
         projectId: data.projectId || null,
         subject: data.subject || null,
         currency: data.currency,
-        exchangeRate: exchangeRate?.rate || 36.85,
+        exchangeRate: resolvedExchangeRate,
         createdById: user.id,
         validityDays: data.validityDays,
         notes: data.notes || null,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProjectForm } from './ProjectForm';
@@ -58,6 +59,7 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
 };
 
 export function ProjectList({ canDelete }: ProjectListProps) {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -234,8 +236,12 @@ export function ProjectList({ canDelete }: ProjectListProps) {
                 </tr>
               ) : (
                 projects.map((project) => (
-                  <tr key={project.id}>
-                    <td className="font-medium">{project.name}</td>
+                  <tr
+                    key={project.id}
+                    onClick={() => router.push(`/projects/${project.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <td className="font-medium text-accent-600 hover:text-accent-700">{project.name}</td>
                     <td>{project.client.name}</td>
                     <td>
                       <Badge variant={statusVariants[project.status] || 'default'}>
@@ -248,7 +254,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
                     <td>
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => handleEdit(project)}
+                          onClick={(e) => { e.stopPropagation(); handleEdit(project); }}
                           className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
                           title="Düzenle"
                         >
@@ -256,7 +262,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
                         </button>
                         {canDelete && (
                           <button
-                            onClick={() => setDeletingProject(project)}
+                            onClick={(e) => { e.stopPropagation(); setDeletingProject(project); }}
                             className="p-1.5 rounded hover:bg-red-50 text-red-600 cursor-pointer"
                             title="Sil"
                           >

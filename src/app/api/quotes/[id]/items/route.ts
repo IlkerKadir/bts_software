@@ -3,9 +3,8 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import {
   calculateUnitPrice,
-  calculateItemTotalWithVat,
-  calculateQuoteTotals,
-  type QuoteItem,
+  calculateItemTotal,
+  recalculateAndPersistQuoteTotals,
 } from '@/lib/quote-calculations';
 import { quoteItemSchema, bulkQuoteItemUpdateSchema } from '@/lib/validations/quote';
 
@@ -88,14 +87,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Calculate prices using tested calculation module
     const { listPrice, katsayi, quantity, discountPct, vatRate } = data;
+    const isManualPrice = body.isManualPrice === true;
 
-    const unitPrice = calculateUnitPrice(listPrice, katsayi);
-    const totalPrice = calculateItemTotalWithVat({
-      quantity,
-      unitPrice,
-      discountPct,
-      vatRate,
-    });
+    // For manual price items (CUSTOM), use provided unitPrice; otherwise calculate
+    const unitPrice = isManualPrice && body.unitPrice != null
+      ? Number(body.unitPrice)
+      : calculateUnitPrice(listPrice, katsayi);
+    const totalPrice = isManualPrice && body.totalPrice != null
+      ? Number(body.totalPrice)
+      : calculateItemTotal({ quantity, unitPrice, discountPct });
 
     const item = await db.quoteItem.create({
       data: {
@@ -114,6 +114,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         discountPct,
         vatRate,
         totalPrice,
+        isManualPrice,
         notes: data.notes || null,
       },
       include: {
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     // Recalculate quote totals
-    await recalculateQuoteTotals(quoteId);
+    await recalculateAndPersistQuoteTotals(quoteId);
 
     return NextResponse.json({ item }, { status: 201 });
   } catch (error) {
@@ -170,15 +171,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     await db.$transaction(async (tx) => {
       for (const item of validatedItems) {
         const { listPrice, katsayi, quantity, discountPct, vatRate } = item;
+        const isManualPrice = item.isManualPrice === true;
 
-        // Calculate prices using tested calculation module
-        const unitPrice = calculateUnitPrice(listPrice, katsayi);
-        const totalPrice = calculateItemTotalWithVat({
-          quantity,
-          unitPrice,
-          discountPct,
-          vatRate,
-        });
+        // For manual price items (CUSTOM), use provided unitPrice; otherwise calculate
+        const unitPrice = isManualPrice && item.unitPrice != null
+          ? item.unitPrice
+          : calculateUnitPrice(listPrice, katsayi);
+        const totalPrice = isManualPrice && item.totalPrice != null
+          ? item.totalPrice
+          : calculateItemTotal({ quantity, unitPrice, discountPct });
 
         await tx.quoteItem.update({
           where: { id: item.id },
@@ -195,6 +196,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             discountPct,
             vatRate,
             totalPrice,
+            isManualPrice,
             notes: item.notes || null,
           },
         });
@@ -202,7 +204,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     // Recalculate quote totals
-    await recalculateQuoteTotals(quoteId);
+    await recalculateAndPersistQuoteTotals(quoteId);
 
     // Fetch updated items
     const items = await db.quoteItem.findMany({
@@ -228,33 +230,3 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-async function recalculateQuoteTotals(quoteId: string) {
-  const items = await db.quoteItem.findMany({
-    where: { quoteId },
-  });
-
-  const quote = await db.quote.findUnique({ where: { id: quoteId } });
-  if (!quote) return;
-
-  // Convert DB items to calculation module format
-  const quoteItems: QuoteItem[] = items.map((item) => ({
-    itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM',
-    quantity: Number(item.quantity),
-    unitPrice: Number(item.unitPrice),
-    discountPct: Number(item.discountPct),
-    vatRate: Number(item.vatRate),
-  }));
-
-  // Use tested calculation module
-  const totals = calculateQuoteTotals(quoteItems, Number(quote.discountPct));
-
-  await db.quote.update({
-    where: { id: quoteId },
-    data: {
-      subtotal: totals.subtotal,
-      discountTotal: totals.discountTotal,
-      vatTotal: totals.vatTotal,
-      grandTotal: totals.grandTotal,
-    },
-  });
-}
