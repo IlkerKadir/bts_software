@@ -8,7 +8,7 @@ import { QuoteItemsTable } from '@/components/quotes/QuoteItemsTable';
 import { ProductCatalogPanel } from '@/components/quotes/ProductCatalogPanel';
 import { ServiceCostSection } from '@/components/quotes/ServiceCostSection';
 import { CommercialTermsSection, type CommercialTermsSectionHandle } from '@/components/quotes/CommercialTermsSection';
-import type { QuoteItemData } from '@/components/quotes/QuoteItemRow';
+import type { QuoteItemData, PriceHistoryStats } from '@/components/quotes/QuoteItemRow';
 import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
 import { PriceHistory } from './PriceHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -65,10 +65,12 @@ function mapApiItemToLocal(item: any): QuoteItemData {
   return {
     id: item.id,
     productId: item.productId ?? null,
+    parentItemId: item.parentItemId ?? null,
     itemType: item.itemType,
     sortOrder: Number(item.sortOrder),
     code: item.code ?? null,
     brand: item.brand ?? null,
+    model: item.model ?? item.product?.model ?? null,
     description: item.description,
     quantity: Number(item.quantity),
     unit: item.unit,
@@ -82,6 +84,7 @@ function mapApiItemToLocal(item: any): QuoteItemData {
     isManualPrice: item.isManualPrice ?? false,
     costPrice: item.costPrice != null ? Number(item.costPrice) : null,
     serviceMeta: item.serviceMeta ?? undefined,
+    subRows: item.subRows?.map(mapApiItemToLocal) ?? undefined,
   };
 }
 
@@ -302,6 +305,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           productId: item.productId,
           code: item.code || '',
           brand: item.brand || '',
+          model: item.model || '',
           description: item.description,
           quantity: item.quantity,
           unit: item.unit,
@@ -460,6 +464,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             productId: duplicated.productId || undefined,
             code: duplicated.code || undefined,
             brand: duplicated.brand || undefined,
+            model: duplicated.model || undefined,
             description: duplicated.description,
             quantity: duplicated.quantity,
             unit: duplicated.unit,
@@ -506,6 +511,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           productId: item.productId,
           code: item.code || '',
           brand: item.brand || '',
+          model: item.model || '',
           description: item.description,
           quantity: item.quantity,
           unit: item.unit,
@@ -556,6 +562,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         sortOrder: items.length + 1,
         code: product.code,
         brand: product.brandName ?? null,
+        model: product.model ?? null,
         description:
           lang === 'EN'
             ? product.nameEn || product.name
@@ -585,6 +592,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             productId: product.id,
             code: product.code,
             brand: product.brandName || undefined,
+            model: product.model || undefined,
             description: newItem.description,
             quantity: 1,
             unit: product.unit,
@@ -772,6 +780,40 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Price history ─────────────────────────────────────────────────────────
 
+  // ── Batch price history for inline columns ──────────────────────────────
+  const [priceHistoryBatch, setPriceHistoryBatch] = useState<Record<string, PriceHistoryStats>>({});
+
+  useEffect(() => {
+    if (!quote || !user?.role.canViewCosts) return;
+
+    const productIds = items
+      .filter((i) => i.productId && i.itemType === 'PRODUCT')
+      .map((i) => i.productId!)
+      .filter((v, i, a) => a.indexOf(v) === i);
+
+    if (productIds.length === 0) return;
+
+    const fetchBatchHistory = async () => {
+      try {
+        const params = new URLSearchParams({
+          companyId: quote.company.id,
+          productIds: productIds.join(','),
+        });
+        const res = await fetch(`/api/products/price-history/batch-stats?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPriceHistoryBatch(data.stats || {});
+        }
+      } catch (err) {
+        console.error('Batch price history fetch error:', err);
+      }
+    };
+
+    fetchBatchHistory();
+    // Only re-fetch when quote company or item productIds change (not on every item edit)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote?.company.id, user?.role.canViewCosts, items.length]);
+
   const [priceHistoryProductId, setPriceHistoryProductId] = useState<string | null>(null);
 
   const handleShowPriceHistory = useCallback((productId: string) => {
@@ -949,6 +991,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         discountPct={headerFields.discountPct}
         canViewCosts={user.role.canViewCosts}
         canOverrideKatsayi={user.role.canOverrideKatsayi}
+        priceHistoryBatch={priceHistoryBatch}
         onItemUpdate={handleItemUpdate}
         onItemDelete={handleItemDelete}
         onItemDuplicate={handleItemDuplicate}

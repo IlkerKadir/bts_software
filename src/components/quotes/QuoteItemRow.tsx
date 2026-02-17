@@ -18,10 +18,12 @@ import { cn } from '@/lib/cn';
 export interface QuoteItemData {
   id: string;
   productId?: string | null;
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE';
+  parentItemId?: string | null;
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE' | 'SUBTOTAL';
   sortOrder: number;
   code?: string | null;
   brand?: string | null;
+  model?: string | null;
   description: string;
   quantity: number;
   unit: string;
@@ -35,6 +37,21 @@ export interface QuoteItemData {
   isManualPrice?: boolean;
   costPrice?: number | null;
   serviceMeta?: any;
+  subRows?: QuoteItemData[];
+}
+
+export interface PriceHistoryStats {
+  lastQuoted: { unitPrice: number; date: string } | null;
+  lastOrdered: { unitPrice: number; date: string } | null;
+  highest: { unitPrice: number; date: string } | null;
+  lowest: { unitPrice: number; date: string } | null;
+}
+
+export interface ColumnVisibility {
+  urun: boolean;
+  fiyat: boolean;
+  maliyet: boolean;
+  gecmis: boolean;
 }
 
 export interface QuoteItemRowProps {
@@ -44,6 +61,9 @@ export interface QuoteItemRowProps {
   canViewCosts: boolean;
   canOverrideKatsayi?: boolean;
   isDragging?: boolean;
+  columnVisibility: ColumnVisibility;
+  priceHistory?: PriceHistoryStats;
+  totalColCount: number;
   onUpdate: (updates: Partial<QuoteItemData>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -70,6 +90,29 @@ function formatNumber(value: number, decimals = 2): string {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value);
+}
+
+// ---------------------------------------------------------------------------
+// DeltaCell - shows % deviation with color coding
+// ---------------------------------------------------------------------------
+
+function DeltaCell({
+  currentPrice,
+  historicalPrice,
+}: {
+  currentPrice: number;
+  historicalPrice?: number;
+}) {
+  if (!historicalPrice || historicalPrice === 0) return <span className="text-accent-400">-</span>;
+  const delta = ((currentPrice - historicalPrice) / historicalPrice) * 100;
+  const color =
+    delta > 5 ? 'text-red-600' : delta < -5 ? 'text-green-600' : 'text-accent-500';
+  const sign = delta > 0 ? '+' : '';
+  return (
+    <span className={cn('font-medium', color)}>
+      {sign}{delta.toFixed(1)}%
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +249,9 @@ export function QuoteItemRow({
   canViewCosts,
   canOverrideKatsayi,
   isDragging = false,
+  columnVisibility,
+  priceHistory,
+  totalColCount,
   onUpdate,
   onDelete,
   onDuplicate,
@@ -228,10 +274,14 @@ export function QuoteItemRow({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    const menuWidth = 200;
+    const menuHeight = 200;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight);
+    setContextMenu({ x, y });
   };
 
-  // Margin helpers - convert Prisma Decimal values (strings) to numbers
+  // Margin helpers
   const unitPriceNum = Number(item.unitPrice) || 0;
   const discPct = Number(item.discountPct) || 0;
   const effectiveUnitPrice = unitPriceNum * (1 - discPct / 100);
@@ -241,10 +291,13 @@ export function QuoteItemRow({
       ? ((effectiveUnitPrice - costPriceNum) / effectiveUnitPrice) * 100
       : null;
   const isLowMargin = margin !== null && margin < 15;
+  const stickyBg = isLowMargin && canViewCosts ? 'bg-red-50' : 'bg-white';
+
+  // ColSpan for HEADER/NOTE rows (all columns except drag + delete)
+  const spanColCount = totalColCount - 2;
 
   // ---- HEADER row ----
   if (item.itemType === 'HEADER') {
-    const colSpan = canViewCosts ? 10 : 5;
     return (
       <>
         <tr
@@ -253,17 +306,13 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn(
-            'group',
-            isDragging && 'opacity-40',
-          )}
+          className={cn('group', isDragging && 'opacity-40')}
         >
-          {/* drag handle */}
           <td className="w-8 border border-accent-200 bg-[#F3F4F6] px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </td>
           <td
-            colSpan={colSpan}
+            colSpan={spanColCount}
             className="border border-accent-200 bg-[#F3F4F6] px-3 py-2 font-bold text-accent-800 text-sm"
           >
             <EditableCell
@@ -272,7 +321,6 @@ export function QuoteItemRow({
               className="font-bold"
             />
           </td>
-          {/* delete */}
           <td className="w-10 border border-accent-200 bg-[#F3F4F6] px-1 py-1.5 text-center">
             <button
               type="button"
@@ -300,7 +348,6 @@ export function QuoteItemRow({
 
   // ---- NOTE row ----
   if (item.itemType === 'NOTE') {
-    const colSpan = canViewCosts ? 10 : 5;
     return (
       <>
         <tr
@@ -309,16 +356,13 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn(
-            'group',
-            isDragging && 'opacity-40',
-          )}
+          className={cn('group', isDragging && 'opacity-40')}
         >
           <td className="w-8 border border-accent-200 bg-white px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </td>
           <td
-            colSpan={colSpan}
+            colSpan={spanColCount}
             className="border border-accent-200 bg-white px-3 py-2 text-sm italic text-accent-600"
           >
             <EditableCell
@@ -369,18 +413,39 @@ export function QuoteItemRow({
           isLowMargin && canViewCosts && 'bg-red-50',
         )}
       >
-        {/* Drag handle */}
-        <td className="w-8 border border-accent-200 px-1 py-1.5 text-center">
+        {/* Drag handle - sticky */}
+        <td className={cn('w-8 border border-accent-200 px-1 py-1.5 text-center sticky left-0 z-10', stickyBg)}>
           <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
         </td>
 
-        {/* POZ NO */}
-        <td className="border border-accent-200 px-2 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap">
+        {/* POZ NO - sticky */}
+        <td className={cn('border border-accent-200 px-2 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap sticky left-[33px] z-10', stickyBg)}>
           <span className="flex items-center justify-center gap-1">
             {isService && <Wrench className="h-3 w-3 text-accent-500" />}
             {pozNo ?? '-'}
           </span>
         </td>
+
+        {/* MARKA / MODEL / KOD */}
+        {columnVisibility.urun && (
+          <>
+            <td className="border border-accent-200 px-2 py-1.5 whitespace-nowrap text-xs text-accent-700 max-w-[100px] truncate" title={item.brand || undefined}>
+              {item.brand || '-'}
+            </td>
+            <td className="border border-accent-200 px-2 py-1.5 whitespace-nowrap text-xs text-accent-500 max-w-[100px] truncate" title={item.model || undefined}>
+              {item.model || '-'}
+            </td>
+            <td className="border border-accent-200 px-2 py-1.5 whitespace-nowrap max-w-[80px] truncate">
+              {item.code ? (
+                <code className="text-xs font-mono text-accent-600 bg-accent-50 px-1 rounded">
+                  {item.code}
+                </code>
+              ) : (
+                <span className="text-accent-400">-</span>
+              )}
+            </td>
+          </>
+        )}
 
         {/* ACIKLAMA */}
         <td className="border border-accent-200 px-2 py-1.5 max-w-[300px]">
@@ -401,9 +466,6 @@ export function QuoteItemRow({
               </button>
             )}
           </div>
-          {item.code && (
-            <span className="text-xs text-accent-500">{item.code}</span>
-          )}
         </td>
 
         {/* MIKTAR */}
@@ -422,10 +484,9 @@ export function QuoteItemRow({
           <span className="ml-1 text-xs text-accent-500">{item.unit}</span>
         </td>
 
-        {/* Cost columns – only for canViewCosts */}
-        {canViewCosts && (
+        {/* KATSAYI + LISTE FIYATI (canViewCosts + fiyat group) */}
+        {canViewCosts && columnVisibility.fiyat && (
           <>
-            {/* KATSAYI */}
             <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
               <EditableCell
                 value={Number(item.katsayi)}
@@ -441,18 +502,54 @@ export function QuoteItemRow({
                 className="text-right"
               />
             </td>
-
-            {/* LISTE FIYATI */}
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
               {formatPrice(Number(item.listPrice), currency)}
             </td>
+          </>
+        )}
 
-            {/* MALIYET */}
+        {/* BIRIM FIYAT */}
+        {columnVisibility.fiyat && (
+          <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
+            <EditableCell
+              value={Number(item.unitPrice)}
+              type="number"
+              readOnly={!item.isManualPrice}
+              onChange={(v) => {
+                const up = Number(v);
+                const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
+                onUpdate({ unitPrice: up, totalPrice: total });
+              }}
+              displayValue={formatPrice(Number(item.unitPrice), currency)}
+              className="text-right"
+            />
+          </td>
+        )}
+
+        {/* TOPLAM FIYAT */}
+        {columnVisibility.fiyat && (
+          <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
+            {discPct > 0 ? (
+              <div className="flex flex-col items-end">
+                <span className="text-xs text-accent-400 line-through">
+                  {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
+                </span>
+                <span className="text-green-700">
+                  {formatPrice(Number(item.totalPrice), currency)}
+                </span>
+              </div>
+            ) : (
+              formatPrice(Number(item.totalPrice), currency)
+            )}
+          </td>
+        )}
+
+        {/* MALIYET / KAR / KAR % */}
+        {canViewCosts && columnVisibility.maliyet && (
+          <>
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
               {item.costPrice != null ? formatPrice(Number(item.costPrice), currency) : '-'}
             </td>
-
-            {/* KAR */}
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
               <span className={cn(isLowMargin && 'text-red-600 font-medium')}>
                 {item.costPrice != null
@@ -460,8 +557,6 @@ export function QuoteItemRow({
                   : '-'}
               </span>
             </td>
-
-            {/* KAR % */}
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
               <span className={cn(isLowMargin && 'text-red-600 font-medium')}>
                 {margin !== null ? `%${formatNumber(margin, 1)}` : '-'}
@@ -470,37 +565,60 @@ export function QuoteItemRow({
           </>
         )}
 
-        {/* BIRIM FIYAT */}
-        <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
-          <EditableCell
-            value={Number(item.unitPrice)}
-            type="number"
-            readOnly={!item.isManualPrice}
-            onChange={(v) => {
-              const up = Number(v);
-              const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
-              onUpdate({ unitPrice: up, totalPrice: total });
-            }}
-            displayValue={formatPrice(Number(item.unitPrice), currency)}
-            className="text-right"
-          />
+        {/* PARA BIRIMI */}
+        <td className="border border-accent-200 px-1 py-1.5 text-center text-xs text-accent-500 whitespace-nowrap">
+          {currency}
         </td>
 
-        {/* TOPLAM FIYAT */}
-        <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
-          {discPct > 0 ? (
-            <div className="flex flex-col items-end">
-              <span className="text-xs text-accent-400 line-through">
-                {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
-              </span>
-              <span className="text-green-700">
-                {formatPrice(Number(item.totalPrice), currency)}
-              </span>
-            </div>
-          ) : (
-            formatPrice(Number(item.totalPrice), currency)
-          )}
-        </td>
+        {/* PRICE HISTORY: Son Teklif + Δ% | Sipariş + Δ% | En Yüksek + Δ% | En Düşük + Δ% */}
+        {canViewCosts && columnVisibility.gecmis && (
+          <>
+            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-xs text-accent-700">
+              {priceHistory?.lastQuoted
+                ? formatPrice(priceHistory.lastQuoted.unitPrice, currency)
+                : '-'}
+            </td>
+            <td className="border border-accent-200 px-1 py-1.5 text-right tabular-nums whitespace-nowrap text-xs">
+              <DeltaCell
+                currentPrice={unitPriceNum}
+                historicalPrice={priceHistory?.lastQuoted?.unitPrice}
+              />
+            </td>
+            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-xs text-accent-700">
+              {priceHistory?.lastOrdered
+                ? formatPrice(priceHistory.lastOrdered.unitPrice, currency)
+                : '-'}
+            </td>
+            <td className="border border-accent-200 px-1 py-1.5 text-right tabular-nums whitespace-nowrap text-xs">
+              <DeltaCell
+                currentPrice={unitPriceNum}
+                historicalPrice={priceHistory?.lastOrdered?.unitPrice}
+              />
+            </td>
+            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-xs text-accent-700">
+              {priceHistory?.highest
+                ? formatPrice(priceHistory.highest.unitPrice, currency)
+                : '-'}
+            </td>
+            <td className="border border-accent-200 px-1 py-1.5 text-right tabular-nums whitespace-nowrap text-xs">
+              <DeltaCell
+                currentPrice={unitPriceNum}
+                historicalPrice={priceHistory?.highest?.unitPrice}
+              />
+            </td>
+            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-xs text-accent-700">
+              {priceHistory?.lowest
+                ? formatPrice(priceHistory.lowest.unitPrice, currency)
+                : '-'}
+            </td>
+            <td className="border border-accent-200 px-1 py-1.5 text-right tabular-nums whitespace-nowrap text-xs">
+              <DeltaCell
+                currentPrice={unitPriceNum}
+                historicalPrice={priceHistory?.lowest?.unitPrice}
+              />
+            </td>
+          </>
+        )}
 
         {/* Delete */}
         <td className="w-10 border border-accent-200 px-1 py-1.5 text-center">
@@ -530,7 +648,7 @@ export function QuoteItemRow({
 }
 
 // ---------------------------------------------------------------------------
-// Context menu portal-like overlay (rendered via React portal-style fixed div)
+// Context menu portal-like overlay
 // ---------------------------------------------------------------------------
 
 interface ContextMenuOverlayProps {
