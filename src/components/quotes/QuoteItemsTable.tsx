@@ -227,14 +227,17 @@ export function QuoteItemsTable({
   }, []);
 
   // Build POZ NO mapping: sequential numbering only for PRODUCT / CUSTOM / SERVICE
+  // Excludes SUBTOTAL items and child items (parentItemId)
   // Always uses full items array for consistent numbering
   const pozMap = useMemo(() => {
     const map = new Map<string, number>();
     let counter = 1;
     for (const item of items) {
       if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SERVICE') {
-        map.set(item.id, counter);
-        counter++;
+        if (!item.parentItemId) {
+          map.set(item.id, counter);
+          counter++;
+        }
       }
     }
     return map;
@@ -259,6 +262,29 @@ export function QuoteItemsTable({
     return count;
   }, [columnVisibility, canViewCosts]);
 
+  // Compute section subtotal values for each SUBTOTAL row
+  const subtotalMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let sectionSum = 0;
+
+    for (const item of items) {
+      if (item.itemType === 'SUBTOTAL') {
+        map.set(item.id, sectionSum);
+        sectionSum = 0; // reset for next section
+      } else if (
+        item.itemType === 'PRODUCT' ||
+        item.itemType === 'CUSTOM' ||
+        (item.itemType === 'SERVICE' && !item.parentItemId)
+      ) {
+        const qty = Number(item.quantity) || 0;
+        const up = Number(item.unitPrice) || 0;
+        const disc = Number(item.discountPct) || 0;
+        sectionSum += qty * up * (1 - disc / 100);
+      }
+    }
+    return map;
+  }, [items]);
+
   // Label span for summary rows (all cols except Toplam Fiyat + delete)
   const labelSpan = totalColCount - 2;
 
@@ -268,13 +294,43 @@ export function QuoteItemsTable({
     let totalCost = 0;
     let totalVat = 0;
 
+    const hasSubtotals = items.some((item) => item.itemType === 'SUBTOTAL');
+
+    if (hasSubtotals) {
+      // Sum all section subtotals
+      for (const [, value] of subtotalMap) {
+        araTotal += value;
+      }
+      // Add any trailing items after the last SUBTOTAL
+      let lastSubtotalIdx = -1;
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i].itemType === 'SUBTOTAL') { lastSubtotalIdx = i; break; }
+      }
+      if (lastSubtotalIdx < items.length - 1) {
+        for (let i = lastSubtotalIdx + 1; i < items.length; i++) {
+          const item = items[i];
+          if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+          if (item.parentItemId) continue;
+          araTotal += Number(item.quantity) * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
+        }
+      }
+    } else {
+      // Original logic: sum all priced items
+      for (const item of items) {
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+        if (item.parentItemId) continue;
+        const qty = Number(item.quantity) || 0;
+        const up = Number(item.unitPrice) || 0;
+        const disc = Number(item.discountPct) || 0;
+        araTotal += qty * up * (1 - disc / 100);
+      }
+    }
+
+    // Cost calculation – exclude SUBTOTAL and parentItemId items
     for (const item of items) {
-      if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
+      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+      if (item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
-      const up = Number(item.unitPrice) || 0;
-      const disc = Number(item.discountPct) || 0;
-      const itemBeforeVat = qty * up * (1 - disc / 100);
-      araTotal += itemBeforeVat;
       if (item.costPrice != null) {
         totalCost += Number(item.costPrice) * qty;
       }
@@ -283,8 +339,10 @@ export function QuoteItemsTable({
     const discountAmount = araTotal * (discountPct / 100);
     const afterDiscount = araTotal - discountAmount;
 
+    // VAT calculation – exclude SUBTOTAL and parentItemId items
     for (const item of items) {
-      if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
+      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+      if (item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
       const up = Number(item.unitPrice) || 0;
       const disc = Number(item.discountPct) || 0;
@@ -307,7 +365,7 @@ export function QuoteItemsTable({
       totalProfit,
       profitMargin,
     };
-  }, [items, discountPct]);
+  }, [items, discountPct, subtotalMap]);
 
   // Drag handlers
   const handleDragStart = useCallback(
@@ -671,6 +729,7 @@ export function QuoteItemsTable({
                   columnVisibility={columnVisibility}
                   priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
                   totalColCount={totalColCount}
+                  subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id) : undefined}
                   onUpdate={(updates) => onItemUpdate(item.id, updates)}
                   onDelete={() => onItemDelete(item.id)}
                   onDuplicate={() => onItemDuplicate(item.id)}

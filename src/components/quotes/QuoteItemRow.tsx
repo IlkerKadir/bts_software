@@ -64,6 +64,7 @@ export interface QuoteItemRowProps {
   columnVisibility: ColumnVisibility;
   priceHistory?: PriceHistoryStats;
   totalColCount: number;
+  subtotalValue?: number;
   onUpdate: (updates: Partial<QuoteItemData>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -252,6 +253,7 @@ export function QuoteItemRow({
   columnVisibility,
   priceHistory,
   totalColCount,
+  subtotalValue,
   onUpdate,
   onDelete,
   onDuplicate,
@@ -390,6 +392,56 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+          />
+        )}
+      </>
+    );
+  }
+
+  // ---- SUBTOTAL row ----
+  if (item.itemType === 'SUBTOTAL') {
+    return (
+      <>
+        <tr
+          draggable
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          onContextMenu={handleContextMenu}
+          className={cn('group', isDragging && 'opacity-40')}
+        >
+          <td className="w-8 border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
+            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </td>
+          <td
+            colSpan={columnVisibility.fiyat ? totalColCount - 3 : totalColCount - 2}
+            className="border border-accent-200 bg-accent-100 px-3 py-2 text-right font-bold text-accent-800 text-sm"
+          >
+            Ara Toplam
+          </td>
+          {columnVisibility.fiyat && (
+            <td className="border border-accent-200 bg-accent-100 px-2 py-2 text-right tabular-nums font-bold text-accent-900 whitespace-nowrap">
+              {formatPrice(subtotalValue ?? 0, currency)}
+            </td>
+          )}
+          <td className="w-10 border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
+            <button
+              type="button"
+              onClick={onDelete}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700"
+              title="Sil"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </td>
+        </tr>
+        {contextMenu && (
+          <ContextMenuOverlay
+            x={contextMenu.x}
+            y={contextMenu.y}
+            menuRef={menuRef}
+            onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
+            onDelete={() => { onDelete(); setContextMenu(null); }}
           />
         )}
       </>
