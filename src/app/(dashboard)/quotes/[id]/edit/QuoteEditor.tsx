@@ -6,7 +6,7 @@ import { Spinner } from '@/components/ui';
 import { QuoteEditorHeader } from '@/components/quotes/QuoteEditorHeader';
 import { QuoteItemsTable } from '@/components/quotes/QuoteItemsTable';
 import { ProductCatalogPanel } from '@/components/quotes/ProductCatalogPanel';
-import { ServiceCostSection } from '@/components/quotes/ServiceCostSection';
+import { ServiceCostCalculator } from '@/components/quotes/ServiceCostCalculator';
 import { CommercialTermsSection, type CommercialTermsSectionHandle } from '@/components/quotes/CommercialTermsSection';
 import type { QuoteItemData, PriceHistoryStats } from '@/components/quotes/QuoteItemRow';
 import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
@@ -107,6 +107,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [serviceCalculatorOpen, setServiceCalculatorOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Header fields tracked for change detection
@@ -247,16 +248,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     ? quote.status === 'TASLAK' || quote.status === 'REVIZYON'
     : false;
 
-  const serviceItems = items
-    .filter((item) => item.itemType === 'SERVICE')
-    .map((item) => ({
-      id: item.id,
-      description: item.description,
-      totalPrice: item.totalPrice,
-      serviceMeta: item.serviceMeta,
-    }));
-
-  const nonServiceItems = items.filter((item) => item.itemType !== 'SERVICE');
+  // All items go into the unified table (no service split)
+  const topLevelItems = items.filter((item) => !item.parentItemId);
 
   // ── Save handler ───────────────────────────────────────────────────────────
 
@@ -778,6 +771,57 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     }
   }, [quoteId, items.length]);
 
+  // ── Add subtotal row ────────────────────────────────────────────────────
+
+  const handleAddSubtotal = useCallback(async () => {
+    const tempId = crypto.randomUUID();
+    const newItem: QuoteItemData = {
+      id: tempId,
+      itemType: 'SUBTOTAL',
+      sortOrder: items.length + 1,
+      description: 'Ara Toplam',
+      quantity: 0,
+      unit: 'Adet',
+      listPrice: 0,
+      katsayi: 1,
+      unitPrice: 0,
+      discountPct: 0,
+      vatRate: 0,
+      totalPrice: 0,
+    };
+
+    setItems((prev) => [...prev, newItem]);
+
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: 'SUBTOTAL',
+          description: 'Ara Toplam',
+          quantity: 0,
+          unit: 'Adet',
+          listPrice: 0,
+          katsayi: 1,
+          discountPct: 0,
+          vatRate: 0,
+          sortOrder: newItem.sortOrder,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId ? mapApiItemToLocal(data.item) : item
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Add subtotal error:', err);
+    }
+  }, [quoteId, items.length]);
+
   // ── Price history ─────────────────────────────────────────────────────────
 
   // ── Batch price history for inline columns ──────────────────────────────
@@ -986,7 +1030,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
       {/* Items table */}
       <QuoteItemsTable
-        items={nonServiceItems}
+        items={topLevelItems}
+        allItems={items}
         currency={headerFields.currency}
         discountPct={headerFields.discountPct}
         canViewCosts={user.role.canViewCosts}
@@ -1001,6 +1046,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddHeader={handleAddHeader}
         onAddNote={handleAddNote}
         onAddCustomItem={handleAddCustomItem}
+        onAddSubtotal={handleAddSubtotal}
+        onAddService={() => setServiceCalculatorOpen(true)}
         onShowPriceHistory={handleShowPriceHistory}
       />
 
@@ -1035,15 +1082,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         </div>
       )}
 
-      {/* Service cost section (collapsible) */}
-      <ServiceCostSection
-        quoteId={quoteId}
-        serviceItems={serviceItems}
-        currency={headerFields.currency}
-        onServiceAdded={handleServiceAdded}
-        onServiceDeleted={handleServiceDeleted}
-      />
-
       {/* Commercial terms section (collapsible) */}
       <CommercialTermsSection
         ref={commercialTermsRef}
@@ -1065,6 +1103,23 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         quoteLanguage={headerFields.language}
         onAddProduct={handleAddProduct}
       />
+
+      {/* Service cost calculator modal */}
+      {serviceCalculatorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setServiceCalculatorOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
+            <ServiceCostCalculator
+              quoteId={quoteId}
+              onServiceAdded={(item) => {
+                handleServiceAdded(item);
+                setServiceCalculatorOpen(false);
+              }}
+              onClose={() => setServiceCalculatorOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
