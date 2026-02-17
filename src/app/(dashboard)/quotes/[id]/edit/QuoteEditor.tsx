@@ -252,7 +252,15 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     : false;
 
   // All items go into the unified table (no service split)
-  const topLevelItems = items.filter((item) => !item.parentItemId);
+  // Build parent-child relationships from the flat items list so sub-rows
+  // always appear under their parent, even when created sequentially.
+  const topLevelItems = useMemo(() => {
+    const top = items.filter((item) => !item.parentItemId);
+    return top.map((item) => {
+      const children = items.filter((sub) => sub.parentItemId === item.id);
+      return children.length > 0 ? { ...item, subRows: children } : item;
+    });
+  }, [items]);
 
   // ── Save handler ───────────────────────────────────────────────────────────
 
