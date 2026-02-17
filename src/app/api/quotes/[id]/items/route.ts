@@ -38,6 +38,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             category: true,
           },
         },
+        subRows: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
@@ -88,14 +91,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Calculate prices using tested calculation module
     const { listPrice, katsayi, quantity, discountPct, vatRate } = data;
     const isManualPrice = body.isManualPrice === true;
+    const isSubtotal = data.itemType === 'SUBTOTAL';
+    const isNonPriced = data.itemType === 'HEADER' || data.itemType === 'NOTE' || isSubtotal;
 
+    // For non-priced items (HEADER, NOTE, SUBTOTAL), zero out prices
     // For manual price items (CUSTOM), use provided unitPrice; otherwise calculate
-    const unitPrice = isManualPrice && body.unitPrice != null
-      ? Number(body.unitPrice)
-      : calculateUnitPrice(listPrice, katsayi);
-    const totalPrice = isManualPrice && body.totalPrice != null
-      ? Number(body.totalPrice)
-      : calculateItemTotal({ quantity, unitPrice, discountPct });
+    const unitPrice = isNonPriced ? 0
+      : isManualPrice && body.unitPrice != null
+        ? Number(body.unitPrice)
+        : calculateUnitPrice(listPrice, katsayi);
+    const totalPrice = isNonPriced ? 0
+      : isManualPrice && body.totalPrice != null
+        ? Number(body.totalPrice)
+        : calculateItemTotal({ quantity, unitPrice, discountPct });
 
     const item = await db.quoteItem.create({
       data: {
@@ -105,6 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         sortOrder: body.sortOrder ?? nextSortOrder,
         code: data.code || null,
         brand: data.brand || null,
+        model: data.model || null,
         description: data.description,
         quantity,
         unit: data.unit,
@@ -116,6 +125,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         totalPrice,
         isManualPrice,
         notes: data.notes || null,
+        parentItemId: data.parentItemId || null,
       },
       include: {
         product: {
@@ -124,6 +134,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             category: true,
           },
         },
+        subRows: true,
       },
     });
 
@@ -187,6 +198,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             sortOrder: item.sortOrder,
             code: item.code || null,
             brand: item.brand || null,
+            model: item.model || null,
             description: item.description,
             quantity,
             unit: item.unit,
@@ -198,6 +210,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             totalPrice,
             isManualPrice,
             notes: item.notes || null,
+            parentItemId: item.parentItemId || null,
           },
         });
       }
@@ -216,6 +229,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             brand: true,
             category: true,
           },
+        },
+        subRows: {
+          orderBy: { sortOrder: 'asc' },
         },
       },
     });
