@@ -16,6 +16,7 @@ import {
   type ColumnVisibility,
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
+import { SectionTemplateDropdown, type SectionTemplate } from './SectionTemplateDropdown';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -38,6 +39,7 @@ export interface QuoteItemsTableProps {
   onAddCustomItem?: () => void;
   onAddSubtotal?: () => void;
   onAddService?: () => void;
+  onAddSectionTemplate?: (template: SectionTemplate) => void;
   onShowPriceHistory?: (productId: string) => void;
   canOverrideKatsayi?: boolean;
   priceHistoryBatch?: Record<string, PriceHistoryStats>;
@@ -95,6 +97,7 @@ export function QuoteItemsTable({
   onAddCustomItem,
   onAddSubtotal,
   onAddService,
+  onAddSectionTemplate,
   onShowPriceHistory,
   canOverrideKatsayi,
   priceHistoryBatch,
@@ -445,6 +448,9 @@ export function QuoteItemsTable({
             <Wrench className="h-4 w-4" />
             Hizmet Ekle
           </Button>
+        )}
+        {onAddSectionTemplate && (
+          <SectionTemplateDropdown onSelect={onAddSectionTemplate} />
         )}
 
         {/* Column group toggles */}

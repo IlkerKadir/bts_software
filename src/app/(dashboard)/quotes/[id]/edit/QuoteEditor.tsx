@@ -10,6 +10,7 @@ import { ServiceCostCalculator } from '@/components/quotes/ServiceCostCalculator
 import { CommercialTermsSection, type CommercialTermsSectionHandle } from '@/components/quotes/CommercialTermsSection';
 import type { QuoteItemData, PriceHistoryStats } from '@/components/quotes/QuoteItemRow';
 import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
+import type { SectionTemplate } from '@/components/quotes/SectionTemplateDropdown';
 import { PriceHistory } from './PriceHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
@@ -822,6 +823,129 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     }
   }, [quoteId, items.length]);
 
+  // ── Add section template ──────────────────────────────────────────────────
+
+  const handleAddSectionTemplate = useCallback(async (template: SectionTemplate) => {
+    const baseOrder = items.length + 1;
+
+    const createItem = async (data: any) => {
+      const res = await fetch(`/api/quotes/${quoteId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        return mapApiItemToLocal(result.item);
+      }
+      return null;
+    };
+
+    const newItems: QuoteItemData[] = [];
+
+    switch (template) {
+      case 'MUHENDISLIK_SET': {
+        const header = await createItem({
+          itemType: 'HEADER', description: 'Montaj S\u00FCperviz\u00F6rl\u00FC\u011F\u00FC, M\u00FChendislik, Test ve Devreye Alma \u00C7al\u0131\u015Fmalar\u0131',
+          quantity: 0, unit: 'Adet', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0, sortOrder: baseOrder,
+        });
+        if (header) newItems.push(header);
+        const parent = await createItem({
+          itemType: 'SERVICE', description: 'Montaj S\u00FCperviz\u00F6rl\u00FC\u011F\u00FC, M\u00FChendislik, Test ve Devreye Alma \u00C7al\u0131\u015Fmalar\u0131',
+          quantity: 1, unit: 'Set', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 20,
+          isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 1,
+        });
+        if (parent) {
+          newItems.push(parent);
+          const sub1 = await createItem({
+            itemType: 'SERVICE', parentItemId: parent.id,
+            description: 'S\u00FCpervizyon Hizmeti', quantity: 1, unit: 'Ki\u015Fi/G\u00FCn',
+            listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0,
+            isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 2,
+          });
+          if (sub1) newItems.push(sub1);
+          const sub2 = await createItem({
+            itemType: 'SERVICE', parentItemId: parent.id,
+            description: 'Test ve Devreye Alma Hizmeti', quantity: 1, unit: 'Ki\u015Fi/G\u00FCn',
+            listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0,
+            isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 3,
+          });
+          if (sub2) newItems.push(sub2);
+        }
+        break;
+      }
+      case 'MUHENDISLIK_KISI_GUN': {
+        const header = await createItem({
+          itemType: 'HEADER', description: 'Montaj S\u00FCperviz\u00F6rl\u00FC\u011F\u00FC, M\u00FChendislik, Test ve Devreye Alma \u00C7al\u0131\u015Fmalar\u0131',
+          quantity: 0, unit: 'Adet', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0, sortOrder: baseOrder,
+        });
+        if (header) newItems.push(header);
+        const svc1 = await createItem({
+          itemType: 'SERVICE', description: 'S\u00FCpervizyon Hizmeti',
+          quantity: 1, unit: 'Ki\u015Fi/G\u00FCn', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 20,
+          isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 1,
+        });
+        if (svc1) newItems.push(svc1);
+        const svc2 = await createItem({
+          itemType: 'SERVICE', description: 'Test ve Devreye Alma Hizmeti',
+          quantity: 1, unit: 'Ki\u015Fi/G\u00FCn', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 20,
+          isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 2,
+        });
+        if (svc2) newItems.push(svc2);
+        break;
+      }
+      case 'MONTAJ_PER_ITEM': {
+        const header = await createItem({
+          itemType: 'HEADER', description: 'Montaj ve \u0130\u015F\u00E7ilik',
+          quantity: 0, unit: 'Adet', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0, sortOrder: baseOrder,
+        });
+        if (header) newItems.push(header);
+        break;
+      }
+      case 'MONTAJ_TEMINI_VE_MONTAJI': {
+        const header = await createItem({
+          itemType: 'HEADER', description: 'Montaj ve \u0130\u015F\u00E7ilik (Temini ve Montaj\u0131)',
+          quantity: 0, unit: 'Adet', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0, sortOrder: baseOrder,
+        });
+        if (header) newItems.push(header);
+        break;
+      }
+      case 'GRAFIK_IZLEME': {
+        const header = await createItem({
+          itemType: 'HEADER', description: 'Grafik \u0130zleme Yaz\u0131l\u0131m \u00C7al\u0131\u015Fmalar\u0131',
+          quantity: 0, unit: 'Adet', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0, sortOrder: baseOrder,
+        });
+        if (header) newItems.push(header);
+        const parent = await createItem({
+          itemType: 'SERVICE', description: 'Grafik \u0130zleme Yaz\u0131l\u0131m \u00C7al\u0131\u015Fmalar\u0131',
+          quantity: 1, unit: 'Set', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 20,
+          isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 1,
+        });
+        if (parent) {
+          newItems.push(parent);
+          const sub = await createItem({
+            itemType: 'SERVICE', parentItemId: parent.id,
+            description: 'Test ve Devreye Alma Hizmeti (Ofis)', quantity: 1, unit: 'Ki\u015Fi/G\u00FCn',
+            listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0,
+            isManualPrice: true, unitPrice: 0, totalPrice: 0, sortOrder: baseOrder + 2,
+          });
+          if (sub) newItems.push(sub);
+        }
+        const note = await createItem({
+          itemType: 'NOTE',
+          description: '\u00C7al\u0131\u015Fma yap\u0131lmas\u0131 i\u00E7in mimari projelerde mahal bilgilerinin tamam\u0131 sa\u011Flanm\u0131\u015F olmal\u0131, zone bilgisinin harita \u00FCzerinde i\u015Faretli olarak iletilmesi, zone isimleri iletilmesi gereklidir.',
+          quantity: 0, unit: 'Adet', listPrice: 0, katsayi: 1, discountPct: 0, vatRate: 0, sortOrder: baseOrder + 3,
+        });
+        if (note) newItems.push(note);
+        break;
+      }
+    }
+
+    if (newItems.length > 0) {
+      setItems((prev) => [...prev, ...newItems]);
+    }
+  }, [quoteId, items.length]);
+
   // ── Price history ─────────────────────────────────────────────────────────
 
   // ── Batch price history for inline columns ──────────────────────────────
@@ -1048,6 +1172,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddCustomItem={handleAddCustomItem}
         onAddSubtotal={handleAddSubtotal}
         onAddService={() => setServiceCalculatorOpen(true)}
+        onAddSectionTemplate={handleAddSectionTemplate}
         onShowPriceHistory={handleShowPriceHistory}
       />
 
