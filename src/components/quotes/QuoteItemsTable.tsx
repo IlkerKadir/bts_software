@@ -41,6 +41,7 @@ export interface QuoteItemsTableProps {
   onAddService?: () => void;
   onAddSectionTemplate?: (template: SectionTemplate) => void;
   onShowPriceHistory?: (productId: string) => void;
+  onOpenDigerMaliyet?: () => void;
   canOverrideKatsayi?: boolean;
   priceHistoryBatch?: Record<string, PriceHistoryStats>;
 }
@@ -99,6 +100,7 @@ export function QuoteItemsTable({
   onAddService,
   onAddSectionTemplate,
   onShowPriceHistory,
+  onOpenDigerMaliyet,
   canOverrideKatsayi,
   priceHistoryBatch,
 }: QuoteItemsTableProps) {
@@ -451,6 +453,12 @@ export function QuoteItemsTable({
         )}
         {onAddSectionTemplate && (
           <SectionTemplateDropdown onSelect={onAddSectionTemplate} />
+        )}
+        {onOpenDigerMaliyet && items.some((i) => i.itemType === 'CUSTOM') && (
+          <Button variant="secondary" size="sm" onClick={onOpenDigerMaliyet}>
+            <Calculator className="h-4 w-4" />
+            Diger Maliyet
+          </Button>
         )}
 
         {/* Column group toggles */}

@@ -7,6 +7,7 @@ import { QuoteEditorHeader } from '@/components/quotes/QuoteEditorHeader';
 import { QuoteItemsTable } from '@/components/quotes/QuoteItemsTable';
 import { ProductCatalogPanel } from '@/components/quotes/ProductCatalogPanel';
 import { ServiceCostCalculator } from '@/components/quotes/ServiceCostCalculator';
+import { DigerMaliyetModal } from '@/components/quotes/DigerMaliyetModal';
 import { CommercialTermsSection, type CommercialTermsSectionHandle } from '@/components/quotes/CommercialTermsSection';
 import type { QuoteItemData, PriceHistoryStats } from '@/components/quotes/QuoteItemRow';
 import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
@@ -109,6 +110,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const [hasChanges, setHasChanges] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [serviceCalculatorOpen, setServiceCalculatorOpen] = useState(false);
+  const [digerMaliyetOpen, setDigerMaliyetOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Header fields tracked for change detection
@@ -1059,6 +1061,23 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     setItems((prev) => prev.filter((item) => item.id !== itemId));
   }, []);
 
+  // ── Diger maliyet (other costs) distribution ──────────────────────────────
+
+  const handleDigerMaliyetApply = useCallback(
+    (updates: { itemId: string; costPrice: number }[]) => {
+      setItems((prev) =>
+        prev.map((item) => {
+          const update = updates.find((u) => u.itemId === item.id);
+          if (update) return { ...item, costPrice: update.costPrice };
+          return item;
+        }),
+      );
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+    },
+    [],
+  );
+
   // ── Render: Loading ────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -1175,6 +1194,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddService={() => setServiceCalculatorOpen(true)}
         onAddSectionTemplate={handleAddSectionTemplate}
         onShowPriceHistory={handleShowPriceHistory}
+        onOpenDigerMaliyet={() => setDigerMaliyetOpen(true)}
       />
 
       {/* Price History Slide-over */}
@@ -1246,6 +1266,17 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           </div>
         </div>
       )}
+
+      {/* Diger maliyet distribution modal */}
+      <DigerMaliyetModal
+        isOpen={digerMaliyetOpen}
+        onClose={() => setDigerMaliyetOpen(false)}
+        items={items}
+        currency={headerFields.currency}
+        exchangeRate={headerFields.exchangeRate}
+        korumaYuzdesi={headerFields.protectionPct}
+        onApply={handleDigerMaliyetApply}
+      />
     </div>
   );
 }
