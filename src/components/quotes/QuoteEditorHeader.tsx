@@ -9,6 +9,7 @@ import {
   Save,
   SendHorizonal,
   FileDown,
+  Eye,
   TrendingUp,
   ShieldCheck,
   Clock,
@@ -17,6 +18,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Input, Select, Card, Badge } from '@/components/ui';
+import { ExchangeRateModal } from './ExchangeRateModal';
+import { PdfPreviewModal } from './PdfPreviewModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,7 @@ interface ProjectOption {
 }
 
 export interface QuoteEditorHeaderProps {
+  quoteId: string;
   quoteNumber: string;
   status: string;
   companyName: string;
@@ -89,6 +93,7 @@ const currencyOptions = [
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function QuoteEditorHeader({
+  quoteId,
   quoteNumber,
   status,
   companyName,
@@ -122,6 +127,12 @@ export function QuoteEditorHeader({
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Exchange rate modal state
+  const [showExchangeRateModal, setShowExchangeRateModal] = useState(false);
+
+  // PDF preview modal state
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -308,49 +319,48 @@ export function QuoteEditorHeader({
 
       {/* ── Row 2: Controls ─────────────────────────────────────────────── */}
       <div className="px-5 py-3 flex flex-wrap items-end gap-x-5 gap-y-3">
-        {/* Currency + Exchange Rate */}
-        <div className="flex items-end gap-2">
-          <div className="w-40">
-            <Select
-              label="Döviz"
-              value={currency}
-              onChange={(e) => onCurrencyChange(e.target.value)}
-              options={currencyOptions}
-              disabled={!isEditable}
-            />
-          </div>
-
-          <div className="flex items-end gap-1.5">
-            <div className="w-24">
-              <Input
-                label="Kur"
-                type="number"
-                step="0.0001"
-                min={0}
-                value={exchangeRate}
-                onChange={(e) => onExchangeRateChange(parseFloat(e.target.value) || 0)}
-                disabled={!isEditable}
-              />
-            </div>
-            <TrendingUp className="mb-2.5 h-4 w-4 text-primary-400 shrink-0" />
-          </div>
+        {/* Currency */}
+        <div className="w-40">
+          <Select
+            label="Döviz"
+            value={currency}
+            onChange={(e) => onCurrencyChange(e.target.value)}
+            options={currencyOptions}
+            disabled={!isEditable}
+          />
         </div>
 
-        {/* Protection % */}
-        <div className="flex items-end gap-1.5">
-          <div className="w-20">
-            <Input
-              label="Koruma %"
-              type="number"
-              step="0.1"
-              min={0}
-              max={100}
-              value={protectionPct}
-              onChange={(e) => onProtectionPctChange(parseFloat(e.target.value) || 0)}
-              disabled={!isEditable}
-            />
-          </div>
-          <ShieldCheck className="mb-2.5 h-4 w-4 text-primary-400 shrink-0" />
+        {/* Exchange Rate + Protection – opens modal */}
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-primary-700 mb-1.5">Kur</span>
+          <button
+            type="button"
+            onClick={() => isEditable && setShowExchangeRateModal(true)}
+            disabled={!isEditable}
+            className={cn(
+              'flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm transition-all',
+              isEditable
+                ? 'border-accent-300 bg-accent-50 hover:border-accent-500 hover:bg-accent-100 hover:shadow-sm cursor-pointer'
+                : 'border-primary-200 bg-primary-50 cursor-not-allowed opacity-70'
+            )}
+          >
+            <TrendingUp className="h-4 w-4 text-accent-600" />
+            <span className="font-mono tabular-nums font-semibold text-primary-900">
+              {exchangeRate.toLocaleString('tr-TR', {
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 4,
+              })}
+            </span>
+            {protectionPct > 0 && (
+              <span className="flex items-center gap-0.5 text-xs text-white bg-accent-600 px-1.5 py-0.5 rounded">
+                <ShieldCheck className="h-3 w-3" />
+                %{protectionPct}
+              </span>
+            )}
+            {isEditable && (
+              <ChevronDown className="h-3.5 w-3.5 text-accent-400 ml-1" />
+            )}
+          </button>
         </div>
 
         {/* Language Toggle */}
@@ -410,6 +420,11 @@ export function QuoteEditorHeader({
 
         {/* Actions */}
         <div className="flex items-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setShowPdfPreview(true)} title="Ön İzleme">
+            <Eye className="h-4 w-4" />
+            <span className="hidden lg:inline">Ön İzleme</span>
+          </Button>
+
           {onExport && (
             <Button variant="ghost" size="sm" onClick={onExport} title="Dışa Aktar">
               <FileDown className="h-4 w-4" />
@@ -442,6 +457,26 @@ export function QuoteEditorHeader({
           )}
         </div>
       </div>
+
+      {/* Exchange Rate Modal */}
+      <ExchangeRateModal
+        isOpen={showExchangeRateModal}
+        onClose={() => setShowExchangeRateModal(false)}
+        currency={currency}
+        currentRate={exchangeRate}
+        currentProtectionPct={protectionPct}
+        onApply={(newRate, newProtectionPct) => {
+          onExchangeRateChange(newRate);
+          onProtectionPctChange(newProtectionPct);
+        }}
+      />
+
+      {/* PDF Preview Modal */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        quoteId={quoteId}
+      />
     </Card>
   );
 }

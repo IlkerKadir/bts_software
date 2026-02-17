@@ -1121,6 +1121,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
       {/* Header */}
       <QuoteEditorHeader
+        quoteId={quote.id}
         quoteNumber={quote.quoteNumber}
         status={quote.status}
         companyName={quote.company.name}
