@@ -14,7 +14,7 @@ export const quoteStatusEnum = z.enum([
 
 export const currencyEnum = z.enum(['EUR', 'USD', 'GBP', 'TRY']);
 
-export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SERVICE']);
+export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SERVICE', 'SUBTOTAL']);
 
 export const quoteQuerySchema = z.object({
   search: z.string().optional(),
@@ -38,8 +38,10 @@ export const createQuoteSchema = z.object({
 export const quoteItemSchema = z.object({
   itemType: quoteItemTypeEnum,
   productId: z.string().nullish(),
+  parentItemId: z.string().nullish(),
   code: z.string().nullish(),
   brand: z.string().nullish(),
+  model: z.string().nullish(),
   description: z.string().min(1, 'Description is required'),
   quantity: z.number().min(0, 'Quantity must be non-negative').default(1),
   unit: z.string().default('Adet'),
@@ -56,6 +58,7 @@ export const quoteItemUpdateSchema = quoteItemSchema.extend({
   isManualPrice: z.boolean().optional(),
   unitPrice: z.number().optional(),
   totalPrice: z.number().optional(),
+  parentItemId: z.string().nullish(),
 });
 
 export const bulkQuoteItemUpdateSchema = z.object({
