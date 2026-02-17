@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Plus, Type, StickyNote, Wrench, AlertTriangle,
   Package, DollarSign, Calculator, Clock,
@@ -719,31 +719,52 @@ export function QuoteItemsTable({
             {filteredItems.map((item) => {
               const origIdx = itemIndexMap.get(item.id) ?? 0;
               return (
-                <QuoteItemRow
-                  key={item.id}
-                  item={item}
-                  pozNo={pozMap.get(item.id) ?? null}
-                  currency={currency}
-                  canViewCosts={canViewCosts}
-                  isDragging={!hasActiveFilter && dragIndex === origIdx}
-                  columnVisibility={columnVisibility}
-                  priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
-                  totalColCount={totalColCount}
-                  subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id) : undefined}
-                  onUpdate={(updates) => onItemUpdate(item.id, updates)}
-                  onDelete={() => onItemDelete(item.id)}
-                  onDuplicate={() => onItemDuplicate(item.id)}
-                  onDragStart={hasActiveFilter ? noopDrag : handleDragStart(origIdx)}
-                  onDragOver={hasActiveFilter ? noopDrag : handleDragOver(origIdx)}
-                  onDrop={hasActiveFilter ? noopDrag : handleDrop(origIdx)}
-                  canOverrideKatsayi={canOverrideKatsayi}
-                  onShowPriceHistory={
-                    item.productId && onShowPriceHistory
-                      ? () => onShowPriceHistory(item.productId!)
-                      : undefined
-                  }
-                  onInsertHeaderAbove={onAddHeader}
-                />
+                <React.Fragment key={item.id}>
+                  <QuoteItemRow
+                    item={item}
+                    pozNo={pozMap.get(item.id) ?? null}
+                    currency={currency}
+                    canViewCosts={canViewCosts}
+                    isDragging={!hasActiveFilter && dragIndex === origIdx}
+                    columnVisibility={columnVisibility}
+                    priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
+                    totalColCount={totalColCount}
+                    subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id) : undefined}
+                    onUpdate={(updates) => onItemUpdate(item.id, updates)}
+                    onDelete={() => onItemDelete(item.id)}
+                    onDuplicate={() => onItemDuplicate(item.id)}
+                    onDragStart={hasActiveFilter ? noopDrag : handleDragStart(origIdx)}
+                    onDragOver={hasActiveFilter ? noopDrag : handleDragOver(origIdx)}
+                    onDrop={hasActiveFilter ? noopDrag : handleDrop(origIdx)}
+                    canOverrideKatsayi={canOverrideKatsayi}
+                    onShowPriceHistory={
+                      item.productId && onShowPriceHistory
+                        ? () => onShowPriceHistory(item.productId!)
+                        : undefined
+                    }
+                    onInsertHeaderAbove={onAddHeader}
+                  />
+                  {/* Render sub-rows for SET parents */}
+                  {item.subRows && item.subRows.length > 0 && item.subRows.map((sub) => (
+                    <QuoteItemRow
+                      key={sub.id}
+                      item={sub}
+                      pozNo={null}
+                      currency={currency}
+                      canViewCosts={canViewCosts}
+                      isDragging={false}
+                      isSubRow={true}
+                      columnVisibility={columnVisibility}
+                      totalColCount={totalColCount}
+                      onUpdate={(updates) => onItemUpdate(sub.id, updates)}
+                      onDelete={() => onItemDelete(sub.id)}
+                      onDuplicate={() => onItemDuplicate(sub.id)}
+                      onDragStart={noopDrag}
+                      onDragOver={noopDrag}
+                      onDrop={noopDrag}
+                    />
+                  ))}
+                </React.Fragment>
               );
             })}
 

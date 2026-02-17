@@ -61,6 +61,7 @@ export interface QuoteItemRowProps {
   canViewCosts: boolean;
   canOverrideKatsayi?: boolean;
   isDragging?: boolean;
+  isSubRow?: boolean;
   columnVisibility: ColumnVisibility;
   priceHistory?: PriceHistoryStats;
   totalColCount: number;
@@ -250,6 +251,7 @@ export function QuoteItemRow({
   canViewCosts,
   canOverrideKatsayi,
   isDragging = false,
+  isSubRow = false,
   columnVisibility,
   priceHistory,
   totalColCount,
@@ -454,20 +456,23 @@ export function QuoteItemRow({
   return (
     <>
       <tr
-        draggable
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
+        draggable={!isSubRow}
+        onDragStart={isSubRow ? undefined : onDragStart}
+        onDragOver={isSubRow ? undefined : onDragOver}
+        onDrop={isSubRow ? undefined : onDrop}
         onContextMenu={handleContextMenu}
         className={cn(
           'group text-sm hover:bg-accent-50 transition-colors',
           isDragging && 'opacity-40',
           isLowMargin && canViewCosts && 'bg-red-50',
+          isSubRow && 'bg-blue-50/30 text-accent-500',
         )}
       >
         {/* Drag handle - sticky */}
-        <td className={cn('w-8 border border-accent-200 px-1 py-1.5 text-center sticky left-0 z-10', stickyBg)}>
-          <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <td className={cn('w-8 border border-accent-200 px-1 py-1.5 text-center sticky left-0 z-10', isSubRow ? 'bg-blue-50/30' : stickyBg)}>
+          {!isSubRow && (
+            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
         </td>
 
         {/* POZ NO - sticky */}
@@ -502,10 +507,11 @@ export function QuoteItemRow({
         {/* ACIKLAMA */}
         <td className="border border-accent-200 px-2 py-1.5 max-w-[300px]">
           <div className="flex items-center gap-1">
+            {isSubRow && <span className="text-accent-400 mr-1">↳</span>}
             <EditableCell
               value={item.description}
               onChange={(v) => onUpdate({ description: String(v) })}
-              className="text-sm text-accent-900 truncate"
+              className={cn('text-sm truncate', isSubRow ? 'text-accent-500' : 'text-accent-900')}
             />
             {item.productId && onShowPriceHistory && (
               <button
