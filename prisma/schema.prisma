@@ -240,6 +240,7 @@ enum QuoteItemType {
   NOTE
   CUSTOM
   SERVICE
+  SUBTOTAL
 }
 
 model QuoteItem {
@@ -252,6 +253,7 @@ model QuoteItem {
   sortOrder     Int           @default(0)
   code          String?
   brand         String?
+  model         String?
   description   String
   quantity      Decimal       @default(1) @db.Decimal(10, 2)
   unit          String        @default("Adet")
@@ -265,6 +267,9 @@ model QuoteItem {
   isManualPrice Boolean       @default(false)
   costPrice     Decimal?      @db.Decimal(12, 2)
   serviceMeta   Json?
+  parentItemId  String?
+  parentItem    QuoteItem?  @relation("ItemSubRows", fields: [parentItemId], references: [id], onDelete: Cascade)
+  subRows       QuoteItem[] @relation("ItemSubRows")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
