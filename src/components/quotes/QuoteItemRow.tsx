@@ -533,7 +533,17 @@ export function QuoteItemRow({
             displayValue={formatNumber(Number(item.quantity), 2)}
             className="text-right"
           />
-          <span className="ml-1 text-xs text-accent-500">{item.unit}</span>
+          <select
+            value={item.unit}
+            onChange={(e) => onUpdate({ unit: e.target.value })}
+            className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
+          >
+            <option value="Adet">Ad.</option>
+            <option value="Metre">m.</option>
+            <option value="Set">Set</option>
+            <option value="Kişi/Gün">Kişi/Gün</option>
+          </select>
         </td>
 
         {/* KATSAYI + LISTE FIYATI (canViewCosts + fiyat group) */}
