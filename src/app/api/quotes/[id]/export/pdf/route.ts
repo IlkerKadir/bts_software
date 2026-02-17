@@ -59,18 +59,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         name: quote.project.name,
         location: null,
       } : null,
-      items: quote.items.map(item => ({
-        itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM',
-        code: item.code,
-        brand: item.brand,
-        description: item.description,
-        quantity: Number(item.quantity),
-        unit: item.unit,
-        unitPrice: Number(item.unitPrice),
-        discountPct: Number(item.discountPct),
-        totalPrice: Number(item.totalPrice),
-        vatRate: Number(item.vatRate),
-      })),
+      items: quote.items
+        .filter(item => !item.parentItemId)  // Exclude sub-rows (internal cost tracking only)
+        .map(item => ({
+          itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE' | 'SUBTOTAL',
+          code: item.code,
+          brand: item.brand,
+          description: item.description,
+          quantity: Number(item.quantity),
+          unit: item.unit,
+          unitPrice: Number(item.unitPrice),
+          discountPct: Number(item.discountPct),
+          totalPrice: Number(item.totalPrice),
+          vatRate: Number(item.vatRate),
+        })),
       totals: {
         subtotal,
         totalDiscount,

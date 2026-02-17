@@ -74,23 +74,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const formatDate = (date: Date) => date.toLocaleDateString('tr-TR');
 
     // Map items to customer-facing interface (no internal columns)
-    const excelItems: QuoteItemForExcel[] = quote.items.map(item => {
-      const itemType = item.itemType as QuoteItemForExcel['itemType'];
-      const description = getItemDescription(item, quote.language);
+    // Filter out sub-rows (parentItemId != null) — they are internal cost tracking only
+    const excelItems: QuoteItemForExcel[] = quote.items
+      .filter(item => !item.parentItemId)
+      .map(item => {
+        const itemType = item.itemType as QuoteItemForExcel['itemType'];
+        const description = getItemDescription(item, quote.language);
 
-      if (itemType === 'HEADER' || itemType === 'NOTE') {
-        return { itemType, description };
-      }
+        if (itemType === 'HEADER' || itemType === 'NOTE' || itemType === 'SUBTOTAL') {
+          return { itemType, description };
+        }
 
-      // PRODUCT, CUSTOM, SERVICE - include quantity and prices
-      return {
-        itemType,
-        description,
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        totalPrice: Number(item.totalPrice),
-      };
-    });
+        // PRODUCT, CUSTOM, SERVICE - include quantity, unit and prices
+        return {
+          itemType,
+          description,
+          quantity: Number(item.quantity),
+          unit: item.unit,
+          unitPrice: Number(item.unitPrice),
+          totalPrice: Number(item.totalPrice),
+        };
+      });
 
     // Extract notes from commercial terms (NOTLAR category)
     const notlarTerms = quote.commercialTerms.filter(term => term.category === 'NOTLAR');

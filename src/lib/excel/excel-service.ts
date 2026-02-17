@@ -8,9 +8,10 @@ import * as path from 'path';
  * Customer-facing quote item - NO internal pricing columns
  */
 export interface QuoteItemForExcel {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE' | 'SUBTOTAL';
   description: string;
   quantity?: number;
+  unit?: string | null;
   unitPrice?: number;
   totalPrice?: number;
 }
@@ -118,6 +119,36 @@ function boxBorder(): Partial<ExcelJS.Borders> {
     bottom: { style: 'thin' },
     right: { style: 'thin' },
   };
+}
+
+function unitAbbr(unit: string): string {
+  switch (unit) {
+    case 'Adet': return 'Ad.';
+    case 'Metre': return 'm.';
+    case 'Set': return 'Set';
+    default: return unit;
+  }
+}
+
+/**
+ * Compute the section sum for a SUBTOTAL row.
+ * Sums totalPrice of all priced items (PRODUCT, CUSTOM, SERVICE) between
+ * the previous SUBTOTAL (or start of list) and this SUBTOTAL row.
+ */
+function computeExcelSubtotalSum(items: QuoteItemForExcel[], subtotalIndex: number): number {
+  let sum = 0;
+  for (let i = subtotalIndex - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.itemType === 'SUBTOTAL') break;
+    if (
+      item.itemType === 'PRODUCT' ||
+      item.itemType === 'CUSTOM' ||
+      item.itemType === 'SERVICE'
+    ) {
+      sum += item.totalPrice ?? 0;
+    }
+  }
+  return sum;
 }
 
 // ==================== ExcelService ====================
@@ -307,6 +338,7 @@ export class ExcelService {
    * - HEADER: bold, merged across full width, gray background
    * - PRODUCT / CUSTOM / SERVICE: POZ NO (sequential), description, quantity, unitPrice, totalPrice
    * - NOTE: italic, merged description spanning full width
+   * - SUBTOTAL: bold separator row with computed section sum
    *
    * Returns the next row after all items.
    */
@@ -314,7 +346,7 @@ export class ExcelService {
     let currentRow = startRow;
     let pozCounter = 0;
 
-    items.forEach((item) => {
+    items.forEach((item, index) => {
       if (item.itemType === 'HEADER') {
         // Section header - merged across all columns, gray background
         sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS);
@@ -342,6 +374,45 @@ export class ExcelService {
         if (lineCount > 1) {
           sheet.getRow(currentRow).height = Math.max(15, lineCount * 15);
         }
+      } else if (item.itemType === 'SUBTOTAL') {
+        // SUBTOTAL row - bold separator with computed section sum
+        const sectionSum = computeExcelSubtotalSum(items, index);
+
+        // Merge columns A-D for the label
+        sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
+        const labelCell = sheet.getCell(currentRow, 1);
+        labelCell.value = 'Ara Toplam';
+        labelCell.font = { bold: true, size: 10 };
+        labelCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        labelCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.LIGHT_GRAY },
+        };
+        labelCell.border = {
+          top: { style: 'medium', color: { argb: COLORS.TEXT_GRAY } },
+          bottom: { style: 'medium', color: { argb: COLORS.TEXT_GRAY } },
+          left: { style: 'thin', color: { argb: COLORS.BORDER_GRAY } },
+          right: { style: 'thin', color: { argb: COLORS.BORDER_GRAY } },
+        };
+
+        // Column E: section sum value
+        const sumCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
+        sumCell.value = sectionSum;
+        sumCell.numFmt = '#,##0.00';
+        sumCell.font = { bold: true, size: 10 };
+        sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        sumCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: COLORS.LIGHT_GRAY },
+        };
+        sumCell.border = {
+          top: { style: 'medium', color: { argb: COLORS.TEXT_GRAY } },
+          bottom: { style: 'medium', color: { argb: COLORS.TEXT_GRAY } },
+          left: { style: 'thin', color: { argb: COLORS.BORDER_GRAY } },
+          right: { style: 'thin', color: { argb: COLORS.BORDER_GRAY } },
+        };
       } else {
         // PRODUCT, CUSTOM, SERVICE - standard data row
         pozCounter++;
@@ -358,19 +429,19 @@ export class ExcelService {
         descCell.alignment = { wrapText: true, vertical: 'middle' };
         descCell.border = thinBorder();
 
-        // Column C: MIKTAR
+        // Column C: MIKTAR (with unit abbreviation)
+        const unit = item.unit || 'Adet';
         const qtyCell = sheet.getCell(currentRow, 3);
-        qtyCell.value = item.quantity ?? 0;
-        qtyCell.numFmt = '#,##0';
+        qtyCell.value = `${item.quantity ?? 0} ${unitAbbr(unit)}`;
         qtyCell.alignment = { horizontal: 'center', vertical: 'middle' };
         qtyCell.border = thinBorder();
 
         // Column D: BIRIM FIYAT
-        const unitCell = sheet.getCell(currentRow, 4);
-        unitCell.value = item.unitPrice ?? 0;
-        unitCell.numFmt = '#,##0.00';
-        unitCell.alignment = { horizontal: 'right', vertical: 'middle' };
-        unitCell.border = thinBorder();
+        const unitPriceCell = sheet.getCell(currentRow, 4);
+        unitPriceCell.value = item.unitPrice ?? 0;
+        unitPriceCell.numFmt = '#,##0.00';
+        unitPriceCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        unitPriceCell.border = thinBorder();
 
         // Column E: TOPLAM FIYAT
         const totalCell = sheet.getCell(currentRow, 5);

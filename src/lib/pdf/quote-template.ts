@@ -30,7 +30,7 @@ export interface QuoteDataForPdf {
 }
 
 export interface QuoteItemForPdf {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE' | 'SUBTOTAL';
   code?: string | null;
   brand?: string | null;
   description: string;
@@ -73,13 +73,44 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => escapeMap[char]);
 }
 
+function unitAbbr(unit: string): string {
+  switch (unit) {
+    case 'Adet': return 'Ad.';
+    case 'Metre': return 'm.';
+    case 'Set': return 'Set';
+    default: return unit;
+  }
+}
+
+/**
+ * Compute the section sum for a SUBTOTAL row.
+ * Sums totalPrice of all priced items (PRODUCT, CUSTOM, SERVICE) between
+ * the previous SUBTOTAL (or start of list) and this SUBTOTAL row.
+ */
+function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): number {
+  let sum = 0;
+  // Walk backwards from the subtotal index to find the section boundary
+  for (let i = subtotalIndex - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.itemType === 'SUBTOTAL') break; // previous subtotal = section boundary
+    if (
+      item.itemType === 'PRODUCT' ||
+      item.itemType === 'CUSTOM' ||
+      item.itemType === 'SERVICE'
+    ) {
+      sum += item.totalPrice;
+    }
+  }
+  return sum;
+}
+
 export function generateQuoteHtml(data: QuoteDataForPdf): string {
   const { quote, company, project, items, totals, commercialTerms } = data;
   const safeTerms = commercialTerms || [];
   const currency = quote.currency;
 
   let itemNumber = 0;
-  const itemRows = items.map((item) => {
+  const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
       return `
         <tr class="header-row">
@@ -94,6 +125,16 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
         </tr>
       `;
     }
+    if (item.itemType === 'SUBTOTAL') {
+      const sectionSum = computeSubtotalSum(items, index);
+      return `
+        <tr class="subtotal-row">
+          <td colspan="7" class="subtotal-label">Ara Toplam</td>
+          <td class="right subtotal-value">${formatCurrency(sectionSum, currency)}</td>
+        </tr>
+      `;
+    }
+    // PRODUCT, CUSTOM, SERVICE - standard priced rows
     itemNumber++;
     return `
       <tr class="product-row">
@@ -101,8 +142,8 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
         <td>${item.code ? escapeHtml(item.code) : ''}</td>
         <td>${item.brand ? escapeHtml(item.brand) : ''}</td>
         <td>${escapeHtml(item.description)}</td>
-        <td class="center">${item.quantity}</td>
-        <td class="center">${item.unit || 'Adet'}</td>
+        <td class="center">${item.quantity} ${unitAbbr(item.unit || 'Adet')}</td>
+        <td class="center">${unitAbbr(item.unit || 'Adet')}</td>
         <td class="right">${formatCurrency(item.unitPrice, currency)}</td>
         <td class="right">${formatCurrency(item.totalPrice, currency)}</td>
       </tr>
@@ -259,6 +300,24 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 
     .note-cell {
       font-style: italic;
+    }
+
+    .subtotal-row td {
+      background: #e5e7eb;
+      font-weight: 700;
+      border-top: 2px solid #9ca3af;
+      border-bottom: 2px solid #9ca3af;
+      padding: 10px 8px;
+    }
+
+    .subtotal-label {
+      text-align: right;
+      font-weight: 700;
+      padding-right: 12px;
+    }
+
+    .subtotal-value {
+      font-weight: 700;
     }
 
     .totals {

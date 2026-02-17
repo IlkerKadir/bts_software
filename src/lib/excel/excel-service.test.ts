@@ -530,7 +530,7 @@ describe('ExcelService', () => {
       // SERVICE item should appear at row 13 (first data row after header at 12)
       expect(sheet.getCell(13, 1).value).toBe(1); // POZ NO = 1
       expect(sheet.getCell(13, 2).value).toBe('Muhendislik Hizmeti');
-      expect(sheet.getCell(13, 3).value).toBe(5);
+      expect(sheet.getCell(13, 3).value).toBe('5 Ad.'); // quantity with unit abbreviation
       expect(sheet.getCell(13, 4).value).toBe(200);
       expect(sheet.getCell(13, 5).value).toBe(1000);
     });
