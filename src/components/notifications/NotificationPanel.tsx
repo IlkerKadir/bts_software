@@ -1,19 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 import { NotificationItem } from './NotificationItem';
-import type { NotificationType } from '@/lib/services/notification-service';
-
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  link?: string | null;
-  isRead: boolean;
-  createdAt: string;
-}
+import type { Notification } from '@/lib/types/notification';
 
 interface NotificationPanelProps {
   onClose: () => void;
@@ -25,7 +15,7 @@ export function NotificationPanel({ onClose, onUnreadCountChange }: Notification
   const [isLoading, setIsLoading] = useState(true);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       const response = await fetch('/api/notifications?limit=20');
       if (response.ok) {
@@ -39,21 +29,25 @@ export function NotificationPanel({ onClose, onUnreadCountChange }: Notification
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [onUnreadCountChange]);
 
   useEffect(() => {
     fetchNotifications();
-  }, []);
+  }, [fetchNotifications]);
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      const response = await fetch(`/api/notifications/${id}`, { method: 'PATCH' });
+      const response = await fetch(`/api/notifications/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRead: true }),
+      });
       if (response.ok) {
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-        );
-        const newUnreadCount = notifications.filter((n) => !n.isRead && n.id !== id).length;
-        onUnreadCountChange(newUnreadCount);
+        setNotifications((prev) => {
+          const updated = prev.map((n) => (n.id === id ? { ...n, isRead: true } : n));
+          onUnreadCountChange(updated.filter((n) => !n.isRead).length);
+          return updated;
+        });
       }
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
@@ -72,6 +66,23 @@ export function NotificationPanel({ onClose, onUnreadCountChange }: Notification
       console.error('Failed to mark all as read:', error);
     } finally {
       setIsMarkingAll(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const response = await fetch(`/api/notifications/${id}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        setNotifications((prev) => {
+          const updated = prev.filter((n) => n.id !== id);
+          onUnreadCountChange(updated.filter((n) => !n.isRead).length);
+          return updated;
+        });
+      }
+    } catch (error) {
+      console.error('Failed to delete notification:', error);
     }
   };
 
@@ -116,6 +127,7 @@ export function NotificationPanel({ onClose, onUnreadCountChange }: Notification
                 key={notification.id}
                 notification={notification}
                 onMarkAsRead={handleMarkAsRead}
+                onDelete={handleDelete}
               />
             ))}
           </div>

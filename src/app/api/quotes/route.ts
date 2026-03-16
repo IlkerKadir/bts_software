@@ -50,9 +50,43 @@ export async function GET(request: NextRequest) {
       where.createdById = query.createdById;
     }
 
+    // Date range filtering
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
+    if (dateFrom) {
+      where.createdAt = { ...(where.createdAt as Prisma.DateTimeFilter || {}), gte: new Date(dateFrom) };
+    }
+    if (dateTo) {
+      where.createdAt = { ...(where.createdAt as Prisma.DateTimeFilter || {}), lte: new Date(dateTo + 'T23:59:59.999Z') };
+    }
+
     // Sales reps can only see their own quotes
     if (!user.role.canManageUsers && !user.role.canApprove) {
       where.createdById = user.id;
+    }
+
+    // Server-side sorting
+    const sortField = searchParams.get('sortField') || 'createdAt';
+    const sortDirection = (searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc') as Prisma.SortOrder;
+
+    let orderBy: Prisma.QuoteOrderByWithRelationInput;
+    switch (sortField) {
+      case 'quoteNumber':
+        orderBy = { quoteNumber: sortDirection };
+        break;
+      case 'company':
+        orderBy = { company: { name: sortDirection } };
+        break;
+      case 'grandTotal':
+        orderBy = { grandTotal: sortDirection };
+        break;
+      case 'status':
+        orderBy = { status: sortDirection };
+        break;
+      case 'createdAt':
+      default:
+        orderBy = { createdAt: sortDirection };
+        break;
     }
 
     const [quotes, total] = await Promise.all([
@@ -63,7 +97,7 @@ export async function GET(request: NextRequest) {
           project: { select: { id: true, name: true } },
           createdBy: { select: { id: true, fullName: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
       }),
@@ -88,20 +122,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Helper function to get next quote number using tested module
-async function getNextQuoteNumber(): Promise<string> {
-  const prefix = getCurrentYearPrefix();
-
-  const lastQuote = await db.quote.findFirst({
-    where: {
-      quoteNumber: { startsWith: prefix },
-    },
-    orderBy: { quoteNumber: 'desc' },
-  });
-
-  const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
-  return generateQuoteNumber(nextSequence);
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -123,9 +143,7 @@ export async function POST(request: NextRequest) {
     }
     const data = validation.data;
 
-    const quoteNumber = await getNextQuoteNumber();
-
-    // Get current exchange rate
+    // Get current exchange rate (outside transaction since it's read-only)
     const exchangeRate = await db.exchangeRate.findFirst({
       where: {
         fromCurrency: data.currency,
@@ -147,23 +165,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const quote = await db.quote.create({
-      data: {
-        quoteNumber,
-        companyId: data.companyId,
-        projectId: data.projectId || null,
-        subject: data.subject || null,
-        currency: data.currency,
-        exchangeRate: resolvedExchangeRate,
-        createdById: user.id,
-        validityDays: data.validityDays,
-        notes: data.notes || null,
-      },
-      include: {
-        company: { select: { id: true, name: true } },
-        project: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, fullName: true } },
-      },
+    // Wrap quote number generation and creation in a transaction to prevent race conditions
+    const quote = await db.$transaction(async (tx) => {
+      const prefix = getCurrentYearPrefix();
+
+      const lastQuote = await tx.quote.findFirst({
+        where: {
+          quoteNumber: { startsWith: prefix },
+          // Exclude revision numbers (e.g. BTS-2026-0010-R2) so we find the true last sequence
+          NOT: { quoteNumber: { contains: '-R' } },
+        },
+        orderBy: { quoteNumber: 'desc' },
+      });
+
+      const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
+      const quoteNumber = generateQuoteNumber(nextSequence);
+
+      return await tx.quote.create({
+        data: {
+          quoteNumber,
+          companyId: data.companyId,
+          projectId: data.projectId || null,
+          subject: data.subject || null,
+          description: data.description || null,
+          currency: data.currency,
+          exchangeRate: resolvedExchangeRate,
+          createdById: user.id,
+          validityDays: data.validityDays,
+          notes: data.notes || null,
+        },
+        include: {
+          company: { select: { id: true, name: true } },
+          project: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, fullName: true } },
+        },
+      });
     });
 
     // Create history entry

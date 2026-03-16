@@ -3,8 +3,32 @@ import { db } from '@/lib/db';
 import { verifyPassword, createToken } from '@/lib/auth';
 import { setSessionCookie } from '@/lib/session';
 
+// In-memory rate limiting for login attempts
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= 5) return false;
+  entry.count++;
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: max 5 attempts per minute per IP
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Try again later.' },
+        { status: 429 }
+      );
+    }
+
     const { username, password } = await request.json();
 
     if (!username || !password) {

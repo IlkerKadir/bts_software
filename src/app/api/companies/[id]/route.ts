@@ -40,7 +40,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Firma bulunamadı' }, { status: 404 });
     }
 
-    return NextResponse.json({ company });
+    // Convert Decimal fields to numbers to avoid serialization issues
+    const serializedCompany = {
+      ...company,
+      quotes: company.quotes.map((q) => ({
+        ...q,
+        grandTotal: q.grandTotal ? Number(q.grandTotal) : null,
+      })),
+    };
+
+    return NextResponse.json({ company: serializedCompany });
   } catch (error) {
     console.error('Company GET error:', error);
     return NextResponse.json(
@@ -61,10 +70,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const validatedData = companySchema.parse(body);
 
-    // Clean empty email
-    if (validatedData.email === '') {
-      validatedData.email = null;
-    }
+    // Empty email is already cleaned to null by the validation preprocess
 
     const existingCompany = await db.company.findUnique({ where: { id } });
     if (!existingCompany) {
@@ -85,8 +91,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ company });
   } catch (error) {
     if (error instanceof Error && error.name === 'ZodError') {
+      const zodError = error as import('zod').ZodError;
+      const fieldErrors = zodError.errors.map((e) => {
+        const field = e.path.join('.');
+        const fieldLabels: Record<string, string> = {
+          name: 'Firma Adı',
+          type: 'Firma Tipi',
+          email: 'E-posta',
+          phone: 'Telefon',
+          address: 'Adres',
+          taxNumber: 'Vergi No',
+        };
+        const label = fieldLabels[field] || field;
+        return `${label}: ${e.message}`;
+      });
       return NextResponse.json(
-        { error: 'Geçersiz veri', details: error },
+        { error: fieldErrors.join(', ') },
         { status: 400 }
       );
     }

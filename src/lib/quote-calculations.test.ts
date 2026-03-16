@@ -212,6 +212,45 @@ describe('Quote Calculations', () => {
       expect(result.vatTotal).toBe(0);
       expect(result.grandTotal).toBe(0);
     });
+
+    it('includes SET items in subtotal, VAT, and grandTotal', () => {
+      const items: QuoteItem[] = [
+        { itemType: 'PRODUCT', quantity: 2, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 0, vatRate: 20 },
+      ];
+      const result = calculateQuoteTotals(items, 0);
+      // PRODUCT: 2*100 = 200, SET: 1*500 = 500 => subtotal = 700
+      expect(result.subtotal).toBe(700);
+      // VAT 20% of 700 = 140
+      expect(result.vatTotal).toBe(140);
+      // Grand: 700 + 140 = 840
+      expect(result.grandTotal).toBe(840);
+    });
+
+    it('applies overall discount to SET items along with other items', () => {
+      const items: QuoteItem[] = [
+        { itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 20 },
+        { itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 10, vatRate: 20 },
+      ];
+      const result = calculateQuoteTotals(items, 10); // 10% overall discount
+      // PRODUCT: 1*1000 = 1000, SET: 1*500*(1-0.10) = 450 => subtotal = 1450
+      expect(result.subtotal).toBe(1450);
+      // Overall 10% discount: 145
+      expect(result.discountTotal).toBe(145);
+      // Net: 1305, VAT 20%: 261, Grand: 1566
+      expect(result.vatTotal).toBe(261);
+      expect(result.grandTotal).toBe(1566);
+    });
+
+    it('calculates correctly when only SET items are present', () => {
+      const items: QuoteItem[] = [
+        { itemType: 'SET', quantity: 1, unitPrice: 2000, discountPct: 0, vatRate: 20 },
+      ];
+      const result = calculateQuoteTotals(items, 0);
+      expect(result.subtotal).toBe(2000);
+      expect(result.vatTotal).toBe(400);
+      expect(result.grandTotal).toBe(2400);
+    });
   });
 
   describe('calculateItemProfit', () => {
@@ -251,19 +290,34 @@ describe('Quote Calculations', () => {
   });
 
   describe('calculateQuoteProfitSummary', () => {
-    it('calculates summary from pre-VAT totalPrice (excludes SERVICE from profit)', () => {
+    it('includes SET items in both revenue and cost', () => {
       const items = [
-        // totalPrice is pre-VAT: qty * unitPrice * (1 - disc/100)
         { totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT' },
         { totalPrice: 500, costPrice: 300, quantity: 1, itemType: 'PRODUCT' },
-        { totalPrice: 200, costPrice: null, quantity: 1, itemType: 'SERVICE' },
+        { totalPrice: 200, costPrice: null, quantity: 1, itemType: 'SET' },
       ];
       const result = calculateQuoteProfitSummary(items);
-      // SERVICE excluded → revenue = 1000 + 500 = 1500
-      expect(result.totalRevenue).toBe(1500);
+      // revenue = 1000 + 500 + 200 = 1700
+      // cost = 600 + 300 + 0 = 900
+      expect(result.totalRevenue).toBe(1700);
       expect(result.totalCost).toBe(900);
+      expect(result.totalProfit).toBe(800);
+      expect(result.overallMarginPct).toBe(47.06);
+    });
+
+    it('SET parent contributes revenue but not cost; sub-items contribute cost', () => {
+      const items = [
+        { totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT', parentItemId: null },
+        { totalPrice: 300, costPrice: null, quantity: 1, itemType: 'SET', parentItemId: null },  // SET parent — revenue only
+        { totalPrice: 150, costPrice: 50, quantity: 1, itemType: 'PRODUCT', parentItemId: 'set1' }, // sub-item — cost only
+        { totalPrice: 150, costPrice: 50, quantity: 1, itemType: 'PRODUCT', parentItemId: 'set1' }, // sub-item — cost only
+      ];
+      const result = calculateQuoteProfitSummary(items);
+      // Revenue: 1000 (PRODUCT) + 300 (SET parent) = 1300 (sub-items excluded from revenue)
+      // Cost: 600 (PRODUCT) + 50 + 50 (sub-items) = 700 (SET parent excluded from cost)
+      expect(result.totalRevenue).toBe(1300);
+      expect(result.totalCost).toBe(700);
       expect(result.totalProfit).toBe(600);
-      expect(result.overallMarginPct).toBe(40);
     });
 
     it('applies overall discount to revenue', () => {

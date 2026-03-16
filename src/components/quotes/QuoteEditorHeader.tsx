@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
+  ArrowLeft,
   Building2,
   FolderKanban,
   CalendarDays,
   Save,
-  SendHorizonal,
+  SendHorizontal,
   FileDown,
   Eye,
   TrendingUp,
@@ -15,6 +17,8 @@ import {
   Clock,
   ChevronDown,
   ExternalLink,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Input, Select, Card, Badge } from '@/components/ui';
@@ -48,40 +52,37 @@ export interface QuoteEditorHeaderProps {
   companyId: string;
   projectId?: string | null;
   projectName?: string | null;
+  refNo: string;
   systemBrand: string;
+  description: string;
   date: string;
   currency: string;
   exchangeRate: number;
   protectionPct: number;
+  protectionMap: Record<string, number>;
   language: string;
   validityDays: number;
   hasChanges: boolean;
   isSaving: boolean;
   onProjectChange: (projectId: string | null) => void;
+  onRefNoChange: (value: string) => void;
   onSystemBrandChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
   onCurrencyChange: (value: string) => void;
   onExchangeRateChange: (value: number) => void;
   onProtectionPctChange: (value: number) => void;
+  onProtectionMapChange: (value: Record<string, number>) => void;
+  onExchangeRateApply?: (newRate: number, newProtectionPct: number, newProtectionMap: Record<string, number>, rateMatrix: Record<string, Record<string, number>>) => void;
   onLanguageChange: (value: string) => void;
   onValidityDaysChange: (value: number) => void;
   onSave: () => void;
   onSubmitForApproval?: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
   onExport?: () => void;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
-
-const statusLabels: Record<string, string> = {
-  TASLAK: 'Taslak',
-  ONAY_BEKLIYOR: 'Onay Bekliyor',
-  ONAYLANDI: 'Onaylandı',
-  GONDERILDI: 'Gönderildi',
-  TAKIPTE: 'Takipte',
-  REVIZYON: 'Revizyon',
-  KAZANILDI: 'Kazanıldı',
-  KAYBEDILDI: 'Kaybedildi',
-  IPTAL: 'İptal',
-};
 
 const currencyOptions = [
   { value: 'EUR', label: 'EUR - Euro' },
@@ -100,27 +101,38 @@ export function QuoteEditorHeader({
   companyId,
   projectId,
   projectName,
+  refNo,
   systemBrand,
+  description,
   date,
   currency,
   exchangeRate,
   protectionPct,
+  protectionMap,
   language,
   validityDays,
   hasChanges,
   isSaving,
   onProjectChange,
+  onRefNoChange,
   onSystemBrandChange,
+  onDescriptionChange,
   onCurrencyChange,
   onExchangeRateChange,
   onProtectionPctChange,
+  onProtectionMapChange,
+  onExchangeRateApply,
   onLanguageChange,
   onValidityDaysChange,
   onSave,
   onSubmitForApproval,
+  onApprove,
+  onReject,
   onExport,
 }: QuoteEditorHeaderProps) {
-  const isEditable = status === 'TASLAK' || status === 'REVIZYON';
+  // Allow editing for approvers when status is ONAY_BEKLIYOR
+  const router = useRouter();
+  const isEditable = status === 'TASLAK' || status === 'REVIZYON' || (status === 'ONAY_BEKLIYOR' && !!(onApprove));
 
   // Project selection state
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -177,11 +189,22 @@ export function QuoteEditorHeader({
     'Proje Yok';
 
   return (
-    <Card className="rounded-xl">
+    <Card className="rounded-xl overflow-visible">
       {/* ── Row 1: Identity & Meta ──────────────────────────────────────── */}
-      <div className="px-5 py-3 border-b border-primary-200 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-        {/* Left: Company / Project / System Brand */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 min-w-0">
+      <div className="px-5 py-3 border-b border-primary-200 space-y-2">
+        {/* Sub-row 1a: Back + Company + Project + Quote# + Status + Date */}
+        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-x-4 gap-y-2 min-w-0">
+          {/* Back button */}
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="p-1.5 hover:bg-primary-100 rounded-lg text-primary-500 transition-colors cursor-pointer shrink-0"
+            title="Geri"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+
           {/* Company */}
           <div className="flex items-center gap-1.5 text-sm text-primary-700">
             <Building2 className="h-4 w-4 shrink-0 text-primary-500" />
@@ -273,16 +296,55 @@ export function QuoteEditorHeader({
             )}
           </div>
 
-          {/* Divider */}
-          <span className="hidden sm:block h-4 w-px bg-primary-200" aria-hidden />
+        </div>
 
-          {/* System / Brand name – editable */}
+        {/* Right: Quote # / Status / Date */}
+        <div className="flex items-center gap-4 shrink-0">
+          <span className="text-sm font-bold text-primary-900 tracking-wide">
+            {quoteNumber}
+          </span>
+
+          <Badge status={status as QuoteStatus} />
+
+          <div className="flex items-center gap-1.5 text-sm text-primary-600">
+            <CalendarDays className="h-4 w-4 text-primary-400" />
+            <span>{date}</span>
+          </div>
+        </div>
+        </div>
+
+        {/* Sub-row 1b: Ref. No + Teklif Adı + Açıklama */}
+        <div className="flex items-center gap-4 pl-9">
+          <div className="flex items-center gap-1.5">
+            <label
+              htmlFor="ref-no"
+              className="text-xs font-medium text-primary-500 whitespace-nowrap"
+            >
+              Ref. No
+            </label>
+            <input
+              id="ref-no"
+              type="text"
+              value={refNo}
+              onChange={(e) => onRefNoChange(e.target.value)}
+              disabled={!isEditable}
+              placeholder="Örn: 219AC"
+              className={cn(
+                'px-2 py-1 border rounded-md text-sm text-primary-900 bg-white w-28',
+                'placeholder:text-primary-400',
+                'focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-shadow',
+                !isEditable && 'bg-primary-50 cursor-not-allowed opacity-70',
+                'border-primary-300'
+              )}
+            />
+          </div>
+
           <div className="flex items-center gap-1.5">
             <label
               htmlFor="system-brand"
               className="text-xs font-medium text-primary-500 whitespace-nowrap"
             >
-              Marka ve Sistem Adı
+              Teklif Adı
             </label>
             <input
               id="system-brand"
@@ -300,19 +362,29 @@ export function QuoteEditorHeader({
               )}
             />
           </div>
-        </div>
 
-        {/* Right: Quote # / Status / Date */}
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-primary-900 tracking-wide">
-            {quoteNumber}
-          </span>
-
-          <Badge status={status as QuoteStatus} />
-
-          <div className="flex items-center gap-1.5 text-sm text-primary-600">
-            <CalendarDays className="h-4 w-4 text-primary-400" />
-            <span>{date}</span>
+          <div className="flex items-center gap-1.5 flex-1">
+            <label
+              htmlFor="description"
+              className="text-xs font-medium text-primary-500 whitespace-nowrap"
+            >
+              Açıklama
+            </label>
+            <input
+              id="description"
+              type="text"
+              value={description}
+              onChange={(e) => onDescriptionChange(e.target.value)}
+              disabled={!isEditable}
+              placeholder="PDF ikinci başlık satırı"
+              className={cn(
+                'px-2 py-1 border rounded-md text-sm text-primary-900 bg-white flex-1',
+                'placeholder:text-primary-400',
+                'focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-shadow',
+                !isEditable && 'bg-primary-50 cursor-not-allowed opacity-70',
+                'border-primary-300'
+              )}
+            />
           </div>
         </div>
       </div>
@@ -351,10 +423,12 @@ export function QuoteEditorHeader({
                 maximumFractionDigits: 4,
               })}
             </span>
-            {protectionPct > 0 && (
+            {(protectionPct > 0 || Object.keys(protectionMap).length > 0) && (
               <span className="flex items-center gap-0.5 text-xs text-white bg-accent-600 px-1.5 py-0.5 rounded">
                 <ShieldCheck className="h-3 w-3" />
-                %{protectionPct}
+                {Object.keys(protectionMap).length > 1
+                  ? `${Object.keys(protectionMap).length} cift`
+                  : `%${protectionPct}`}
               </span>
             )}
             {isEditable && (
@@ -415,47 +489,73 @@ export function QuoteEditorHeader({
           <Clock className="mb-2.5 h-4 w-4 text-primary-400 shrink-0" />
         </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
+      </div>
 
-        {/* Actions */}
-        <div className="flex items-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setShowPdfPreview(true)} title="Ön İzleme">
-            <Eye className="h-4 w-4" />
-            <span className="hidden lg:inline">Ön İzleme</span>
+      {/* ── Row 3: Actions ──────────────────────────────────────────────── */}
+      <div className="px-5 py-2 border-t border-primary-100 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={() => setShowPdfPreview(true)} title="Ön İzleme">
+          <Eye className="h-4 w-4" />
+          Ön İzleme
+        </Button>
+
+        {onExport && (
+          <Button variant="ghost" size="sm" onClick={onExport} title="Dışa Aktar">
+            <FileDown className="h-4 w-4" />
+            Dışa Aktar
           </Button>
+        )}
 
-          {onExport && (
-            <Button variant="ghost" size="sm" onClick={onExport} title="Dışa Aktar">
-              <FileDown className="h-4 w-4" />
-              <span className="hidden lg:inline">Dışa Aktar</span>
-            </Button>
-          )}
+        <div className="w-px h-5 bg-primary-200" />
 
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onSave}
+          isLoading={isSaving}
+          disabled={!hasChanges || isSaving || !isEditable}
+        >
+          <Save className="h-4 w-4" />
+          Kaydet
+        </Button>
+
+        {onSubmitForApproval && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSubmitForApproval}
+            disabled={hasChanges || !isEditable}
+            title={hasChanges ? 'Önce değişiklikleri kaydedin' : 'Onaya Gönder'}
+          >
+            <SendHorizontal className="h-4 w-4" />
+            Onaya Gönder
+          </Button>
+        )}
+
+        {onReject && (
           <Button
             variant="secondary"
             size="sm"
-            onClick={onSave}
-            isLoading={isSaving}
-            disabled={!hasChanges || isSaving || !isEditable}
+            onClick={onReject}
+            disabled={hasChanges}
+            title={hasChanges ? 'Önce değişiklikleri kaydedin' : 'Revizyona Gönder'}
+            className="text-red-600 hover:bg-red-50"
           >
-            <Save className="h-4 w-4" />
-            Kaydet
+            <XCircle className="h-4 w-4" />
+            Revizyon
           </Button>
-
-          {onSubmitForApproval && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onSubmitForApproval}
-              disabled={hasChanges || !isEditable}
-              title={hasChanges ? 'Önce değişiklikleri kaydedin' : 'Onaya Gönder'}
-            >
-              <SendHorizonal className="h-4 w-4" />
-              Onaya Gönder
-            </Button>
-          )}
-        </div>
+        )}
+        {onApprove && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onApprove}
+            disabled={hasChanges}
+            title={hasChanges ? 'Önce değişiklikleri kaydedin' : 'Onayla'}
+          >
+            <CheckCircle className="h-4 w-4" />
+            Onayla
+          </Button>
+        )}
       </div>
 
       {/* Exchange Rate Modal */}
@@ -465,9 +565,12 @@ export function QuoteEditorHeader({
         currency={currency}
         currentRate={exchangeRate}
         currentProtectionPct={protectionPct}
-        onApply={(newRate, newProtectionPct) => {
+        currentProtectionMap={protectionMap}
+        onApply={(newRate, newProtectionPct, newProtectionMap, rateMatrix) => {
           onExchangeRateChange(newRate);
           onProtectionPctChange(newProtectionPct);
+          onProtectionMapChange(newProtectionMap);
+          onExchangeRateApply?.(newRate, newProtectionPct, newProtectionMap, rateMatrix);
         }}
       />
 

@@ -108,6 +108,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           approvedAt: new Date(),
           validUntil: new Date(Date.now() + quote.validityDays * 24 * 60 * 60 * 1000),
         }),
+        ...(currentStatus === 'ONAYLANDI' && newStatus !== 'ONAYLANDI' && {
+          validUntil: null,
+        }),
       },
       include: {
         company: true,
@@ -169,6 +172,36 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Create notifications based on status change
     try {
       if (newStatus === 'ONAY_BEKLIYOR') {
+        // Check for out-of-range katsayi items
+        const itemsWithProducts = await db.quoteItem.findMany({
+          where: { quoteId, itemType: { in: ['PRODUCT', 'CUSTOM', 'SET'] } },
+          include: { product: { select: { minKatsayi: true, maxKatsayi: true, code: true } } },
+        });
+
+        const outOfRangeItems = itemsWithProducts.filter((item) => {
+          if (!item.product) return false;
+          const k = Number(item.katsayi);
+          const min = item.product.minKatsayi != null ? Number(item.product.minKatsayi) : null;
+          const max = item.product.maxKatsayi != null ? Number(item.product.maxKatsayi) : null;
+          if (min !== null && k < min) return true;
+          if (max !== null && k > max) return true;
+          return false;
+        });
+
+        let katsayiWarning = '';
+        if (outOfRangeItems.length > 0) {
+          const details = outOfRangeItems
+            .map((item) => {
+              const code = item.product?.code || item.code || '?';
+              const k = Number(item.katsayi).toFixed(3);
+              const min = item.product?.minKatsayi != null ? Number(item.product.minKatsayi).toFixed(3) : '-';
+              const max = item.product?.maxKatsayi != null ? Number(item.product.maxKatsayi).toFixed(3) : '-';
+              return `${code}: ${k} (aralik: ${min}-${max})`;
+            })
+            .join(', ');
+          katsayiWarning = ` | Katsayi aralik disinda: ${details}`;
+        }
+
         // Notify users with canApprove role
         const approvers = await db.user.findMany({
           where: {
@@ -183,7 +216,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             userId: approver.id,
             type: 'APPROVAL_NEEDED',
             title: 'Onay Bekleyen Teklif',
-            message: `${updatedQuote.quoteNumber} numaralı teklif onayınızı bekliyor`,
+            message: `${updatedQuote.quoteNumber} numarali teklif onayinizi bekliyor${katsayiWarning}`,
             link: `/quotes/${quoteId}`,
           });
         }
@@ -203,6 +236,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           type: 'QUOTE_REJECTED',
           title: 'Revizyon Gerekli',
           message: `${updatedQuote.quoteNumber} numaralı teklif için revizyon istendi`,
+          link: `/quotes/${quoteId}`,
+        });
+      } else {
+        // Generic status change notification for the quote creator
+        await createNotification({
+          userId: quote.createdById,
+          type: 'SYSTEM',
+          title: `Teklif ${updatedQuote.quoteNumber} durumu değişti`,
+          message: `Durum: ${statusLabels[targetStatus]}`,
           link: `/quotes/${quoteId}`,
         });
       }

@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const publicPaths = ['/login', '/api/auth/login'];
+const publicPaths = ['/login', '/api/auth/login', '/api/health', '/api/cron'];
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'fallback-secret-change-me'
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 async function verifyTokenEdge(token: string): Promise<boolean> {
   try {
@@ -25,11 +26,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow static files and Next.js internals
+  // Allow Next.js internals and favicon only
   if (
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon') ||
-    pathname.includes('.')
+    pathname.startsWith('/favicon')
   ) {
     return NextResponse.next();
   }

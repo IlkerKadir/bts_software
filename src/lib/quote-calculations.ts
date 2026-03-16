@@ -6,7 +6,7 @@
 import { db } from './db';
 
 export interface QuoteItem {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET';
   quantity: number;
   unitPrice: number;
   discountPct: number;
@@ -66,8 +66,8 @@ export function calculateQuoteTotals(
   items: QuoteItem[],
   overallDiscountPct: number
 ): QuoteTotals {
-  // Filter only priced items (PRODUCT and CUSTOM)
-  const productItems = items.filter((item) => item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM');
+  // Filter only priced items (PRODUCT, CUSTOM, and SET)
+  const productItems = items.filter((item) => item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET');
 
   if (productItems.length === 0) {
     return {
@@ -156,6 +156,7 @@ export function calculateQuoteProfitSummary(
     costPrice?: number | null;
     quantity: number;
     itemType: string;
+    parentItemId?: string | null;
   }>,
   overallDiscountPct: number = 0
 ): QuoteProfitSummary {
@@ -163,11 +164,16 @@ export function calculateQuoteProfitSummary(
   let totalCost = 0;
 
   for (const item of items) {
-    // Exclude SERVICE items from profit calculation — their profitability is unknown
-    if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM') {
-      // totalPrice is pre-VAT (qty * unitPrice * (1 - itemDiscountPct/100))
-      itemRevenue += item.totalPrice;
-      totalCost += (item.costPrice || 0) * item.quantity;
+    if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
+      // Revenue: only top-level items (SET parent totalPrice includes children)
+      if (!item.parentItemId) {
+        itemRevenue += item.totalPrice;
+      }
+      // Cost: all items except SET parents (sub-items carry the actual costs)
+      const isSetParent = item.itemType === 'SET' && !item.parentItemId;
+      if (!isSetParent) {
+        totalCost += (item.costPrice || 0) * item.quantity;
+      }
     }
   }
 
@@ -196,16 +202,18 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
     select: { discountPct: true },
   });
 
-  const quoteItems = items.map(item => ({
-    itemType: item.itemType as QuoteItem['itemType'],
-    quantity: Number(item.quantity),
-    unitPrice: Number(item.unitPrice),
-    discountPct: Number(item.discountPct),
-    vatRate: Number(item.vatRate),
-    totalPrice: Number(item.totalPrice),
-    listPrice: Number(item.listPrice),
-    katsayi: Number(item.katsayi),
-  }));
+  const quoteItems = items
+    .filter(item => !item.parentItemId)  // Exclude sub-rows to avoid double-counting
+    .map(item => ({
+      itemType: item.itemType as QuoteItem['itemType'],
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+      discountPct: Number(item.discountPct),
+      vatRate: Number(item.vatRate),
+      totalPrice: Number(item.totalPrice),
+      listPrice: Number(item.listPrice),
+      katsayi: Number(item.katsayi),
+    }));
 
   const totals = calculateQuoteTotals(quoteItems, Number(quote?.discountPct || 0));
 

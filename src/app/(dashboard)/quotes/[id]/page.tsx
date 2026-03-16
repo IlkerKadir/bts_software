@@ -11,6 +11,7 @@ import {
   Building2,
   FileText,
   AlertCircle,
+  AlertTriangle,
   FileSpreadsheet,
   ClipboardCopy,
   Copy,
@@ -18,13 +19,13 @@ import {
   Clock,
   History,
   Folder,
-  Wrench,
   DollarSign,
   TrendingUp,
   User,
   Calendar,
   Globe,
   Shield,
+  ShoppingCart,
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Badge, Spinner } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
@@ -33,6 +34,8 @@ import { StatusChangeDropdown } from '@/components/quotes/StatusChangeDropdown';
 import { QuoteDocuments } from '@/components/quotes/QuoteDocuments';
 import { QuoteHistory } from '@/components/quotes/QuoteHistory';
 import { QuoteVersionPanel } from '@/components/quotes/QuoteVersionPanel';
+import { AddReminderButton } from '@/components/reminders/AddReminderButton';
+import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
 
@@ -55,7 +58,8 @@ interface QuoteDocument {
 
 interface QuoteItem {
   id: string;
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE';
+  parentItemId?: string | null;
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET';
   sortOrder: number;
   code?: string | null;
   brand?: string | null;
@@ -71,7 +75,10 @@ interface QuoteItem {
   notes?: string | null;
   isManualPrice?: boolean;
   costPrice?: number | null;
-  serviceMeta?: any;
+  product?: {
+    minKatsayi?: number | string | null;
+    maxKatsayi?: number | string | null;
+  } | null;
 }
 
 interface CommercialTerm {
@@ -165,6 +172,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [isCreatingRevision, setIsCreatingRevision] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [approvalCheck, setApprovalCheck] = useState<ApprovalCheckResult | null>(null);
   const [documents, setDocuments] = useState<QuoteDocument[]>([]);
 
@@ -250,34 +258,19 @@ export default function QuoteDetailPage({ params }: PageProps) {
     });
   };
 
-  // Separate product/custom items from service items
-  const nonServiceItems = useMemo(() => {
-    if (!quote) return [];
-    return quote.items.filter(i => i.itemType !== 'SERVICE');
-  }, [quote]);
-
-  const serviceItems = useMemo(() => {
-    if (!quote) return [];
-    return quote.items.filter(i => i.itemType === 'SERVICE');
-  }, [quote]);
-
-  const serviceTotalPrice = useMemo(() => {
-    return serviceItems.reduce((sum, i) => sum + Number(i.totalPrice), 0);
-  }, [serviceItems]);
-
-  // Build POZ NO mapping: sequential only for PRODUCT/CUSTOM (not SERVICE)
+  // Build POZ NO mapping: sequential for PRODUCT/CUSTOM/SET
   const pozMap = useMemo(() => {
     if (!quote) return new Map<string, number>();
     const map = new Map<string, number>();
     let counter = 1;
-    for (const item of nonServiceItems) {
-      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM') {
+    for (const item of quote.items) {
+      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
         map.set(item.id, counter);
         counter++;
       }
     }
     return map;
-  }, [quote, nonServiceItems]);
+  }, [quote]);
 
   // Summary calculations
   const summary = useMemo(() => {
@@ -300,7 +293,10 @@ export default function QuoteDetailPage({ params }: PageProps) {
     setIsExporting(true);
     try {
       const response = await fetch(`/api/quotes/${id}/export/pdf`);
-      if (!response.ok) throw new Error('PDF oluşturulamadı');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        throw new Error(errData?.error || `PDF oluşturulamadı (${response.status})`);
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -401,6 +397,33 @@ export default function QuoteDetailPage({ params }: PageProps) {
   };
 
   // ---------------------------------------------------------------------------
+  // Create Order Handler
+  // ---------------------------------------------------------------------------
+
+  const handleCreateOrder = async () => {
+    if (!quote) return;
+    setIsCreatingOrder(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteId: quote.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Siparis olusturulamadi');
+      }
+      router.push('/orders');
+    } catch (err) {
+      console.error('Create order error:', err);
+      setError(err instanceof Error ? err.message : 'Siparis olusturulurken bir hata olustu');
+    } finally {
+      setIsCreatingOrder(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // Loading / Error states
   // ---------------------------------------------------------------------------
 
@@ -449,40 +472,56 @@ export default function QuoteDetailPage({ params }: PageProps) {
       {/* ================================================================== */}
       {/* HEADER                                                             */}
       {/* ================================================================== */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="space-y-3">
+        {/* Row 1: Back + Title + Status */}
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/quotes')}
-            className="p-2 hover:bg-primary-100 rounded-lg text-primary-600 transition-colors cursor-pointer"
+            onClick={() => router.back()}
+            className="p-2 hover:bg-primary-100 rounded-lg text-primary-600 transition-colors cursor-pointer shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-bold text-primary-900">{quote.quoteNumber}</h1>
-              <Badge status={quote.status as any} />
-              <StatusChangeDropdown
-                quoteId={id}
-                currentStatus={quote.status}
-                currentStatusLabel={quoteStatusLabels[quote.status] || quote.status}
-                onStatusChange={fetchQuote}
-              />
-              {approvalCheck && <ApprovalStatus result={approvalCheck} compact />}
-            </div>
-            {quote.subject && (
-              <p className="text-primary-600 mt-1">{quote.subject}</p>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold text-primary-900">{quote.quoteNumber}</h1>
+          <StatusChangeDropdown
+            quoteId={id}
+            currentStatus={quote.status}
+            currentStatusLabel={quoteStatusLabels[quote.status] || quote.status}
+            onStatusChange={fetchQuote}
+          />
+          {approvalCheck && <ApprovalStatus result={approvalCheck} compact />}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Row 2: Subject */}
+        {quote.subject && (
+          <p className="text-sm text-primary-500 ml-12">{quote.subject}</p>
+        )}
+
+        {/* Row 3: Action buttons — grouped logically */}
+        <div className="flex items-center gap-1.5 flex-wrap ml-12">
+          {/* Primary action */}
           {canEdit && (
             <Button onClick={() => router.push(`/quotes/${id}/edit`)}>
               <Edit className="w-4 h-4" />
               Düzenle
             </Button>
           )}
+          {quote.status === 'KAZANILDI' && (
+            <Button
+              onClick={handleCreateOrder}
+              isLoading={isCreatingOrder}
+              disabled={isCreatingOrder}
+            >
+              <ShoppingCart className="w-4 h-4" />
+              Sipariş Oluştur
+            </Button>
+          )}
+
+          {/* Divider */}
+          {(canEdit || quote.status === 'KAZANILDI') && (
+            <div className="w-px h-6 bg-primary-200 mx-1" />
+          )}
+
+          {/* Copy / Revision */}
           <Button
             variant="secondary"
             onClick={handleClone}
@@ -501,15 +540,20 @@ export default function QuoteDetailPage({ params }: PageProps) {
             <ClipboardCopy className="w-4 h-4" />
             Revizyon Oluştur
           </Button>
+
+          {/* Divider */}
+          <div className="w-px h-6 bg-primary-200 mx-1" />
+
+          {/* Export / Print */}
           {permissions.canExport && (
             <>
               <Button variant="secondary" onClick={handleExportPdf} disabled={isExporting}>
                 <Download className="w-4 h-4" />
-                PDF İndir
+                PDF
               </Button>
               <Button variant="secondary" onClick={handleExportExcel} disabled={isExporting}>
                 <FileSpreadsheet className="w-4 h-4" />
-                Excel İndir
+                Excel
               </Button>
             </>
           )}
@@ -517,6 +561,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
             <Printer className="w-4 h-4" />
             Yazdır
           </Button>
+          <AddReminderButton quoteId={id} />
         </div>
       </div>
 
@@ -620,6 +665,37 @@ export default function QuoteDetailPage({ params }: PageProps) {
       </div>
 
       {/* ================================================================== */}
+      {/* BRAND PROFIT SUMMARY                                                */}
+      {/* ================================================================== */}
+      {quote.items.length > 0 && (
+        <BrandProfitSummary
+          items={quote.items.map((item) => ({
+            id: item.id,
+            parentItemId: item.parentItemId ?? null,
+            itemType: item.itemType,
+            sortOrder: item.sortOrder,
+            code: item.code,
+            brand: item.brand,
+            description: item.description,
+            quantity: Number(item.quantity),
+            unit: item.unit,
+            listPrice: Number(item.listPrice),
+            katsayi: Number(item.katsayi),
+            unitPrice: Number(item.unitPrice),
+            discountPct: Number(item.discountPct),
+            vatRate: Number(item.vatRate),
+            totalPrice: Number(item.totalPrice),
+            notes: item.notes,
+            isManualPrice: item.isManualPrice,
+            costPrice: item.costPrice != null ? Number(item.costPrice) : null,
+          }))}
+          discountPct={Number(quote.discountPct) || 0}
+          currency={quote.currency}
+          canViewCosts={permissions.canViewCosts}
+        />
+      )}
+
+      {/* ================================================================== */}
       {/* ITEMS TABLE                                                         */}
       {/* ================================================================== */}
       <Card>
@@ -631,7 +707,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
             <div>
               <h3 className="font-semibold text-primary-900">Teklif Kalemleri</h3>
               <p className="text-xs text-primary-500">
-                {nonServiceItems.filter(i => i.itemType === 'PRODUCT' || i.itemType === 'CUSTOM').length} kalem
+                {quote.items.filter(i => i.itemType === 'PRODUCT' || i.itemType === 'CUSTOM' || i.itemType === 'SET').length} kalem
               </p>
             </div>
           </div>
@@ -650,7 +726,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               </tr>
             </thead>
             <tbody>
-              {nonServiceItems.map((item) => {
+              {quote.items.map((item) => {
                 // HEADER row
                 if (item.itemType === 'HEADER') {
                   return (
@@ -677,8 +753,26 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
                 // PRODUCT / CUSTOM rows
                 const pozNo = pozMap.get(item.id);
+
+                // Katsayi range check
+                const k = Number(item.katsayi);
+                const minK = item.product?.minKatsayi != null ? Number(item.product.minKatsayi) : null;
+                const maxK = item.product?.maxKatsayi != null ? Number(item.product.maxKatsayi) : null;
+                const kOutOfRange =
+                  (minK !== null && k < minK) || (maxK !== null && k > maxK);
+                const kRangeLabel =
+                  (minK !== null || maxK !== null)
+                    ? `Aralik: ${minK !== null ? minK.toFixed(3) : '-'} - ${maxK !== null ? maxK.toFixed(3) : '-'}`
+                    : null;
+
                 return (
-                  <tr key={item.id} className="border-b border-accent-200 hover:bg-accent-50 transition-colors">
+                  <tr
+                    key={item.id}
+                    className={cn(
+                      'border-b border-accent-200 hover:bg-accent-50 transition-colors',
+                      kOutOfRange && 'bg-amber-50',
+                    )}
+                  >
                     <td className="px-3 py-2.5 text-center tabular-nums text-primary-500 font-medium">
                       {pozNo ?? ''}
                     </td>
@@ -694,6 +788,14 @@ export default function QuoteDetailPage({ params }: PageProps) {
                       </div>
                       {item.notes && (
                         <p className="text-xs text-primary-500 mt-0.5 italic">{item.notes}</p>
+                      )}
+                      {kOutOfRange && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span className="text-[11px] text-amber-600">
+                            Belirlenen aralik disinda (katsayi: {k.toFixed(3)}{kRangeLabel ? `, ${kRangeLabel}` : ''})
+                          </span>
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-primary-800">
@@ -724,7 +826,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 );
               })}
 
-              {nonServiceItems.length === 0 && (
+              {quote.items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-accent-500">
                     Henüz kalem eklenmedi.
@@ -822,122 +924,6 @@ export default function QuoteDetailPage({ params }: PageProps) {
           </table>
         </div>
       </Card>
-
-      {/* ================================================================== */}
-      {/* SERVICES CARD                                                       */}
-      {/* ================================================================== */}
-      {serviceItems.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Wrench className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-primary-900">Hizmetler</h3>
-                <p className="text-xs text-primary-500">
-                  Mühendislik, test ve devreye alma hizmetleri
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-blue-800 text-white text-xs uppercase tracking-wider">
-                  <th className="px-3 py-2.5 text-left whitespace-nowrap">Açıklama</th>
-                  <th className="px-3 py-2.5 text-right whitespace-nowrap w-20">Miktar</th>
-                  <th className="px-3 py-2.5 text-center whitespace-nowrap w-16">Birim</th>
-                  <th className="px-3 py-2.5 text-right whitespace-nowrap w-28">Birim Fiyat</th>
-                  <th className="px-3 py-2.5 text-right whitespace-nowrap w-28">Toplam</th>
-                </tr>
-              </thead>
-              <tbody>
-                {serviceItems.map((item) => (
-                  <tr key={item.id} className="border-b border-blue-100 hover:bg-blue-50/50 transition-colors">
-                    <td className="px-3 py-2.5">
-                      <span className="text-sm text-primary-900">{item.description}</span>
-                      {item.serviceMeta?.originalTotalTRY && (
-                        <p className="text-xs text-primary-500 mt-0.5">
-                          Orijinal: ₺{Number(item.serviceMeta.originalTotalTRY).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                          {' · '}Kur: {Number(item.serviceMeta.conversionRate || quote.exchangeRate).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                          {item.serviceMeta.protectionPct > 0 && ` · Koruma: %${item.serviceMeta.protectionPct}`}
-                        </p>
-                      )}
-                      {item.notes && (
-                        <p className="text-xs text-primary-500 mt-0.5 italic">{item.notes}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-primary-800">
-                      {Number(item.quantity)}
-                    </td>
-                    <td className="px-3 py-2.5 text-center text-primary-600 text-xs">
-                      {item.unit}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-primary-800">
-                      {formatPrice(Number(item.unitPrice))}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium text-primary-900">
-                      {Number(item.discountPct) > 0 ? (
-                        <div className="flex flex-col items-end">
-                          <span className="text-xs text-accent-400 line-through">
-                            {formatPrice(Number(item.quantity) * Number(item.unitPrice))}
-                          </span>
-                          <span className="text-green-700">
-                            {formatPrice(Number(item.totalPrice))}
-                            <span className="ml-1 text-xs text-red-500 font-normal">(-{Number(item.discountPct)}%)</span>
-                          </span>
-                        </div>
-                      ) : (
-                        formatPrice(Number(item.totalPrice))
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-blue-50 text-sm">
-                <tr className="border-t-2 border-blue-200">
-                  <td colSpan={4} className="px-3 py-2.5 text-right font-bold text-blue-900">
-                    Hizmet Toplamı
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums font-bold text-blue-900 whitespace-nowrap">
-                    {formatPrice(serviceTotalPrice)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* ================================================================== */}
-      {/* OVERALL TOTAL (Products + Services)                                 */}
-      {/* ================================================================== */}
-      {serviceItems.length > 0 && summary && (
-        <Card>
-          <CardBody>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
-                  <DollarSign className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-primary-900">Teklif Genel Toplam</h3>
-                  <p className="text-xs text-primary-500">Ürünler + Hizmetler (KDV dahil)</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold text-primary-900">
-                  {formatPrice(summary.grandTotal + serviceTotalPrice)}
-                </p>
-                <p className="text-xs text-primary-500 mt-0.5">
-                  Ürünler: {formatPrice(summary.grandTotal)} + Hizmetler: {formatPrice(serviceTotalPrice)}
-                </p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
 
       {/* ================================================================== */}
       {/* COMMERCIAL TERMS                                                    */}

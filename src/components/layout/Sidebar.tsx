@@ -17,8 +17,8 @@ import {
   Shield,
   Clock,
   FileImage,
-  Wrench,
   ClipboardCheck,
+  Bell,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -36,7 +36,6 @@ const adminItems = [
   { href: '/settings/roles', label: 'Roller', icon: Shield },
   { href: '/settings/exchange-rates', label: 'Döviz Kurları', icon: Coins },
   { href: '/settings/templates', label: 'Şablonlar', icon: FileImage },
-  { href: '/settings/service-costs', label: 'Hizmet Maliyetleri', icon: Wrench },
   { href: '/settings', label: 'Ayarlar', icon: Settings },
 ];
 
@@ -68,6 +67,7 @@ export function Sidebar({ userRole, userName, userRoleName, isCollapsed, onToggl
     return (
       <Link
         href={href}
+        aria-current={isActive ? 'page' : undefined}
         className={cn(
           'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer',
           isActive
@@ -104,6 +104,7 @@ export function Sidebar({ userRole, userName, userRoleName, isCollapsed, onToggl
         )}
         <button
           onClick={onToggleCollapse}
+          aria-label={isCollapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
           className="p-1.5 rounded-lg text-accent-400 hover:bg-accent-800 hover:text-white cursor-pointer transition-colors"
         >
           {isCollapsed ? (
@@ -115,7 +116,7 @@ export function Sidebar({ userRole, userName, userRoleName, isCollapsed, onToggl
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+      <nav role="navigation" className="flex-1 p-3 space-y-1 overflow-y-auto">
         {menuItems.map((item) => (
           <NavItem key={item.href} {...item} />
         ))}
@@ -123,6 +124,8 @@ export function Sidebar({ userRole, userName, userRoleName, isCollapsed, onToggl
         {userRole?.canApprove && (
           <NavItem href="/approvals" label="Onay Bekleyenler" icon={Clock} />
         )}
+
+        <NavItem href="/notifications" label="Bildirimler" icon={Bell} />
 
         {userRole?.canManageUsers && (
           <>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, Badge, Spinner } from '@/components/ui';
+import { formatCurrency, formatDate } from '@/lib/utils/format';
 
 interface QuoteRow {
   id: string;
@@ -37,20 +38,6 @@ export function RecentQuotes() {
     }
     fetchQuotes();
   }, []);
-
-  function formatCurrency(value: number | string, currency: string) {
-    const num = typeof value === 'string' ? parseFloat(value) : value;
-    const symbol = currency === 'EUR' ? '\u20AC' : currency === 'USD' ? '$' : currency === 'GBP' ? '\u00A3' : '\u20BA';
-    return `${symbol}${num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-
-  function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('tr-TR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  }
 
   return (
     <Card>

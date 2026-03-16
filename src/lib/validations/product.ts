@@ -7,12 +7,15 @@ export const productSchema = z.object({
   categoryId: z.string().optional().nullable(),
   model: z.string().optional().nullable(),
   name: z.string().min(1, 'Ürün adı gereklidir'),
+  nameEn: z.string().optional().nullable(),
   nameTr: z.string().optional().nullable(),
   unit: z.string().optional().default('Adet'),
   listPrice: z.number().min(0, 'Liste fiyatı 0 veya daha büyük olmalıdır'),
   costPrice: z.number().min(0).optional().nullable(),
   currency: z.enum(['EUR', 'USD', 'GBP', 'TRY']).default('EUR'),
   supplier: z.string().optional().nullable(),
+  minKatsayi: z.number().min(0).optional().nullable(),
+  maxKatsayi: z.number().min(0).optional().nullable(),
   isActive: z.boolean().optional().default(true),
 });
 

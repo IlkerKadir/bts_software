@@ -1,3 +1,6 @@
+// NOTE: This API route is currently unused. The dashboard page (src/app/(dashboard)/dashboard/page.tsx)
+// fetches data directly via server-side functions. Keeping this route for potential future use
+// if the dashboard is migrated to client-side data fetching.
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';

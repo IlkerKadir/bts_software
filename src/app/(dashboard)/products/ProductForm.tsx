@@ -21,12 +21,15 @@ interface ProductFormData {
   categoryId?: string | null;
   model?: string | null;
   name: string;
+  nameEn?: string | null;
   nameTr?: string | null;
   unit: string;
   listPrice: number;
   costPrice?: number | null;
   currency: string;
   supplier?: string | null;
+  minKatsayi?: number | null;
+  maxKatsayi?: number | null;
   isActive?: boolean;
 }
 
@@ -52,12 +55,15 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     categoryId: data?.categoryId || '',
     model: data?.model || '',
     name: data?.name || '',
+    nameEn: data?.nameEn || '',
     nameTr: data?.nameTr || '',
     unit: data?.unit || 'Adet',
     listPrice: data?.listPrice || 0,
     costPrice: data?.costPrice || undefined,
     currency: data?.currency || 'EUR',
     supplier: data?.supplier || '',
+    minKatsayi: data?.minKatsayi ?? undefined,
+    maxKatsayi: data?.maxKatsayi ?? undefined,
     isActive: data?.isActive ?? true,
   });
 
@@ -69,19 +75,33 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     setError('');
   }, [initialData]);
 
+  const [lookupWarning, setLookupWarning] = useState('');
+
   useEffect(() => {
     const fetchLookups = async () => {
+      setLookupWarning('');
       try {
         const [brandsRes, categoriesRes] = await Promise.all([
           fetch('/api/products/brands'),
           fetch('/api/products/categories'),
         ]);
-        const brandsData = await brandsRes.json();
-        const categoriesData = await categoriesRes.json();
-        setBrands(brandsData.brands || []);
-        setCategories(categoriesData.categories || []);
+
+        if (!brandsRes.ok || !categoriesRes.ok) {
+          setLookupWarning('Marka veya kategori listesi yuklenemedi. Form yine de kullanilabilir.');
+        }
+
+        if (brandsRes.ok) {
+          const brandsData = await brandsRes.json();
+          setBrands(brandsData.brands || []);
+        }
+
+        if (categoriesRes.ok) {
+          const categoriesData = await categoriesRes.json();
+          setCategories(categoriesData.categories || []);
+        }
       } catch (err) {
         console.error('Error fetching lookups:', err);
+        setLookupWarning('Marka ve kategori listesi yuklenemedi. Form yine de kullanilabilir.');
       }
     };
 
@@ -104,6 +124,8 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
         brandId: formData.brandId || null,
         categoryId: formData.categoryId || null,
         costPrice: formData.costPrice || null,
+        minKatsayi: formData.minKatsayi ?? null,
+        maxKatsayi: formData.maxKatsayi ?? null,
       };
 
       const response = await fetch(url, {
@@ -156,6 +178,12 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
           </div>
         )}
 
+        {lookupWarning && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+            {lookupWarning}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input
             label="Ürün Kodu *"
@@ -180,13 +208,20 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input
             label="Ürün Adı *"
             value={formData.name}
             onChange={(e) => handleChange('name', e.target.value)}
             placeholder="Ürün adı"
             required
+          />
+
+          <Input
+            label="Ürün Adı (EN)"
+            value={formData.nameEn || ''}
+            onChange={(e) => handleChange('nameEn', e.target.value)}
+            placeholder="Product Name (EN)"
           />
 
           <Input
@@ -267,6 +302,28 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
           onChange={(e) => handleChange('supplier', e.target.value)}
           placeholder="Tedarikçi firma"
         />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input
+            label="Min Katsayı"
+            type="number"
+            step="0.001"
+            min="0"
+            value={formData.minKatsayi ?? ''}
+            onChange={(e) => handleChange('minKatsayi', e.target.value ? parseFloat(e.target.value) : undefined)}
+            placeholder="Ör: 0.850"
+          />
+
+          <Input
+            label="Max Katsayı"
+            type="number"
+            step="0.001"
+            min="0"
+            value={formData.maxKatsayi ?? ''}
+            onChange={(e) => handleChange('maxKatsayi', e.target.value ? parseFloat(e.target.value) : undefined)}
+            placeholder="Ör: 1.150"
+          />
+        </div>
 
         {isEditing && (
           <div className="flex items-center gap-2">

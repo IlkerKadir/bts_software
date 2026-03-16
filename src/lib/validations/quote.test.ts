@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { quoteQuerySchema, createQuoteSchema, quoteItemSchema } from './quote';
+import { quoteQuerySchema, createQuoteSchema, quoteItemSchema, quoteUpdateSchema } from './quote';
 
 describe('Quote Validation Schemas', () => {
   describe('quoteQuerySchema', () => {
@@ -234,6 +234,174 @@ describe('Quote Validation Schemas', () => {
         discountPct: 150,
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('quoteUpdateSchema', () => {
+    it('accepts empty object (all fields optional)', () => {
+      const result = quoteUpdateSchema.safeParse({});
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts valid update with all fields', () => {
+      const result = quoteUpdateSchema.safeParse({
+        companyId: 'company-123',
+        projectId: 'project-456',
+        subject: 'Fire alarm system',
+        currency: 'EUR',
+        exchangeRate: 35.5,
+        protectionPct: 10,
+        protectionMap: { brand1: 15, brand2: 20 },
+        discountPct: 5,
+        validityDays: 30,
+        notes: 'Some notes',
+        language: 'TR',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts null for projectId', () => {
+      const result = quoteUpdateSchema.safeParse({ projectId: null });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts null for notes', () => {
+      const result = quoteUpdateSchema.safeParse({ notes: null });
+      expect(result.success).toBe(true);
+    });
+
+    // Currency validation
+    it('rejects invalid currency', () => {
+      const result = quoteUpdateSchema.safeParse({ currency: 'INVALID' });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts all valid currencies', () => {
+      for (const currency of ['EUR', 'USD', 'GBP', 'TRY']) {
+        const result = quoteUpdateSchema.safeParse({ currency });
+        expect(result.success).toBe(true);
+      }
+    });
+
+    // Exchange rate validation
+    it('rejects exchangeRate of 0', () => {
+      const result = quoteUpdateSchema.safeParse({ exchangeRate: 0 });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects negative exchangeRate', () => {
+      const result = quoteUpdateSchema.safeParse({ exchangeRate: -5 });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects exchangeRate over 1000', () => {
+      const result = quoteUpdateSchema.safeParse({ exchangeRate: 1001 });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts exchangeRate at boundary 1000', () => {
+      const result = quoteUpdateSchema.safeParse({ exchangeRate: 1000 });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts valid exchangeRate', () => {
+      const result = quoteUpdateSchema.safeParse({ exchangeRate: 35.5 });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects non-number exchangeRate', () => {
+      const result = quoteUpdateSchema.safeParse({ exchangeRate: 'abc' });
+      expect(result.success).toBe(false);
+    });
+
+    // protectionPct validation
+    it('rejects protectionPct below 0', () => {
+      const result = quoteUpdateSchema.safeParse({ protectionPct: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects protectionPct over 100', () => {
+      const result = quoteUpdateSchema.safeParse({ protectionPct: 101 });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts protectionPct at 0', () => {
+      const result = quoteUpdateSchema.safeParse({ protectionPct: 0 });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts protectionPct at 100', () => {
+      const result = quoteUpdateSchema.safeParse({ protectionPct: 100 });
+      expect(result.success).toBe(true);
+    });
+
+    // discountPct validation
+    it('rejects discountPct below 0', () => {
+      const result = quoteUpdateSchema.safeParse({ discountPct: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects discountPct over 100', () => {
+      const result = quoteUpdateSchema.safeParse({ discountPct: 101 });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts discountPct at 0', () => {
+      const result = quoteUpdateSchema.safeParse({ discountPct: 0 });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts discountPct at 100', () => {
+      const result = quoteUpdateSchema.safeParse({ discountPct: 100 });
+      expect(result.success).toBe(true);
+    });
+
+    // validityDays validation
+    it('rejects validityDays of 0', () => {
+      const result = quoteUpdateSchema.safeParse({ validityDays: 0 });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects validityDays over 365', () => {
+      const result = quoteUpdateSchema.safeParse({ validityDays: 366 });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts validityDays at 365', () => {
+      const result = quoteUpdateSchema.safeParse({ validityDays: 365 });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts validityDays at 1', () => {
+      const result = quoteUpdateSchema.safeParse({ validityDays: 1 });
+      expect(result.success).toBe(true);
+    });
+
+    // Language validation
+    it('rejects invalid language', () => {
+      const result = quoteUpdateSchema.safeParse({ language: 'FR' });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts valid languages', () => {
+      for (const language of ['TR', 'EN']) {
+        const result = quoteUpdateSchema.safeParse({ language });
+        expect(result.success).toBe(true);
+      }
+    });
+
+    // Strips unknown fields
+    it('strips unknown fields', () => {
+      const result = quoteUpdateSchema.safeParse({
+        subject: 'Test',
+        __proto__: 'evil',
+        unknownField: 'should be stripped',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).not.toHaveProperty('unknownField');
+        expect(result.data).not.toHaveProperty('__proto__');
+      }
     });
   });
 });

@@ -21,12 +21,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       include: {
         client: { select: { id: true, name: true } },
         quotes: {
-          select: { id: true, quoteNumber: true, status: true, grandTotal: true },
+          select: {
+            id: true,
+            quoteNumber: true,
+            status: true,
+            grandTotal: true,
+            currency: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: 'desc' },
-          take: 10,
         },
         _count: {
-          select: { quotes: true, documents: true },
+          select: { quotes: true, documents: true, activities: true },
         },
       },
     });

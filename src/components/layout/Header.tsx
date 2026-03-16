@@ -114,11 +114,11 @@ export function Header({ user, notificationCount: initialCount = 0 }: HeaderProp
       if (companiesRes.status === 'fulfilled' && companiesRes.value.ok) {
         const data = await companiesRes.value.json();
         const items = data.companies || data.data || [];
-        items.slice(0, 5).forEach((c: { id: string; name: string; sector?: string }) => {
+        items.slice(0, 5).forEach((c: { id: string; name: string; taxNumber?: string }) => {
           companies.push({
             id: c.id,
             title: c.name,
-            subtitle: c.sector,
+            subtitle: c.taxNumber || undefined,
             href: `/companies/${c.id}`,
           });
         });
@@ -189,6 +189,7 @@ export function Header({ user, notificationCount: initialCount = 0 }: HeaderProp
               }
             }}
             placeholder="Teklif, firma veya ürün ara..."
+            aria-label="Teklif, firma veya ürün ara"
             className="w-full pl-10 pr-4 py-2 text-sm border border-accent-200 rounded-lg bg-accent-50 placeholder:text-accent-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent focus:bg-white transition-all"
           />
           {isSearching && (
@@ -286,6 +287,7 @@ export function Header({ user, notificationCount: initialCount = 0 }: HeaderProp
               setShowNotifications(!showNotifications);
               setShowDropdown(false);
             }}
+            aria-label="Bildirimler"
             className="relative p-2 rounded-lg text-accent-500 hover:bg-accent-100 cursor-pointer transition-colors"
           >
             <Bell className="w-5 h-5" />
@@ -314,6 +316,7 @@ export function Header({ user, notificationCount: initialCount = 0 }: HeaderProp
         <div className="relative">
           <button
             onClick={() => setShowDropdown(!showDropdown)}
+            aria-label="Kullanıcı menüsü"
             className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent-100 cursor-pointer transition-colors"
           >
             <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">

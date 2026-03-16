@@ -23,6 +23,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             company: true,
             project: { select: { id: true, name: true } },
             items: {
+              where: { parentItemId: null },
+              orderBy: { sortOrder: 'asc' },
+            },
+            commercialTerms: {
               orderBy: { sortOrder: 'asc' },
             },
             createdBy: { select: { id: true, fullName: true } },

@@ -4,16 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell, CheckCircle, Filter, Trash2 } from 'lucide-react';
 import { Button, Card, Badge, Spinner } from '@/components/ui';
-
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  link?: string | null;
-  isRead: boolean;
-  createdAt: string;
-}
+import type { Notification } from '@/lib/types/notification';
 
 const typeLabels: Record<string, string> = {
   APPROVAL_NEEDED: 'Onay Gerekli',
@@ -88,6 +79,20 @@ export default function NotificationsPage() {
       }
     } catch (error) {
       console.error('Failed to mark all as read:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const response = await fetch(`/api/notifications/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      }
+    } catch (error) {
+      console.error('Failed to delete notification:', error);
     }
   };
 
@@ -203,9 +208,21 @@ export default function NotificationsPage() {
                       {notification.message}
                     </p>
                   </div>
-                  <span className="text-xs text-primary-500 whitespace-nowrap">
-                    {formatDate(notification.createdAt)}
-                  </span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-primary-500 whitespace-nowrap">
+                      {formatDate(notification.createdAt)}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(notification.id);
+                      }}
+                      className="p-1 rounded hover:bg-red-50 text-primary-400 hover:text-red-500 transition-colors"
+                      title="Bildirimi sil"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

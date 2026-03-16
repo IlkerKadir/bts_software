@@ -42,6 +42,7 @@ model User {
   quoteHistory   QuoteHistory[]
   documents      QuoteDocument[]
   orders         OrderConfirmation[]  @relation("OrderCreatedBy")
+  reminders      Reminder[]
 }
 
 // ==================== COMPANIES ====================
@@ -84,7 +85,7 @@ model Project {
   id             String            @id @default(cuid())
   name           String
   clientId       String
-  client         Company           @relation(fields: [clientId], references: [id])
+  client         Company           @relation(fields: [clientId], references: [id], onDelete: Restrict)
   status         ProjectStatus     @default(TEKLIF_ASAMASINDA)
   estimatedStart DateTime?
   estimatedEnd   DateTime?
@@ -94,6 +95,7 @@ model Project {
   quotes         Quote[]
   documents      ProjectDocument[]
   activities     ProjectActivity[]
+  reminders      Reminder[]
 }
 
 model ProjectDocument {
@@ -169,6 +171,8 @@ model Product {
   costPrice    Decimal?         @db.Decimal(12, 2)
   currency     String           @default("EUR")
   supplier     String?
+  minKatsayi   Decimal?         @db.Decimal(5, 3)
+  maxKatsayi   Decimal?         @db.Decimal(5, 3)
   isActive     Boolean          @default(true)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -193,14 +197,17 @@ enum QuoteStatus {
 model Quote {
   id              String                @id @default(cuid())
   quoteNumber     String                @unique
+  refNo           String?
   projectId       String?
   project         Project?              @relation(fields: [projectId], references: [id])
   companyId       String
-  company         Company               @relation(fields: [companyId], references: [id])
+  company         Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
   subject         String?
+  description     String?
   currency        String                @default("EUR")
   exchangeRate    Decimal               @db.Decimal(10, 4)
   protectionPct   Decimal               @default(0) @db.Decimal(5, 2)
+  protectionMap   Json                  @default("{}")
   subtotal        Decimal               @default(0) @db.Decimal(12, 2)
   discountTotal   Decimal               @default(0) @db.Decimal(12, 2)
   discountPct     Decimal               @default(0) @db.Decimal(5, 2)
@@ -227,6 +234,9 @@ model Quote {
   history            QuoteHistory[]
   commercialTerms    QuoteCommercialTerm[]
   orderConfirmations OrderConfirmation[]
+  priceHistories     PriceHistory[]
+  ekMaliyetler       QuoteEkMaliyet[]
+  reminders          Reminder[]
 
   @@index([companyId])
   @@index([projectId])
@@ -239,7 +249,7 @@ enum QuoteItemType {
   HEADER
   NOTE
   CUSTOM
-  SERVICE
+  SET
   SUBTOTAL
 }
 
@@ -311,6 +321,7 @@ model CommercialTermTemplate {
   value     String
   isDefault Boolean  @default(false)
   sortOrder Int      @default(0)
+  highlight Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -318,12 +329,13 @@ model CommercialTermTemplate {
 }
 
 model QuoteCommercialTerm {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   quoteId   String
-  quote     Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quote     Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   category  String
   value     String
-  sortOrder Int    @default(0)
+  sortOrder Int     @default(0)
+  highlight Boolean @default(false)
 }
 
 // ==================== CURRENCY & EXCHANGE ====================
@@ -372,7 +384,8 @@ model PriceHistory {
   product   Product  @relation(fields: [productId], references: [id])
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
-  quoteId   String
+  quoteId   String?
+  quote     Quote?   @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   unitPrice Decimal  @db.Decimal(12, 2)
   katsayi   Decimal  @db.Decimal(5, 3)
   quantity  Decimal  @db.Decimal(10, 2)
@@ -434,33 +447,19 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
-// ==================== SERVICE COSTS ====================
+// ==================== QUOTE EK MALIYET ====================
 
-model ServiceCostConfig {
-  id                String   @id @default(cuid())
-  dailySalary       Decimal  @db.Decimal(10, 2)
-  dailyHotel        Decimal  @db.Decimal(10, 2)
-  dailyMealsOutCity Decimal  @db.Decimal(10, 2)
-  dailyMealsOffice  Decimal  @db.Decimal(10, 2)
-  dailyVehicle      Decimal  @db.Decimal(10, 2)
-  perKmCost         Decimal  @db.Decimal(10, 2)
-  distanceBrackets  Json
-  validFrom         DateTime @default(now())
-  isActive          Boolean  @default(true)
-  createdById       String?
-  createdAt         DateTime @default(now())
+model QuoteEkMaliyet {
+  id        String   @id @default(cuid())
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  title     String
+  amount    Decimal  @db.Decimal(12, 2)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([isActive, validFrom])
-}
-
-model LiftingEquipmentRate {
-  id            String   @id @default(cuid())
-  name          String
-  dailyRate     Decimal  @db.Decimal(10, 2)
-  transportCost Decimal  @db.Decimal(10, 2)
-  validFrom     DateTime @default(now())
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  @@index([quoteId])
 }
 
 // ==================== ORDER CONFIRMATIONS ====================
@@ -479,7 +478,7 @@ model OrderConfirmation {
   quoteId       String
   quote         Quote       @relation(fields: [quoteId], references: [id])
   companyId     String
-  company       Company     @relation(fields: [companyId], references: [id])
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
   status        OrderStatus @default(HAZIRLANIYOR)
   notes         String?
   deliveryDate  DateTime?
@@ -490,4 +489,25 @@ model OrderConfirmation {
 
   @@index([quoteId])
   @@index([companyId])
+}
+
+// ==================== REMINDERS ====================
+
+model Reminder {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  note        String?
+  dueDate     DateTime
+  quoteId     String?
+  quote       Quote?    @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, isCompleted, dueDate])
+  @@index([dueDate, isCompleted])
 }

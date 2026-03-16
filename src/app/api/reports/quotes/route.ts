@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
+
     const query = reportQuerySchema.parse({
       startDate: searchParams.get('startDate') || undefined,
       endDate: searchParams.get('endDate') || undefined,
@@ -70,8 +73,8 @@ export async function GET(request: NextRequest) {
       where.createdById = user.id;
     }
 
-    // Get quotes with relations
-    const quotes = await db.quote.findMany({
+    // Get all quotes for summary statistics (no pagination)
+    const allQuotes = await db.quote.findMany({
       where,
       include: {
         company: { select: { id: true, name: true } },
@@ -81,9 +84,15 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calculate summary statistics
-    const totalQuotes = quotes.length;
-    const totalValue = quotes.reduce((sum, q) => sum + Number(q.grandTotal), 0);
+    // Get total count and paginated quotes for the list
+    const totalCount = allQuotes.length;
+    const totalPages = Math.ceil(totalCount / limit);
+    const skip = (page - 1) * limit;
+    const quotes = allQuotes.slice(skip, skip + limit);
+
+    // Calculate summary statistics (based on all matching quotes, not just paginated)
+    const totalQuotes = allQuotes.length;
+    const totalValue = allQuotes.reduce((sum, q) => sum + Number(q.grandTotal), 0);
     const avgValue = totalQuotes > 0 ? totalValue / totalQuotes : 0;
 
     // Status breakdown
@@ -99,7 +108,7 @@ export async function GET(request: NextRequest) {
       IPTAL: { count: 0, value: 0 },
     };
 
-    for (const quote of quotes) {
+    for (const quote of allQuotes) {
       statusCounts[quote.status].count++;
       statusCounts[quote.status].value += Number(quote.grandTotal);
     }
@@ -111,44 +120,9 @@ export async function GET(request: NextRequest) {
       ? (wonCount / (wonCount + lostCount)) * 100
       : 0;
 
-    // Group data if requested
-    let groupedData: Record<string, { count: number; value: number }> | null = null;
-
-    if (query.groupBy) {
-      groupedData = {};
-
-      for (const quote of quotes) {
-        let key: string;
-
-        switch (query.groupBy) {
-          case 'status':
-            key = quote.status;
-            break;
-          case 'company':
-            key = quote.company.name;
-            break;
-          case 'user':
-            key = quote.createdBy.fullName;
-            break;
-          case 'month':
-            const date = new Date(quote.createdAt);
-            key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            break;
-          default:
-            key = 'other';
-        }
-
-        if (!groupedData[key]) {
-          groupedData[key] = { count: 0, value: 0 };
-        }
-        groupedData[key].count++;
-        groupedData[key].value += Number(quote.grandTotal);
-      }
-    }
-
     // Top companies by value
     const companyTotals: Record<string, { name: string; count: number; value: number }> = {};
-    for (const quote of quotes) {
+    for (const quote of allQuotes) {
       const companyId = quote.companyId;
       if (!companyTotals[companyId]) {
         companyTotals[companyId] = {
@@ -167,7 +141,7 @@ export async function GET(request: NextRequest) {
 
     // Top users by value
     const userTotals: Record<string, { name: string; count: number; value: number }> = {};
-    for (const quote of quotes) {
+    for (const quote of allQuotes) {
       const userId = quote.createdById;
       if (!userTotals[userId]) {
         userTotals[userId] = {
@@ -196,7 +170,6 @@ export async function GET(request: NextRequest) {
       statusBreakdown: statusCounts,
       topCompanies,
       topUsers,
-      groupedData,
       quotes: quotes.map((q) => ({
         id: q.id,
         quoteNumber: q.quoteNumber,
@@ -208,6 +181,12 @@ export async function GET(request: NextRequest) {
         status: q.status,
         createdAt: q.createdAt,
       })),
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages,
+      },
     });
   } catch (error) {
     console.error('Reports GET error:', error);

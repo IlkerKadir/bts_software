@@ -17,6 +17,9 @@ import {
 import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
 import { BulkStatusModal } from '@/components/quotes/BulkStatusModal';
+import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import type { Pagination } from '@/lib/types/pagination';
 
 interface Company {
   id: string;
@@ -36,13 +39,6 @@ interface Quote {
   validUntil?: string | null;
   createdBy: { id: string; fullName: string };
   createdAt: string;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
 }
 
 interface QuoteListProps {
@@ -85,6 +81,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -105,16 +102,20 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [deletingQuote, setDeletingQuote] = useState<Quote | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchQuotes = useCallback(async (page = 1) => {
     setIsLoading(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams();
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (companyFilter) params.set('companyId', companyFilter);
       if (dateFrom) params.set('dateFrom', dateFrom);
       if (dateTo) params.set('dateTo', dateTo);
+      if (sortField) params.set('sortField', sortField);
+      if (sortDirection) params.set('sortDirection', sortDirection);
       params.set('page', page.toString());
 
       const response = await fetch(`/api/quotes?${params}`);
@@ -123,13 +124,16 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       if (response.ok) {
         setQuotes(data.quotes);
         setPagination(data.pagination);
+      } else {
+        setFetchError(data.error || 'Teklifler yüklenirken bir hata oluştu');
       }
     } catch (error) {
       console.error('Error fetching quotes:', error);
+      setFetchError('Sunucu ile bağlantı kurulamadı');
     } finally {
       setIsLoading(false);
     }
-  }, [search, statusFilter, companyFilter, dateFrom, dateTo]);
+  }, [debouncedSearch, statusFilter, companyFilter, dateFrom, dateTo, sortField, sortDirection]);
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -146,11 +150,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   }, []);
 
   useEffect(() => {
-    const debounce = setTimeout(() => {
-      fetchQuotes();
-    }, 300);
-
-    return () => clearTimeout(debounce);
+    fetchQuotes();
   }, [fetchQuotes]);
 
   const handleCreateQuote = async () => {
@@ -201,26 +201,6 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     }
   };
 
-  const formatPrice = (price: number | string | { toNumber?: () => number } | null | undefined, currency: string) => {
-    let numPrice = 0;
-    if (typeof price === 'number') {
-      numPrice = price;
-    } else if (typeof price === 'string') {
-      numPrice = parseFloat(price) || 0;
-    } else if (price && typeof price.toNumber === 'function') {
-      numPrice = price.toNumber();
-    }
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-    }).format(numPrice);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('tr-TR');
-  };
-
   const isExpired = (validUntil: string | null | undefined) => {
     if (!validUntil) return false;
     return new Date(validUntil) < new Date();
@@ -242,27 +222,8 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     }
   };
 
-  const sortedQuotes = [...quotes].sort((a, b) => {
-    const dir = sortDirection === 'asc' ? 1 : -1;
-    switch (sortField) {
-      case 'quoteNumber':
-        return dir * a.quoteNumber.localeCompare(b.quoteNumber, 'tr');
-      case 'company':
-        return dir * a.company.name.localeCompare(b.company.name, 'tr');
-      case 'grandTotal':
-        return dir * (getNumericValue(a.grandTotal) - getNumericValue(b.grandTotal));
-      case 'profitMargin':
-        return dir * ((a.profitMargin ?? 0) - (b.profitMargin ?? 0));
-      case 'status':
-        return dir * a.status.localeCompare(b.status, 'tr');
-      case 'createdBy':
-        return dir * a.createdBy.fullName.localeCompare(b.createdBy.fullName, 'tr');
-      case 'createdAt':
-        return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      default:
-        return 0;
-    }
-  });
+  // Sorting is now handled server-side; quotes are already sorted by the API
+  const sortedQuotes = quotes;
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
@@ -381,16 +342,29 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
         </div>
       </Card>
 
+      {/* Fetch Error Banner */}
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-red-700 font-medium">{fetchError}</p>
+          <button
+            onClick={() => fetchQuotes()}
+            className="text-sm text-red-600 underline ml-4"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
+
       {/* Bulk Selection Toolbar */}
       {selectedQuoteIds.size > 0 && (
         <div className="bg-accent-50 border border-accent-200 rounded-lg px-4 py-2 flex items-center justify-between">
-          <span className="text-sm text-accent-800">{selectedQuoteIds.size} teklif secildi</span>
+          <span className="text-sm text-accent-800">{selectedQuoteIds.size} teklif seçildi</span>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setSelectedQuoteIds(new Set())}>
-              Secimi Temizle
+              Seçimi Temizle
             </Button>
             <Button variant="primary" size="sm" onClick={() => setShowBulkModal(true)}>
-              Toplu Durum Degistir
+              Toplu Durum Değiştir
             </Button>
           </div>
         </div>
@@ -515,7 +489,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                       {quote.project?.name || '-'}
                     </td>
                     <td className="text-right text-xs tabular-nums font-medium">
-                      {formatPrice(quote.grandTotal, quote.currency)}
+                      {formatCurrency(quote.grandTotal, quote.currency)}
                     </td>
                     {canViewCosts && (
                       <td className="text-right text-xs tabular-nums">

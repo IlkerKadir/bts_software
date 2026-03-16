@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, User, Shield, Pencil, UserX, UserCheck } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { UserForm } from './UserForm';
+import type { Pagination } from '@/lib/types/pagination';
 
 interface Role {
   id: string;
@@ -26,13 +27,6 @@ interface UserItem {
   isActive: boolean;
   lastLogin: string | null;
   createdAt: string;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
 }
 
 export function UserList() {

@@ -66,8 +66,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Default to current user if no userId provided
-    const targetUserId = userId || user.id;
+    // Only allow targeting a different user if current user has canManageUsers permission
+    let targetUserId = user.id;
+    if (userId && userId !== user.id) {
+      if (!user.role.canManageUsers) {
+        return NextResponse.json(
+          { error: 'Başka kullanıcılar için bildirim oluşturma yetkiniz yok' },
+          { status: 403 }
+        );
+      }
+      targetUserId = userId;
+    }
 
     const notification = await createNotification({
       userId: targetUserId,

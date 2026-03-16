@@ -13,6 +13,12 @@ import {
   User,
   Package,
   Folder,
+  Pencil,
+  Save,
+  XCircle,
+  Download,
+  Loader2,
+  ScrollText,
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Badge, Spinner, Select } from '@/components/ui';
 
@@ -27,6 +33,14 @@ interface QuoteItem {
   unit: string;
   unitPrice: number;
   totalPrice: number;
+}
+
+interface CommercialTerm {
+  id: string;
+  category: string;
+  value: string;
+  sortOrder: number;
+  highlight: boolean;
 }
 
 interface Order {
@@ -46,6 +60,7 @@ interface Order {
     company: { id: string; name: string; address?: string | null };
     project?: { id: string; name: string } | null;
     items: QuoteItem[];
+    commercialTerms?: CommercialTerm[];
     createdBy: { id: string; fullName: string };
   };
   company: { id: string; name: string; address?: string | null };
@@ -53,10 +68,10 @@ interface Order {
 }
 
 const orderStatusLabels: Record<string, string> = {
-  HAZIRLANIYOR: 'Hazirlaniyor',
-  ONAYLANDI: 'Onaylandi',
+  HAZIRLANIYOR: 'Hazirlanıyor',
+  ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gonderildi',
-  TAMAMLANDI: 'Tamamlandi',
+  TAMAMLANDI: 'Tamamlandı',
   IPTAL: 'Iptal',
 };
 
@@ -75,6 +90,18 @@ const currencySymbols: Record<string, string> = {
   TRY: '\u20BA',
 };
 
+const commercialTermLabels: Record<string, string> = {
+  URETICI: 'Uretici Firmalar',
+  ONAY: 'Onaylar',
+  GARANTI: 'Garanti',
+  TESLIM_YERI: 'Teslim Yeri',
+  ODEME: 'Odeme Kosullari',
+  KDV: 'KDV',
+  TESLIMAT: 'Teslimat',
+  OPSIYON: 'Opsiyon',
+  NOTLAR: 'Notlar',
+};
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -87,6 +114,10 @@ export default function OrderDetailPage({ params }: PageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editNotes, setEditNotes] = useState('');
+  const [editDeliveryDate, setEditDeliveryDate] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -111,6 +142,16 @@ export default function OrderDetailPage({ params }: PageProps) {
 
   const handleStatusChange = async (newStatus: string) => {
     if (!order) return;
+
+    const statusLabel = orderStatusLabels[newStatus] || newStatus;
+    const confirmMessage = newStatus === 'IPTAL'
+      ? `Bu siparisi iptal etmek istediginize emin misiniz? Bu islem geri alinamaz.`
+      : `Siparis durumunu "${statusLabel}" olarak degistirmek istediginize emin misiniz?`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
     setIsUpdating(true);
     try {
       const response = await fetch(`/api/orders/${id}`, {
@@ -129,6 +170,75 @@ export default function OrderDetailPage({ params }: PageProps) {
       setError(err instanceof Error ? err.message : 'Bir hata olustu');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!order) return;
+    setEditNotes(order.notes || '');
+    setEditDeliveryDate(order.deliveryDate ? order.deliveryDate.split('T')[0] : '');
+    setIsEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditNotes('');
+    setEditDeliveryDate('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!order) return;
+    setIsUpdating(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notes: editNotes || null,
+          deliveryDate: editDeliveryDate || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Guncelleme basarisiz');
+      }
+
+      setIsEditMode(false);
+      await fetchOrder();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bir hata olustu');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${id}/export/pdf`);
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'PDF olusturulamadi');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = order ? `${order.orderNumber}.pdf` : 'siparis-teyit.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PDF olusturulurken bir hata olustu');
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -155,10 +265,22 @@ export default function OrderDetailPage({ params }: PageProps) {
     const map = new Map<string, number>();
     let counter = 1;
     for (const item of order.quote.items) {
-      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SERVICE') {
+      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
         map.set(item.id, counter);
         counter++;
       }
+    }
+    return map;
+  }, [order]);
+
+  // Group commercial terms by category
+  const termsByCategory = useMemo(() => {
+    if (!order?.quote.commercialTerms) return new Map<string, CommercialTerm[]>();
+    const map = new Map<string, CommercialTerm[]>();
+    for (const term of order.quote.commercialTerms) {
+      const existing = map.get(term.category) || [];
+      existing.push(term);
+      map.set(term.category, existing);
     }
     return map;
   }, [order]);
@@ -203,7 +325,7 @@ export default function OrderDetailPage({ params }: PageProps) {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => router.push('/orders')}
+            onClick={() => router.back()}
             className="p-2 hover:bg-primary-100 rounded-lg text-primary-600 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -221,16 +343,16 @@ export default function OrderDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Status change */}
+        {/* Actions */}
         <div className="flex items-center gap-2 flex-wrap">
           <Select
             value={order.status}
             onChange={(e) => handleStatusChange(e.target.value)}
             options={[
-              { value: 'HAZIRLANIYOR', label: 'Hazirlaniyor' },
-              { value: 'ONAYLANDI', label: 'Onaylandi' },
+              { value: 'HAZIRLANIYOR', label: 'Hazirlanıyor' },
+              { value: 'ONAYLANDI', label: 'Onaylandı' },
               { value: 'GONDERILDI', label: 'Gonderildi' },
-              { value: 'TAMAMLANDI', label: 'Tamamlandi' },
+              { value: 'TAMAMLANDI', label: 'Tamamlandı' },
               { value: 'IPTAL', label: 'Iptal' },
             ]}
             disabled={isUpdating}
@@ -238,11 +360,40 @@ export default function OrderDetailPage({ params }: PageProps) {
           />
           <Button
             variant="secondary"
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            PDF Indir
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => router.push(`/quotes/${order.quote.id}`)}
           >
             <FileText className="w-4 h-4" />
             Teklifi Gor
           </Button>
+          {!isEditMode ? (
+            <Button variant="secondary" onClick={handleStartEdit}>
+              <Pencil className="w-4 h-4" />
+              Duzenle
+            </Button>
+          ) : (
+            <>
+              <Button onClick={handleSaveEdit} isLoading={isUpdating} disabled={isUpdating}>
+                <Save className="w-4 h-4" />
+                Kaydet
+              </Button>
+              <Button variant="secondary" onClick={handleCancelEdit} disabled={isUpdating}>
+                <XCircle className="w-4 h-4" />
+                Vazgec
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -338,21 +489,57 @@ export default function OrderDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      {/* Notes */}
-      {order.notes && (
+      {/* Notes & Delivery Date (editable) */}
+      {isEditMode ? (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
-                <FileText className="w-5 h-5 text-amber-600" />
+                <Pencil className="w-5 h-5 text-amber-600" />
               </div>
-              <h3 className="font-semibold text-primary-900">Notlar</h3>
+              <h3 className="font-semibold text-primary-900">Siparis Bilgilerini Duzenle</h3>
             </div>
           </CardHeader>
           <CardBody>
-            <p className="text-sm text-primary-700 whitespace-pre-wrap leading-relaxed">{order.notes}</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-primary-700 mb-1">Notlar</label>
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                  placeholder="Siparis notlari..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-primary-700 mb-1">Teslim Tarihi</label>
+                <input
+                  type="date"
+                  value={editDeliveryDate}
+                  onChange={(e) => setEditDeliveryDate(e.target.value)}
+                  className="w-full sm:w-64 px-3 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+            </div>
           </CardBody>
         </Card>
+      ) : (
+        order.notes && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-amber-600" />
+                </div>
+                <h3 className="font-semibold text-primary-900">Notlar</h3>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <p className="text-sm text-primary-700 whitespace-pre-wrap leading-relaxed">{order.notes}</p>
+            </CardBody>
+          </Card>
+        )
       )}
 
       {/* Quote Items Table */}
@@ -405,6 +592,10 @@ export default function OrderDetailPage({ params }: PageProps) {
                       </td>
                     </tr>
                   );
+                }
+
+                if (item.itemType === 'SUBTOTAL') {
+                  return null; // Skip subtotal rows in order view
                 }
 
                 const pozNo = pozMap.get(item.id);
@@ -463,6 +654,48 @@ export default function OrderDetailPage({ params }: PageProps) {
           </table>
         </div>
       </Card>
+
+      {/* Commercial Terms (from linked quote) */}
+      {termsByCategory.size > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-emerald-100 rounded-lg flex items-center justify-center">
+                <ScrollText className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-primary-900">Ticari Sartlar</h3>
+                <p className="text-xs text-primary-500">
+                  Bagli teklifteki ticari sartlar ({order.quote.quoteNumber})
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-4">
+              {Array.from(termsByCategory.entries()).map(([category, terms]) => (
+                <div key={category}>
+                  <h4 className="text-sm font-semibold text-primary-800 mb-1.5">
+                    {commercialTermLabels[category] || category}
+                  </h4>
+                  <ul className="space-y-1 ml-4">
+                    {terms.map((term) => (
+                      <li
+                        key={term.id}
+                        className={`text-sm text-primary-700 leading-relaxed ${
+                          term.highlight ? 'bg-yellow-100 px-2 py-0.5 rounded -ml-2' : ''
+                        }`}
+                      >
+                        {term.value}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Plus, Type, StickyNote, Wrench, AlertTriangle,
-  Package, DollarSign, Calculator, Clock,
+  Package, DollarSign, Calculator, Clock, Layers,
   Filter, X, Search, ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -11,12 +11,12 @@ import { Button } from '@/components/ui';
 import {
   QuoteItemRow,
   formatPrice,
+  formatNumber,
   type QuoteItemData,
   type PriceHistoryStats,
   type ColumnVisibility,
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
-import { SectionTemplateDropdown, type SectionTemplate } from './SectionTemplateDropdown';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -24,7 +24,6 @@ import { SectionTemplateDropdown, type SectionTemplate } from './SectionTemplate
 
 export interface QuoteItemsTableProps {
   items: QuoteItemData[];
-  allItems?: QuoteItemData[];  // All items including sub-rows (for subtotal computation)
   currency: string;
   discountPct: number;
   canViewCosts: boolean;
@@ -38,10 +37,10 @@ export interface QuoteItemsTableProps {
   onAddNote: () => void;
   onAddCustomItem?: () => void;
   onAddSubtotal?: () => void;
-  onAddService?: () => void;
-  onAddSectionTemplate?: (template: SectionTemplate) => void;
+  onAddSubItem?: (parentId: string) => void;
+  onCreateSet?: () => void;
+  onOpenEkMaliyet?: () => void;
   onShowPriceHistory?: (productId: string) => void;
-  onOpenDigerMaliyet?: () => void;
   canOverrideKatsayi?: boolean;
   priceHistoryBatch?: Record<string, PriceHistoryStats>;
 }
@@ -67,23 +66,11 @@ const COLUMN_GROUPS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatNumber(value: number, decimals = 2): string {
-  return new Intl.NumberFormat('tr-TR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
-
-// ---------------------------------------------------------------------------
 // QuoteItemsTable
 // ---------------------------------------------------------------------------
 
 export function QuoteItemsTable({
   items,
-  allItems,
   currency,
   discountPct,
   canViewCosts,
@@ -97,15 +84,18 @@ export function QuoteItemsTable({
   onAddNote,
   onAddCustomItem,
   onAddSubtotal,
-  onAddService,
-  onAddSectionTemplate,
+  onAddSubItem,
+  onCreateSet,
+  onOpenEkMaliyet,
   onShowPriceHistory,
-  onOpenDigerMaliyet,
   canOverrideKatsayi,
   priceHistoryBatch,
 }: QuoteItemsTableProps) {
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  // Collapsed parent state for sub-row toggle
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
 
   // Column visibility with localStorage persistence
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(() => {
@@ -158,16 +148,33 @@ export function QuoteItemsTable({
   const hasActiveFilter = brandFilter.size > 0 || textFilter.length > 0;
 
   // Filtered items: product items that match + headers that have matching items below
+  // Build sub-rows lookup: parentId → child items (from nested subRows on each item)
+  // Note: items prop comes from topLevelItems which nests children in subRows,
+  // so we read item.subRows rather than looking for item.parentItemId in the flat list.
+  const subRowsByParent = useMemo(() => {
+    const map = new Map<string, QuoteItemData[]>();
+    for (const item of items) {
+      if (item.subRows && item.subRows.length > 0) {
+        map.set(item.id, item.subRows);
+      }
+    }
+    return map;
+  }, [items]);
+
   const filteredItems = useMemo(() => {
-    if (!hasActiveFilter) return items;
+    // Always exclude child items from main list (they render as sub-rows)
+    const topLevel = items.filter(i => !i.parentItemId);
+    if (!hasActiveFilter) return topLevel;
 
     // Determine which product items pass the filter
     const passingIds = new Set<string>();
-    for (const item of items) {
-      if (item.itemType === 'HEADER' || item.itemType === 'NOTE') continue;
+    for (const item of topLevel) {
+      // Always include non-filterable row types
+      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
 
       let passes = true;
-      if (brandFilter.size > 0 && (!item.brand || !brandFilter.has(item.brand))) {
+      // SET items without brand should pass brand filter (they are set lines, not branded products)
+      if (brandFilter.size > 0 && item.itemType !== 'SET' && (!item.brand || !brandFilter.has(item.brand))) {
         passes = false;
       }
       if (passes && textFilter) {
@@ -183,21 +190,38 @@ export function QuoteItemsTable({
     }
 
     // Include headers that have at least one passing item after them (before next header)
+    // Always include SUBTOTAL rows to maintain section boundaries
     const result: QuoteItemData[] = [];
     let pendingHeader: QuoteItemData | null = null;
+    let pendingNotes: QuoteItemData[] = [];
 
-    for (const item of items) {
+    for (const item of topLevel) {
       if (item.itemType === 'HEADER') {
         pendingHeader = item;
+        pendingNotes = [];
         continue;
       }
-      if (item.itemType === 'NOTE') continue;
+      if (item.itemType === 'NOTE') {
+        pendingNotes.push(item);
+        continue;
+      }
+      if (item.itemType === 'SUBTOTAL') {
+        // Always include subtotals when there are passing items before them
+        if (result.length > 0) {
+          result.push(...pendingNotes);
+          result.push(item);
+        }
+        pendingNotes = [];
+        continue;
+      }
 
       if (passingIds.has(item.id)) {
         if (pendingHeader) {
           result.push(pendingHeader);
           pendingHeader = null;
         }
+        result.push(...pendingNotes);
+        pendingNotes = [];
         result.push(item);
       }
     }
@@ -231,14 +255,14 @@ export function QuoteItemsTable({
     e.preventDefault();
   }, []);
 
-  // Build POZ NO mapping: sequential numbering only for PRODUCT / CUSTOM / SERVICE
+  // Build POZ NO mapping: sequential numbering only for PRODUCT / CUSTOM / SET
   // Excludes SUBTOTAL items and child items (parentItemId)
   // Always uses full items array for consistent numbering
   const pozMap = useMemo(() => {
     const map = new Map<string, number>();
     let counter = 1;
     for (const item of items) {
-      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SERVICE') {
+      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
         if (!item.parentItemId) {
           map.set(item.id, counter);
           counter++;
@@ -277,9 +301,8 @@ export function QuoteItemsTable({
         map.set(item.id, sectionSum);
         sectionSum = 0; // reset for next section
       } else if (
-        item.itemType === 'PRODUCT' ||
-        item.itemType === 'CUSTOM' ||
-        (item.itemType === 'SERVICE' && !item.parentItemId)
+        (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') &&
+        !item.parentItemId
       ) {
         const qty = Number(item.quantity) || 0;
         const up = Number(item.unitPrice) || 0;
@@ -445,19 +468,16 @@ export function QuoteItemsTable({
             Ara Toplam
           </Button>
         )}
-        {onAddService && (
-          <Button variant="secondary" size="sm" onClick={onAddService}>
-            <Wrench className="h-4 w-4" />
-            Hizmet Ekle
+        {onCreateSet && (
+          <Button variant="secondary" size="sm" onClick={onCreateSet}>
+            <Layers className="h-4 w-4" />
+            Set Oluştur
           </Button>
         )}
-        {onAddSectionTemplate && (
-          <SectionTemplateDropdown onSelect={onAddSectionTemplate} />
-        )}
-        {onOpenDigerMaliyet && items.some((i) => i.itemType === 'CUSTOM') && (
-          <Button variant="secondary" size="sm" onClick={onOpenDigerMaliyet}>
-            <Calculator className="h-4 w-4" />
-            Diger Maliyet
+        {onOpenEkMaliyet && (
+          <Button variant="secondary" size="sm" onClick={onOpenEkMaliyet}>
+            <DollarSign className="h-4 w-4" />
+            Ek Maliyet
           </Button>
         )}
 
@@ -626,9 +646,9 @@ export function QuoteItemsTable({
             {/* Group header row */}
             <tr className="bg-accent-900 text-white text-[10px] uppercase tracking-wider">
               {/* Drag */}
-              <th className="w-8 px-1 py-1 sticky left-0 z-30 bg-accent-900" />
+              <th className="w-8 px-1 py-1" />
               {/* Poz */}
-              <th className="px-2 py-1 sticky left-[33px] z-30 bg-accent-900 whitespace-nowrap">Poz</th>
+              <th className="px-2 py-1 whitespace-nowrap">Poz</th>
               {/* Urun group */}
               {columnVisibility.urun && (
                 <th colSpan={3} className="px-2 py-1 text-center border-l border-accent-700">Ürün Bilgisi</th>
@@ -663,8 +683,8 @@ export function QuoteItemsTable({
             {/* Individual column header row */}
             <tr className="bg-accent-800 text-white text-xs uppercase tracking-wider">
               {/* Drag handle */}
-              <th className="w-8 px-1 py-2 sticky left-0 z-30 bg-accent-800" />
-              <th className="px-2 py-2 text-center whitespace-nowrap sticky left-[33px] z-30 bg-accent-800">Poz No</th>
+              <th className="w-8 px-1 py-2" />
+              <th className="px-2 py-2 text-center whitespace-nowrap">Poz No</th>
 
               {columnVisibility.urun && (
                 <>
@@ -759,25 +779,81 @@ export function QuoteItemsTable({
                     onInsertHeaderAbove={onAddHeader}
                   />
                   {/* Render sub-rows for SET parents */}
-                  {item.subRows && item.subRows.length > 0 && item.subRows.map((sub) => (
-                    <QuoteItemRow
-                      key={sub.id}
-                      item={sub}
-                      pozNo={null}
-                      currency={currency}
-                      canViewCosts={canViewCosts}
-                      isDragging={false}
-                      isSubRow={true}
-                      columnVisibility={columnVisibility}
-                      totalColCount={totalColCount}
-                      onUpdate={(updates) => onItemUpdate(sub.id, updates)}
-                      onDelete={() => onItemDelete(sub.id)}
-                      onDuplicate={() => onItemDuplicate(sub.id)}
-                      onDragStart={noopDrag}
-                      onDragOver={noopDrag}
-                      onDrop={noopDrag}
-                    />
-                  ))}
+                  {(() => {
+                    const subs = subRowsByParent.get(item.id) || [];
+                    if (subs.length > 0) {
+                      return (
+                        <>
+                          <tr>
+                            <td colSpan={totalColCount} className="px-8 py-0.5 bg-accent-50 border-x border-accent-200">
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedParents(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(item.id)) next.delete(item.id);
+                                    else next.add(item.id);
+                                    return next;
+                                  })}
+                                  className="text-xs text-accent-500 hover:text-accent-700 flex items-center gap-1"
+                                >
+                                  {collapsedParents.has(item.id) ? '\u25B6' : '\u25BC'}
+                                  {subs.length} alt kalem
+                                </button>
+                                {onAddSubItem && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onAddSubItem(item.id)}
+                                    className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Alt Kalem Ekle
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {!collapsedParents.has(item.id) && subs.map((sub) => (
+                            <QuoteItemRow
+                              key={sub.id}
+                              item={sub}
+                              pozNo={null}
+                              currency={currency}
+                              canViewCosts={canViewCosts}
+                              isDragging={false}
+                              isSubRow={true}
+                              columnVisibility={columnVisibility}
+                              totalColCount={totalColCount}
+                              onUpdate={(updates) => onItemUpdate(sub.id, updates)}
+                              onDelete={() => onItemDelete(sub.id)}
+                              onDuplicate={() => onItemDuplicate(sub.id)}
+                              onDragStart={noopDrag}
+                              onDragOver={noopDrag}
+                              onDrop={noopDrag}
+                            />
+                          ))}
+                        </>
+                      );
+                    }
+                    // Show "Alt Kalem Ekle" for SET parents that have no sub-rows yet
+                    if (item.itemType === 'SET' && onAddSubItem) {
+                      return (
+                        <tr>
+                          <td colSpan={totalColCount} className="px-8 py-0.5 bg-accent-50 border-x border-accent-200">
+                            <button
+                              type="button"
+                              onClick={() => onAddSubItem(item.id)}
+                              className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
+                            >
+                              <Plus className="h-3 w-3" />
+                              Alt Kalem Ekle
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return null;
+                  })()}
                 </React.Fragment>
               );
             })}

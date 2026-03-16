@@ -7,6 +7,7 @@ import {
   Minus,
   Edit3,
   ArrowRight,
+  Equal,
 } from 'lucide-react';
 import { Modal, Badge, Spinner } from '@/components/ui';
 
@@ -28,37 +29,38 @@ interface QuoteSummary {
   currency: string;
 }
 
-interface HeaderChange {
+interface FieldChange {
   field: string;
   oldValue: unknown;
   newValue: unknown;
 }
 
+interface CompareItem {
+  id: string;
+  productId: string | null;
+  code: string | null;
+  brand: string | null;
+  description: string;
+  quantity: number;
+  unit: string;
+  katsayi: number;
+  unitPrice: number;
+  totalPrice: number;
+  itemType: string;
+  sortOrder: number;
+}
+
 interface ItemDiff {
   type: 'added' | 'removed' | 'modified' | 'unchanged';
-  oldItem?: {
-    id: string;
-    code: string | null;
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  };
-  newItem?: {
-    id: string;
-    code: string | null;
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  };
-  changes?: HeaderChange[];
+  oldItem?: CompareItem;
+  newItem?: CompareItem;
+  changes?: FieldChange[];
 }
 
 interface CompareData {
   oldQuote: QuoteSummary;
   newQuote: QuoteSummary;
-  headerChanges: HeaderChange[];
+  headerChanges: FieldChange[];
   itemDiffs: ItemDiff[];
   summary: {
     addedItems: number;
@@ -78,6 +80,7 @@ export function QuoteCompareModal({
   const [data, setData] = useState<CompareData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showUnchanged, setShowUnchanged] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,10 +96,10 @@ export function QuoteCompareModal({
           setData(result);
         } else {
           const err = await response.json();
-          setError(err.error || 'Karşılaştırma yapılamadı');
+          setError(err.error || 'Karsilastirma yapilamadi');
         }
-      } catch (err) {
-        setError('Karşılaştırma yapılırken bir hata oluştu');
+      } catch {
+        setError('Karsilastirma yapilirken bir hata olustu');
       } finally {
         setIsLoading(false);
       }
@@ -105,14 +108,19 @@ export function QuoteCompareModal({
     fetchComparison();
   }, [isOpen, quoteId, compareId]);
 
-  const formatCurrency = (value: number | unknown, currency = 'EUR') => {
+  const fmtCurrency = (value: number | unknown, currency = 'EUR') => {
     const numValue = typeof value === 'number' ? value : Number(value);
     return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(numValue);
+    }).format(numValue) + ' ' + currency;
+  };
+
+  const fmtNumber = (value: number, decimals = 2) => {
+    return new Intl.NumberFormat('tr-TR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value);
   };
 
   const formatDate = (dateString: string) => {
@@ -126,34 +134,41 @@ export function QuoteCompareModal({
   const getDiffIcon = (type: string) => {
     switch (type) {
       case 'added':
-        return <Plus className="w-4 h-4 text-success-600" />;
+        return <Plus className="w-4 h-4 text-green-600" />;
       case 'removed':
-        return <Minus className="w-4 h-4 text-error-600" />;
+        return <Minus className="w-4 h-4 text-red-600" />;
       case 'modified':
-        return <Edit3 className="w-4 h-4 text-warning-600" />;
+        return <Edit3 className="w-4 h-4 text-amber-600" />;
       default:
-        return null;
+        return <Equal className="w-3 h-3 text-primary-400" />;
     }
   };
 
-  const getDiffBgClass = (type: string) => {
+  const getDiffRowClass = (type: string) => {
     switch (type) {
       case 'added':
-        return 'bg-success-50 border-success-200';
+        return 'bg-green-50';
       case 'removed':
-        return 'bg-error-50 border-error-200';
+        return 'bg-red-50';
       case 'modified':
-        return 'bg-warning-50 border-warning-200';
+        return 'bg-amber-50';
       default:
-        return 'bg-white border-primary-200';
+        return '';
     }
   };
+
+  const isFieldChanged = (diff: ItemDiff, fieldName: string): boolean => {
+    if (!diff.changes) return false;
+    return diff.changes.some(c => c.field === fieldName);
+  };
+
+  const changedCellClass = 'font-semibold text-amber-800';
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Versiyon Karşılaştırması"
+      title="Versiyon Karsilastirmasi"
       size="xl"
     >
       {isLoading ? (
@@ -161,7 +176,7 @@ export function QuoteCompareModal({
           <Spinner size="lg" />
         </div>
       ) : error ? (
-        <div className="text-center py-8 text-error-600">
+        <div className="text-center py-8 text-red-600">
           <p>{error}</p>
         </div>
       ) : data ? (
@@ -174,49 +189,49 @@ export function QuoteCompareModal({
                 v{data.oldQuote.version}
               </div>
               <div className="text-sm text-primary-600">
-                {formatDate(data.oldQuote.createdAt)}
+                {formatDate(data.oldQuote.createdAt)} - {data.oldQuote.createdBy.fullName}
               </div>
               <div className="mt-2 text-lg font-medium text-primary-900">
-                {formatCurrency(data.oldQuote.grandTotal, data.oldQuote.currency)}
+                {fmtCurrency(data.oldQuote.grandTotal, data.oldQuote.currency)}
               </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-accent-50 border border-accent-200">
-              <div className="text-sm text-accent-600 mb-1">Yeni Versiyon</div>
+            <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
+              <div className="text-sm text-blue-600 mb-1">Yeni Versiyon</div>
               <div className="font-semibold text-lg text-primary-900">
                 v{data.newQuote.version}
               </div>
               <div className="text-sm text-primary-600">
-                {formatDate(data.newQuote.createdAt)}
+                {formatDate(data.newQuote.createdAt)} - {data.newQuote.createdBy.fullName}
               </div>
               <div className="mt-2 text-lg font-medium text-primary-900">
-                {formatCurrency(data.newQuote.grandTotal, data.newQuote.currency)}
+                {fmtCurrency(data.newQuote.grandTotal, data.newQuote.currency)}
               </div>
             </div>
           </div>
 
-          {/* Summary */}
-          <div className="flex items-center justify-center gap-4 py-2">
+          {/* Summary badges */}
+          <div className="flex items-center justify-center gap-3 py-2">
+            {data.summary.modifiedItems > 0 && (
+              <Badge variant="warning">
+                <Edit3 className="w-3 h-3 mr-1" />
+                {data.summary.modifiedItems} kalem degisti
+              </Badge>
+            )}
             {data.summary.addedItems > 0 && (
               <Badge variant="success">
                 <Plus className="w-3 h-3 mr-1" />
-                {data.summary.addedItems} eklenen
+                {data.summary.addedItems} kalem eklendi
               </Badge>
             )}
             {data.summary.removedItems > 0 && (
               <Badge variant="error">
                 <Minus className="w-3 h-3 mr-1" />
-                {data.summary.removedItems} silinen
-              </Badge>
-            )}
-            {data.summary.modifiedItems > 0 && (
-              <Badge variant="warning">
-                <Edit3 className="w-3 h-3 mr-1" />
-                {data.summary.modifiedItems} değişen
+                {data.summary.removedItems} kalem kaldirildi
               </Badge>
             )}
             {data.summary.totalChanges === 0 && (
-              <span className="text-sm text-primary-500">Değişiklik yok</span>
+              <span className="text-sm text-primary-500">Degisiklik yok</span>
             )}
           </div>
 
@@ -224,28 +239,28 @@ export function QuoteCompareModal({
           {data.headerChanges.length > 0 && (
             <div>
               <h4 className="font-medium text-primary-900 mb-3">
-                Genel Değişiklikler
+                Genel Degisiklikler
               </h4>
               <div className="space-y-2">
                 {data.headerChanges.map((change, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-3 p-2 rounded bg-warning-50 border border-warning-200"
+                    className="flex items-center gap-3 p-2 rounded bg-amber-50 border border-amber-200"
                   >
-                    <Edit3 className="w-4 h-4 text-warning-600" />
+                    <Edit3 className="w-4 h-4 text-amber-600 flex-shrink-0" />
                     <span className="text-sm font-medium text-primary-700">
                       {change.field}:
                     </span>
                     <span className="text-sm text-primary-500 line-through">
                       {typeof change.oldValue === 'number'
-                        ? formatCurrency(change.oldValue)
-                        : String(change.oldValue)}
+                        ? fmtNumber(change.oldValue)
+                        : String(change.oldValue ?? '-')}
                     </span>
-                    <ArrowRight className="w-3 h-3 text-primary-400" />
+                    <ArrowRight className="w-3 h-3 text-primary-400 flex-shrink-0" />
                     <span className="text-sm text-primary-900 font-medium">
                       {typeof change.newValue === 'number'
-                        ? formatCurrency(change.newValue)
-                        : String(change.newValue)}
+                        ? fmtNumber(change.newValue)
+                        : String(change.newValue ?? '-')}
                     </span>
                   </div>
                 ))}
@@ -253,54 +268,147 @@ export function QuoteCompareModal({
             </div>
           )}
 
-          {/* Item diffs */}
-          {data.itemDiffs.filter((d) => d.type !== 'unchanged').length > 0 && (
+          {/* Item diffs - side-by-side table */}
+          {data.itemDiffs.length > 0 && (
             <div>
-              <h4 className="font-medium text-primary-900 mb-3">
-                Kalem Değişiklikleri
-              </h4>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {data.itemDiffs
-                  .filter((d) => d.type !== 'unchanged')
-                  .map((diff, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-3 rounded-lg border ${getDiffBgClass(diff.type)}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        {getDiffIcon(diff.type)}
-                        <div className="flex-1">
-                          <div className="font-medium text-primary-900">
-                            {diff.newItem?.code || diff.oldItem?.code || '-'}
-                          </div>
-                          <div className="text-sm text-primary-600">
-                            {diff.newItem?.description || diff.oldItem?.description}
-                          </div>
-                          {diff.changes && diff.changes.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {diff.changes.map((change, cidx) => (
-                                <div key={cidx} className="text-xs text-primary-500 flex items-center gap-1">
-                                  <span>{change.field}:</span>
-                                  <span className="line-through">{String(change.oldValue)}</span>
-                                  <ArrowRight className="w-2 h-2" />
-                                  <span className="font-medium text-primary-700">
-                                    {String(change.newValue)}
-                                  </span>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-primary-900">
+                  Kalem Degisiklikleri
+                </h4>
+                {data.summary.unchangedItems > 0 && (
+                  <button
+                    onClick={() => setShowUnchanged(!showUnchanged)}
+                    className="text-xs text-primary-500 hover:text-primary-700 underline cursor-pointer"
+                  >
+                    {showUnchanged
+                      ? 'Degismeyenleri gizle'
+                      : `${data.summary.unchangedItems} degismeyen kalemi goster`}
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto border border-primary-200 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-primary-50 text-primary-700 text-left">
+                      <th className="px-3 py-2 w-8"></th>
+                      <th className="px-3 py-2">Kod</th>
+                      <th className="px-3 py-2">Aciklama</th>
+                      <th className="px-3 py-2 text-right">Miktar</th>
+                      <th className="px-3 py-2 text-right">Katsayi</th>
+                      <th className="px-3 py-2 text-right">Birim Fiyat</th>
+                      <th className="px-3 py-2 text-right">Toplam</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-primary-100">
+                    {data.itemDiffs
+                      .filter(d => showUnchanged || d.type !== 'unchanged')
+                      .map((diff, idx) => {
+                        const item = diff.newItem || diff.oldItem;
+                        if (!item) return null;
+
+                        return (
+                          <tr
+                            key={idx}
+                            className={`${getDiffRowClass(diff.type)} hover:bg-primary-50/50`}
+                          >
+                            <td className="px-3 py-2">
+                              {getDiffIcon(diff.type)}
+                            </td>
+                            <td className="px-3 py-2 text-primary-700 font-mono text-xs">
+                              {item.code || '-'}
+                            </td>
+                            <td className="px-3 py-2 text-primary-900 max-w-[200px]">
+                              {diff.type === 'modified' && isFieldChanged(diff, 'Aciklama') ? (
+                                <div>
+                                  <div className="line-through text-primary-400 text-xs">
+                                    {diff.oldItem?.description}
+                                  </div>
+                                  <div className={changedCellClass}>
+                                    {diff.newItem?.description}
+                                  </div>
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {diff.type !== 'removed' && diff.newItem && (
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-primary-900">
-                              {formatCurrency(diff.newItem.totalPrice)}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                              ) : (
+                                <span className="truncate block">{item.description}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {diff.type === 'modified' && isFieldChanged(diff, 'Miktar') ? (
+                                <div>
+                                  <div className="line-through text-primary-400 text-xs">
+                                    {fmtNumber(diff.oldItem!.quantity, 0)}
+                                  </div>
+                                  <div className={changedCellClass}>
+                                    {fmtNumber(diff.newItem!.quantity, 0)}
+                                  </div>
+                                </div>
+                              ) : (
+                                fmtNumber(item.quantity, 0)
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {diff.type === 'modified' && isFieldChanged(diff, 'Katsayi') ? (
+                                <div>
+                                  <div className="line-through text-primary-400 text-xs">
+                                    {fmtNumber(diff.oldItem!.katsayi, 3)}
+                                  </div>
+                                  <div className={changedCellClass}>
+                                    {fmtNumber(diff.newItem!.katsayi, 3)}
+                                  </div>
+                                </div>
+                              ) : (
+                                fmtNumber(item.katsayi, 3)
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {diff.type === 'modified' && isFieldChanged(diff, 'Birim Fiyat') ? (
+                                <div>
+                                  <div className="line-through text-primary-400 text-xs">
+                                    {fmtNumber(diff.oldItem!.unitPrice)}
+                                  </div>
+                                  <div className={changedCellClass}>
+                                    {fmtNumber(diff.newItem!.unitPrice)}
+                                  </div>
+                                </div>
+                              ) : (
+                                fmtNumber(item.unitPrice)
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium">
+                              {diff.type === 'modified' && isFieldChanged(diff, 'Toplam Fiyat') ? (
+                                <div>
+                                  <div className="line-through text-primary-400 text-xs">
+                                    {fmtNumber(diff.oldItem!.totalPrice)}
+                                  </div>
+                                  <div className={changedCellClass}>
+                                    {fmtNumber(diff.newItem!.totalPrice)}
+                                  </div>
+                                </div>
+                              ) : (
+                                fmtNumber(item.totalPrice)
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center gap-4 mt-3 text-xs text-primary-500">
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-green-100 border border-green-300" />
+                  Eklenen
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-red-100 border border-red-300" />
+                  Kaldirilan
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-amber-100 border border-amber-300" />
+                  Degisen
+                </span>
               </div>
             </div>
           )}

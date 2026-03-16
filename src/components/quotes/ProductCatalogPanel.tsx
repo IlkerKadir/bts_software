@@ -32,6 +32,7 @@ export interface ProductCatalogPanelProps {
   companyId?: string | null;
   quoteLanguage: string;
   onAddProduct: (product: ProductForQuote) => void;
+  title?: string;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ export function ProductCatalogPanel({
   companyId,
   quoteLanguage,
   onAddProduct,
+  title,
 }: ProductCatalogPanelProps) {
   // Search & filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -184,6 +186,8 @@ export function ProductCatalogPanel({
           unit: p.unit,
           pricingType: p.pricingType,
           defaultKatsayi: coefficient,
+          minKatsayi: p.minKatsayi != null ? Number(p.minKatsayi) : null,
+          maxKatsayi: p.maxKatsayi != null ? Number(p.maxKatsayi) : null,
         };
       });
 
@@ -294,7 +298,7 @@ export function ProductCatalogPanel({
           <div className="flex items-center justify-between px-5 py-4">
             <h2 className="text-lg font-semibold text-primary-900 flex items-center gap-2">
               <Package className="w-5 h-5 text-primary-600" />
-              Ürün Kataloğu
+              {title || 'Ürün Kataloğu'}
             </h2>
             <Button
               variant="ghost"

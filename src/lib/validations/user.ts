@@ -6,8 +6,11 @@ export const createUserSchema = z.object({
     .max(50, 'Kullanıcı adı en fazla 50 karakter olabilir')
     .regex(/^[a-zA-Z0-9_]+$/, 'Kullanıcı adı sadece harf, rakam ve alt çizgi içerebilir'),
   password: z.string()
-    .min(6, 'Şifre en az 6 karakter olmalıdır')
-    .max(100, 'Şifre en fazla 100 karakter olabilir'),
+    .min(8, 'Şifre en az 8 karakter olmalıdır')
+    .max(100, 'Şifre en fazla 100 karakter olabilir')
+    .regex(/[a-z]/, 'Şifre en az bir küçük harf içermelidir')
+    .regex(/[A-Z]/, 'Şifre en az bir büyük harf içermelidir')
+    .regex(/[0-9]/, 'Şifre en az bir rakam içermelidir'),
   fullName: z.string()
     .min(2, 'Ad soyad en az 2 karakter olmalıdır')
     .max(100, 'Ad soyad en fazla 100 karakter olabilir'),
@@ -25,8 +28,11 @@ export const updateUserSchema = z.object({
     .regex(/^[a-zA-Z0-9_]+$/, 'Kullanıcı adı sadece harf, rakam ve alt çizgi içerebilir')
     .optional(),
   password: z.string()
-    .min(6, 'Şifre en az 6 karakter olmalıdır')
+    .min(8, 'Şifre en az 8 karakter olmalıdır')
     .max(100, 'Şifre en fazla 100 karakter olabilir')
+    .regex(/[a-z]/, 'Şifre en az bir küçük harf içermelidir')
+    .regex(/[A-Z]/, 'Şifre en az bir büyük harf içermelidir')
+    .regex(/[0-9]/, 'Şifre en az bir rakam içermelidir')
     .optional(),
   fullName: z.string()
     .min(2, 'Ad soyad en az 2 karakter olmalıdır')

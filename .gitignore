@@ -54,3 +54,13 @@ prisma/*.db-journal
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Excel/Office files
+*.xlsx
+*.xls
+*.csv
+~$*
+
+# Generated output
+/pdf/
+/attachments/

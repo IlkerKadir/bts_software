@@ -1,22 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Bell, CheckCircle, XCircle, Clock, AlertTriangle, Info } from 'lucide-react';
+import { Bell, CheckCircle, XCircle, Clock, AlertTriangle, Info, Trash2 } from 'lucide-react';
 import type { NotificationType } from '@/lib/services/notification-service';
-
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  link?: string | null;
-  isRead: boolean;
-  createdAt: string;
-}
+import type { Notification } from '@/lib/types/notification';
 
 interface NotificationItemProps {
   notification: Notification;
   onMarkAsRead: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 const typeIcons: Record<NotificationType, typeof Bell> = {
@@ -52,7 +44,7 @@ function formatTimeAgo(dateString: string): string {
   return date.toLocaleDateString('tr-TR');
 }
 
-export function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps) {
+export function NotificationItem({ notification, onMarkAsRead, onDelete }: NotificationItemProps) {
   const router = useRouter();
   const Icon = typeIcons[notification.type] || Bell;
   const colorClasses = typeColors[notification.type] || 'text-primary-500 bg-primary-50';
@@ -66,28 +58,43 @@ export function NotificationItem({ notification, onMarkAsRead }: NotificationIte
     }
   };
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete?.(notification.id);
+  };
+
   return (
-    <button
-      onClick={handleClick}
-      className={`w-full flex items-start gap-3 p-3 text-left hover:bg-primary-50 transition-colors ${
+    <div
+      className={`w-full flex items-start gap-3 p-3 text-left hover:bg-primary-50 transition-colors cursor-pointer ${
         !notification.isRead ? 'bg-blue-50/50' : ''
       }`}
     >
-      <div className={`p-2 rounded-full ${colorClasses}`}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className={`text-sm ${!notification.isRead ? 'font-semibold' : 'font-medium'} text-primary-900 truncate`}>
-            {notification.title}
-          </p>
-          {!notification.isRead && (
-            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-          )}
+      <button onClick={handleClick} className="flex items-start gap-3 flex-1 min-w-0 text-left">
+        <div className={`p-2 rounded-full ${colorClasses} flex-shrink-0`}>
+          <Icon className="w-4 h-4" />
         </div>
-        <p className="text-xs text-primary-600 line-clamp-2 mt-0.5">{notification.message}</p>
-        <p className="text-xs text-primary-400 mt-1">{formatTimeAgo(notification.createdAt)}</p>
-      </div>
-    </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={`text-sm ${!notification.isRead ? 'font-semibold' : 'font-medium'} text-primary-900 truncate`}>
+              {notification.title}
+            </p>
+            {!notification.isRead && (
+              <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+            )}
+          </div>
+          <p className="text-xs text-primary-600 line-clamp-2 mt-0.5">{notification.message}</p>
+          <p className="text-xs text-primary-400 mt-1">{formatTimeAgo(notification.createdAt)}</p>
+        </div>
+      </button>
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          className="p-1 rounded hover:bg-red-50 text-primary-400 hover:text-red-500 transition-colors flex-shrink-0"
+          title="Bildirimi sil"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
   );
 }

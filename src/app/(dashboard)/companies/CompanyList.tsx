@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, Building2, Users, Pencil, Trash2 } from 'lucide-react';
 import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { CompanyForm } from './CompanyForm';
+import type { Pagination } from '@/lib/types/pagination';
 
 interface Company {
   id: string;
@@ -17,13 +18,6 @@ interface Company {
   createdAt: string;
 }
 
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
 export function CompanyList() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -34,9 +28,11 @@ export function CompanyList() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [deletingCompany, setDeletingCompany] = useState<Company | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchCompanies = useCallback(async (page = 1) => {
     setIsLoading(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
@@ -49,9 +45,12 @@ export function CompanyList() {
       if (response.ok) {
         setCompanies(data.companies);
         setPagination(data.pagination);
+      } else {
+        setFetchError(data.error || 'Firmalar yüklenirken bir hata oluştu');
       }
     } catch (error) {
       console.error('Error fetching companies:', error);
+      setFetchError('Sunucu ile bağlantı kurulamadı');
     } finally {
       setIsLoading(false);
     }
@@ -140,6 +139,19 @@ export function CompanyList() {
           />
         </div>
       </Card>
+
+      {/* Fetch Error Banner */}
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-red-700 font-medium">{fetchError}</p>
+          <button
+            onClick={() => fetchCompanies()}
+            className="text-sm text-red-600 underline ml-4"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <Card>

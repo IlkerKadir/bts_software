@@ -13,6 +13,8 @@ async function getNextQuoteNumber(): Promise<string> {
   const lastQuote = await db.quote.findFirst({
     where: {
       quoteNumber: { startsWith: prefix },
+      // Exclude revision numbers (e.g. BTS-2026-0010-R2) so we find the true last sequence
+      NOT: { quoteNumber: { contains: '-R' } },
     },
     orderBy: { quoteNumber: 'desc' },
   });
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Fetch the source quote with items and commercial terms
+    // Fetch the source quote with items, commercial terms, and ek maliyet
     const sourceQuote = await db.quote.findUnique({
       where: { id },
       include: {
@@ -38,6 +40,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           orderBy: { sortOrder: 'asc' },
         },
         commercialTerms: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        ekMaliyetler: {
           orderBy: { sortOrder: 'asc' },
         },
       },
@@ -88,31 +93,71 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Copy all QuoteItems
+    // Copy all QuoteItems (two passes: parent items first, then sub-items with remapped parentItemId)
     if (sourceQuote.items.length > 0) {
-      await db.quoteItem.createMany({
-        data: sourceQuote.items.map((item, index) => ({
-          quoteId: newQuote.id,
-          productId: item.productId,
-          itemType: item.itemType,
-          sortOrder: index,
-          code: item.code,
-          brand: item.brand,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          listPrice: item.listPrice,
-          katsayi: item.katsayi,
-          unitPrice: item.unitPrice,
-          discountPct: item.discountPct,
-          vatRate: item.vatRate,
-          totalPrice: item.totalPrice,
-          notes: item.notes,
-          isManualPrice: item.isManualPrice,
-          costPrice: item.costPrice,
-          serviceMeta: item.serviceMeta ?? undefined,
-        })),
-      });
+      const oldToNewId = new Map<string, string>();
+
+      // First pass: create parent items (no parentItemId)
+      const parentItems = sourceQuote.items.filter(item => !item.parentItemId);
+      for (const item of parentItems) {
+        const created = await db.quoteItem.create({
+          data: {
+            quoteId: newQuote.id,
+            productId: item.productId,
+            itemType: item.itemType,
+            sortOrder: item.sortOrder,
+            code: item.code,
+            brand: item.brand,
+            model: item.model,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            listPrice: item.listPrice,
+            katsayi: item.katsayi,
+            unitPrice: item.unitPrice,
+            discountPct: item.discountPct,
+            vatRate: item.vatRate,
+            totalPrice: item.totalPrice,
+            notes: item.notes,
+            isManualPrice: item.isManualPrice,
+            costPrice: item.costPrice,
+            serviceMeta: item.serviceMeta ?? undefined,
+          },
+        });
+        oldToNewId.set(item.id, created.id);
+      }
+
+      // Second pass: create sub-items with remapped parentItemId
+      const subItems = sourceQuote.items.filter(item => item.parentItemId);
+      for (const item of subItems) {
+        const newParentId = oldToNewId.get(item.parentItemId!);
+        const created = await db.quoteItem.create({
+          data: {
+            quoteId: newQuote.id,
+            productId: item.productId,
+            itemType: item.itemType,
+            sortOrder: item.sortOrder,
+            code: item.code,
+            brand: item.brand,
+            model: item.model,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            listPrice: item.listPrice,
+            katsayi: item.katsayi,
+            unitPrice: item.unitPrice,
+            discountPct: item.discountPct,
+            vatRate: item.vatRate,
+            totalPrice: item.totalPrice,
+            notes: item.notes,
+            isManualPrice: item.isManualPrice,
+            costPrice: item.costPrice,
+            serviceMeta: item.serviceMeta ?? undefined,
+            parentItemId: newParentId ?? null,
+          },
+        });
+        oldToNewId.set(item.id, created.id);
+      }
     }
 
     // Copy all QuoteCommercialTerms
@@ -123,6 +168,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           category: term.category,
           value: term.value,
           sortOrder: term.sortOrder,
+          highlight: term.highlight,
+        })),
+      });
+    }
+
+    // Copy QuoteEkMaliyet entries
+    if (sourceQuote.ekMaliyetler.length > 0) {
+      await db.quoteEkMaliyet.createMany({
+        data: sourceQuote.ekMaliyetler.map((em) => ({
+          quoteId: newQuote.id,
+          title: em.title,
+          amount: em.amount,
+          sortOrder: em.sortOrder,
         })),
       });
     }

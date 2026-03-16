@@ -40,6 +40,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
         subRows: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            product: {
+              include: { brand: true, category: true },
+            },
+          },
         },
       },
     });
@@ -81,6 +86,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
+    // Regular users cannot add items to ONAY_BEKLIYOR quotes — only approvers can
+    if (quote.status === 'ONAY_BEKLIYOR' && !user.role.canApprove) {
+      return NextResponse.json(
+        { error: 'Onay bekleyen tekliflere sadece onay yetkisi olan kullanıcılar kalem ekleyebilir' },
+        { status: 403 }
+      );
+    }
+
     // Get max sort order
     const maxItem = await db.quoteItem.findFirst({
       where: { quoteId },
@@ -93,14 +106,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const isManualPrice = body.isManualPrice === true;
     const isSubtotal = data.itemType === 'SUBTOTAL';
     const isNonPriced = data.itemType === 'HEADER' || data.itemType === 'NOTE' || isSubtotal;
+    // SET parents have unitPrice = childrenTotal — starts at 0 until children are added
+    const isSetParent = data.itemType === 'SET' && !data.parentItemId;
 
     // For non-priced items (HEADER, NOTE, SUBTOTAL), zero out prices
+    // For SET parents, start at 0 (price derived from children)
     // For manual price items (CUSTOM), use provided unitPrice; otherwise calculate
-    const unitPrice = isNonPriced ? 0
+    const unitPrice = (isNonPriced || isSetParent) ? 0
       : isManualPrice && body.unitPrice != null
         ? Number(body.unitPrice)
         : calculateUnitPrice(listPrice, katsayi);
-    const totalPrice = isNonPriced ? 0
+    const totalPrice = (isNonPriced || isSetParent) ? 0
       : isManualPrice && body.totalPrice != null
         ? Number(body.totalPrice)
         : calculateItemTotal({ quantity, unitPrice, discountPct });
@@ -178,19 +194,33 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
+    // Regular users cannot update items on ONAY_BEKLIYOR quotes — only approvers can
+    if (quote.status === 'ONAY_BEKLIYOR' && !user.role.canApprove) {
+      return NextResponse.json(
+        { error: 'Onay bekleyen tekliflerin kalemleri sadece onay yetkisi olan kullanıcılar tarafından düzenlenebilir' },
+        { status: 403 }
+      );
+    }
+
     // Update items in a transaction
     await db.$transaction(async (tx) => {
       for (const item of validatedItems) {
         const { listPrice, katsayi, quantity, discountPct, vatRate } = item;
         const isManualPrice = item.isManualPrice === true;
+        const isNonPriced = item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL';
+        // SET parents have unitPrice = childrenTotal — accept frontend values
+        const isSetParent = item.itemType === 'SET' && !item.parentItemId;
 
-        // For manual price items (CUSTOM), use provided unitPrice; otherwise calculate
-        const unitPrice = isManualPrice && item.unitPrice != null
-          ? item.unitPrice
-          : calculateUnitPrice(listPrice, katsayi);
-        const totalPrice = isManualPrice && item.totalPrice != null
-          ? item.totalPrice
-          : calculateItemTotal({ quantity, unitPrice, discountPct });
+        // For non-priced items (HEADER, NOTE, SUBTOTAL), zero out prices
+        // For manual price / SET parent items, use provided unitPrice; otherwise calculate
+        const unitPrice = isNonPriced ? 0
+          : (isManualPrice || isSetParent) && item.unitPrice != null
+            ? item.unitPrice
+            : calculateUnitPrice(listPrice, katsayi);
+        const totalPrice = isNonPriced ? 0
+          : (isManualPrice || isSetParent) && item.totalPrice != null
+            ? item.totalPrice
+            : calculateItemTotal({ quantity, unitPrice, discountPct });
 
         await tx.quoteItem.update({
           where: { id: item.id },
@@ -211,6 +241,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             isManualPrice,
             notes: item.notes || null,
             parentItemId: item.parentItemId || null,
+            costPrice: item.costPrice ?? undefined,
           },
         });
       }
@@ -232,6 +263,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         },
         subRows: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            product: {
+              include: { brand: true, category: true },
+            },
+          },
         },
       },
     });

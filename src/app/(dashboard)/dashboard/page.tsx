@@ -6,6 +6,7 @@ import { QuickActions } from '@/components/dashboard/QuickActions';
 import { ProfitSummary } from '@/components/dashboard/ProfitSummary';
 import { DashboardCharts } from '@/components/dashboard/DashboardCharts';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
+import { UpcomingReminders } from '@/components/dashboard/UpcomingReminders';
 
 async function getPipelineCounts() {
   const [taslak, onayBekliyor, onaylandi, gonderildi, takipte] = await Promise.all([
@@ -34,11 +35,12 @@ async function getProfitSummary() {
       status: 'GONDERILDI',
       updatedAt: { gte: startOfMonth },
     },
-    include: {
+    select: {
+      subtotal: true,
+      discountTotal: true,
       items: {
         where: { itemType: 'PRODUCT' },
         select: {
-          totalPrice: true,
           costPrice: true,
           quantity: true,
         },
@@ -50,10 +52,10 @@ async function getProfitSummary() {
   let totalRevenue = 0;
   let totalCost = 0;
 
-  // Calculate revenue and cost from actual items (not quote.grandTotal which includes VAT)
+  // Revenue = subtotal - discount (pre-VAT, post-discount)
   for (const quote of sentThisMonth) {
+    totalRevenue += Number(quote.subtotal) - Number(quote.discountTotal);
     for (const item of quote.items) {
-      totalRevenue += Number(item.totalPrice);
       if (item.costPrice) {
         totalCost += Number(item.costPrice) * Number(item.quantity);
       }
@@ -93,13 +95,14 @@ export default async function DashboardPage() {
       {/* Pipeline - full width across top */}
       <QuotePipeline counts={pipelineCounts} />
 
-      {/* Middle section: RecentQuotes (2/3) + QuickActions (1/3) */}
+      {/* Middle section: RecentQuotes (2/3) + QuickActions + Reminders (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <RecentQuotes />
         </div>
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-6">
           <QuickActions />
+          <UpcomingReminders />
         </div>
       </div>
 

@@ -4,11 +4,15 @@ export interface ImportedProduct {
   code: string;
   shortCode: string;
   brandName: string;
+  categoryName: string;
   model: string;
   nameTr: string;
   nameEn: string;
+  unit: string;
   listPrice: number;
+  costPrice: number;
   currency: string;
+  supplier: string;
 }
 
 export interface ImportPreview {
@@ -21,12 +25,16 @@ export interface ImportPreview {
 
 interface ColumnIndices {
   marka: number;
+  kategori: number;
   model: number;
   kisaKod: number;
   urunKodu: number;
   urunAdi: number;
+  birim: number;
   listeFiyati: number;
+  maliyetFiyati: number;
   paraBirimi: number;
+  tedarikci: number;
   dil: number; // language column (TR / ING / EN)
 }
 
@@ -78,6 +86,12 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
 
       if (val.includes('MARKA') && !val.includes('SISTEM')) {
         columns.marka = col;
+      } else if (
+        val.includes('KATEGORI') ||
+        val === 'CATEGORY' ||
+        val === 'KAT'
+      ) {
+        columns.kategori = col;
       } else if (val === 'MODEL' || val.includes('MODEL')) {
         columns.model = col;
       } else if (val.includes('KISA KOD') || val.includes('KISA_KOD') || val === 'KISAKOD' || val === 'KKOD') {
@@ -86,6 +100,18 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         columns.urunKodu = col;
       } else if (val.includes('URUN ADI') || val.includes('URUN_ADI') || val === 'URUNADI' || val === 'ACIKLAMA') {
         columns.urunAdi = col;
+      } else if (
+        val.includes('BIRIM') ||
+        val === 'UNIT'
+      ) {
+        columns.birim = col;
+      } else if (
+        val.includes('MALIYET') ||
+        val.includes('COST') ||
+        val.includes('ALIS FIYATI') ||
+        val.includes('ALIS_FIYATI')
+      ) {
+        columns.maliyetFiyati = col;
       } else if (
         val.includes('LISTE FIYATI') ||
         val.includes('LISTE_FIYATI') ||
@@ -104,6 +130,12 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         val.includes('CURRENCY')
       ) {
         columns.paraBirimi = col;
+      } else if (
+        val.includes('TEDARIKCI') ||
+        val.includes('SUPPLIER') ||
+        val.includes('VENDOR')
+      ) {
+        columns.tedarikci = col;
       } else if (val === 'DIL' || val === 'LANGUAGE' || val === 'LANG' || val === 'LNG') {
         columns.dil = col;
       }
@@ -117,12 +149,16 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
       headerRow: rowNum,
       columns: {
         marka: columns.marka || 0,
+        kategori: columns.kategori || 0,
         model: columns.model || 0,
         kisaKod: columns.kisaKod || 0,
         urunKodu: columns.urunKodu,
         urunAdi: columns.urunAdi || 0,
+        birim: columns.birim || 0,
         listeFiyati: columns.listeFiyati || 0,
+        maliyetFiyati: columns.maliyetFiyati || 0,
         paraBirimi: columns.paraBirimi || 0,
+        tedarikci: columns.tedarikci || 0,
         dil: columns.dil || 0,
       },
     };
@@ -224,12 +260,16 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
     if (!code) continue;
 
     const brandName = getCellString(row, columns.marka);
+    const categoryName = getCellString(row, columns.kategori);
     const model = getCellString(row, columns.model);
     const shortCode = getCellString(row, columns.kisaKod);
     const name = getCellString(row, columns.urunAdi);
+    const unit = getCellString(row, columns.birim);
     const listPrice = getCellNumber(row, columns.listeFiyati);
+    const costPrice = getCellNumber(row, columns.maliyetFiyati);
     const currencyRaw = getCellString(row, columns.paraBirimi);
     const currency = normalizeCurrency(currencyRaw);
+    const supplier = getCellString(row, columns.tedarikci);
     const language = detectRowLanguage(row, columns.dil);
 
     const existing = products.get(code);
@@ -248,12 +288,18 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
 
       // Update other fields if they were empty before
       if (!existing.brandName && brandName) existing.brandName = brandName;
+      if (!existing.categoryName && categoryName) existing.categoryName = categoryName;
       if (!existing.model && model) existing.model = model;
       if (!existing.shortCode && shortCode) existing.shortCode = shortCode;
+      if (!existing.unit && unit) existing.unit = unit;
+      if (!existing.supplier && supplier) existing.supplier = supplier;
       // Use the latest non-zero price
       if (listPrice > 0 && existing.listPrice === 0) {
         existing.listPrice = listPrice;
         existing.currency = currency;
+      }
+      if (costPrice > 0 && existing.costPrice === 0) {
+        existing.costPrice = costPrice;
       }
     } else {
       // New product entry
@@ -273,11 +319,15 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
         code,
         shortCode,
         brandName,
+        categoryName,
         model,
         nameTr,
         nameEn,
+        unit,
         listPrice,
+        costPrice,
         currency,
+        supplier,
       };
 
       products.set(code, product);

@@ -3,22 +3,14 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { z } from 'zod';
 import { QuoteStatus } from '@prisma/client';
-import { canTransitionTo, type QuoteStatus as QS } from '@/lib/quote-status';
+import { canTransitionTo, statusLabels, type QuoteStatus as QS } from '@/lib/quote-status';
+import { createNotification } from '@/lib/services/notification-service';
 
 const bulkStatusSchema = z.object({
   quoteIds: z.array(z.string()).min(1),
   status: z.nativeEnum(QuoteStatus),
   note: z.string().optional(),
 });
-
-// Only allow these bulk transitions
-const ALLOWED_BULK_TRANSITIONS: Record<string, string[]> = {
-  TASLAK: ['IPTAL'],
-  ONAY_BEKLIYOR: ['IPTAL'],
-  ONAYLANDI: ['GONDERILDI', 'IPTAL'],
-  GONDERILDI: ['TAKIPTE', 'KAZANILDI', 'KAYBEDILDI'],
-  TAKIPTE: ['KAZANILDI', 'KAYBEDILDI'],
-};
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,10 +30,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get quotes
+    // Get quotes — non-admin users can only update their own quotes
+    const isAdmin = user.role.canManageUsers;
     const quotes = await db.quote.findMany({
-      where: { id: { in: data.quoteIds } },
-      select: { id: true, quoteNumber: true, status: true },
+      where: {
+        id: { in: data.quoteIds },
+        ...(!isAdmin && { createdById: user.id }),
+      },
+      select: { id: true, quoteNumber: true, status: true, createdById: true },
     });
 
     if (quotes.length === 0) {
@@ -64,7 +60,7 @@ export async function POST(request: NextRequest) {
       const currentStatus = quote.status as QS;
       const targetStatus = data.status as QS;
 
-      // Check if transition is valid
+      // Check if transition is valid using the tested canTransitionTo() state machine
       if (!canTransitionTo(currentStatus, targetStatus)) {
         results.failed.push({
           id: quote.id,
@@ -74,22 +70,17 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Check if bulk transition is allowed
-      const allowedTargets = ALLOWED_BULK_TRANSITIONS[currentStatus] || [];
-      if (!allowedTargets.includes(data.status)) {
-        results.failed.push({
-          id: quote.id,
-          quoteNumber: quote.quoteNumber,
-          reason: `Bu durum toplu değişiklik için uygun değil`,
-        });
-        continue;
-      }
-
       try {
-        // Update quote
+        // Update quote with status-specific fields
         await db.quote.update({
           where: { id: quote.id },
-          data: { status: data.status },
+          data: {
+            status: data.status,
+            // Clear validUntil when leaving ONAYLANDI
+            ...(currentStatus === 'ONAYLANDI' && targetStatus !== 'ONAYLANDI' && {
+              validUntil: null,
+            }),
+          },
         });
 
         // Create history entry
@@ -106,6 +97,19 @@ export async function POST(request: NextRequest) {
             },
           },
         });
+
+        // Create notification for quote creator
+        try {
+          await createNotification({
+            userId: quote.createdById,
+            type: 'SYSTEM',
+            title: `Teklif ${quote.quoteNumber} durumu değişti`,
+            message: `Durum: ${statusLabels[targetStatus]}`,
+            link: `/quotes/${quote.id}`,
+          });
+        } catch (notifErr) {
+          console.error('Bulk status notification error:', notifErr);
+        }
 
         results.success.push({
           id: quote.id,

@@ -49,10 +49,10 @@ export class PdfService {
         format: options.format || 'A4',
         printBackground: true,
         margin: options.margin || {
-          top: '20mm',
-          bottom: '20mm',
-          left: '15mm',
-          right: '15mm',
+          top: '5mm',
+          bottom: '10mm',
+          left: '10mm',
+          right: '10mm',
         },
         landscape: options.landscape || false,
       };

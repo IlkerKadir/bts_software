@@ -24,32 +24,43 @@ const PIPELINE_COLORS = {
 export function DashboardCharts() {
   const [data, setData] = useState<ChartData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetchChartData();
   }, []);
 
   async function fetchChartData() {
+    setLoading(true);
+    setError(false);
     try {
       const res = await fetch('/api/dashboard/charts');
-      if (res.ok) {
-        setData(await res.json());
-      }
+      if (!res.ok) throw new Error('Fetch failed');
+      setData(await res.json());
     } catch (err) {
       console.error('Chart data fetch failed:', err);
+      setError(true);
     } finally {
       setLoading(false);
     }
   }
 
-  if (loading) return <div className="animate-pulse h-64 bg-slate-100 rounded-xl" />;
+  if (loading) return <div className="animate-pulse h-64 bg-primary-100 rounded-xl" />;
+
+  if (error) return (
+    <div className="text-center py-8 text-red-600">
+      <p>Veri yüklenirken bir hata oluştu.</p>
+      <button onClick={() => fetchChartData()} className="mt-2 text-sm text-primary-600 underline">Tekrar dene</button>
+    </div>
+  );
+
   if (!data) return null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Monthly Revenue */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="font-semibold text-slate-900 mb-4">Aylik Gelir</h3>
+      <div className="bg-white rounded-xl border border-primary-200 p-5">
+        <h3 className="font-semibold text-primary-900 mb-4">Aylık Gelir</h3>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data.monthlyRevenue}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
@@ -64,22 +75,22 @@ export function DashboardCharts() {
       </div>
 
       {/* Win Rate Trend */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="font-semibold text-slate-900 mb-4">Kazanma Orani Trendi</h3>
+      <div className="bg-white rounded-xl border border-primary-200 p-5">
+        <h3 className="font-semibold text-primary-900 mb-4">Kazanma Oranı Trendi</h3>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={data.winRate}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis dataKey="month" fontSize={12} tick={{ fill: '#64748B' }} />
             <YAxis fontSize={12} tick={{ fill: '#64748B' }} tickFormatter={(v) => `%${v}`} domain={[0, 100]} />
-            <Tooltip formatter={(value) => [`%${Number(value).toFixed(1)}`, 'Kazanma Orani']} />
+            <Tooltip formatter={(value) => [`%${Number(value).toFixed(1)}`, 'Kazanma Oranı']} />
             <Line type="monotone" dataKey="rate" stroke="#0369A1" strokeWidth={2} dot={{ fill: '#0369A1', r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
       {/* Pipeline */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 lg:col-span-2">
-        <h3 className="font-semibold text-slate-900 mb-4">Teklif Pipeline</h3>
+      <div className="bg-white rounded-xl border border-primary-200 p-5 lg:col-span-2">
+        <h3 className="font-semibold text-primary-900 mb-4">Teklif Pipeline</h3>
         <ResponsiveContainer width="100%" height={280}>
           <PieChart>
             <Pie data={data.pipeline} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>

@@ -190,7 +190,10 @@ export function UserForm({ isOpen, onClose, onSuccess, initialData, roles }: Use
         <div className="p-3 bg-primary-50 rounded-lg text-sm text-primary-600">
           <p className="font-medium mb-1">Şifre Gereksinimleri:</p>
           <ul className="list-disc list-inside space-y-0.5">
-            <li>En az 6 karakter</li>
+            <li>En az 8 karakter</li>
+            <li>En az bir büyük harf (A-Z)</li>
+            <li>En az bir küçük harf (a-z)</li>
+            <li>En az bir rakam (0-9)</li>
           </ul>
         </div>
       </form>

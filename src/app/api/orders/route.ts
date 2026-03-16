@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { Prisma } from '@prisma/client';
+import { Prisma, OrderStatus } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,12 +27,33 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    if (status) {
-      where.status = status as any;
+    if (status && Object.values(OrderStatus).includes(status as OrderStatus)) {
+      where.status = status as OrderStatus;
     }
 
     if (companyId) {
       where.companyId = companyId;
+    }
+
+    // Server-side sorting
+    const sortField = searchParams.get('sortField') || 'createdAt';
+    const sortDirection = (searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc') as Prisma.SortOrder;
+
+    let orderBy: Prisma.OrderConfirmationOrderByWithRelationInput;
+    switch (sortField) {
+      case 'orderNumber':
+        orderBy = { orderNumber: sortDirection };
+        break;
+      case 'company':
+        orderBy = { company: { name: sortDirection } };
+        break;
+      case 'status':
+        orderBy = { status: sortDirection };
+        break;
+      case 'createdAt':
+      default:
+        orderBy = { createdAt: sortDirection };
+        break;
     }
 
     const [orders, total] = await Promise.all([
@@ -51,7 +72,7 @@ export async function GET(request: NextRequest) {
           company: { select: { id: true, name: true } },
           createdBy: { select: { id: true, fullName: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -76,11 +97,21 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getNextOrderNumber(): Promise<string> {
+/** Max retries for order creation on unique constraint collision */
+const MAX_ORDER_RETRIES = 3;
+
+/**
+ * Generate the next order number inside a transaction context.
+ * Uses the transaction client (tx) so the read+write is atomic
+ * under Serializable isolation.
+ */
+async function getNextOrderNumber(
+  tx: Prisma.TransactionClient
+): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `SIP-${year}-`;
 
-  const lastOrder = await db.orderConfirmation.findFirst({
+  const lastOrder = await tx.orderConfirmation.findFirst({
     where: {
       orderNumber: { startsWith: prefix },
     },
@@ -96,6 +127,17 @@ async function getNextOrderNumber(): Promise<string> {
   }
 
   return `${prefix}${String(nextSequence).padStart(4, '0')}`;
+}
+
+/**
+ * Check whether a Prisma error is a unique constraint violation (P2002)
+ * which indicates a concurrent insert grabbed the same order number.
+ */
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -115,7 +157,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify the quote exists
+    // Verify the quote exists (outside the retry loop — immutable check)
     const quote = await db.quote.findUnique({
       where: { id: quoteId },
       select: {
@@ -130,34 +172,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Teklif bulunamadi' }, { status: 404 });
     }
 
-    const orderNumber = await getNextOrderNumber();
+    if (quote.status !== 'KAZANILDI') {
+      return NextResponse.json(
+        { error: 'Sadece kazanilmis teklifler siparis olusturabilir' },
+        { status: 400 }
+      );
+    }
 
-    const order = await db.orderConfirmation.create({
-      data: {
-        orderNumber,
-        quoteId: quote.id,
-        companyId: quote.companyId,
-        status: 'HAZIRLANIYOR',
-        notes: notes || null,
-        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
-        createdById: user.id,
-      },
-      include: {
-        quote: {
-          select: {
-            id: true,
-            quoteNumber: true,
-            subject: true,
-            currency: true,
-            grandTotal: true,
+    // Retry loop: serializable transaction prevents read-then-write race.
+    // If two concurrent requests still collide on the unique orderNumber,
+    // the unique constraint causes P2002 and we retry with a fresh number.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_ORDER_RETRIES; attempt++) {
+      try {
+        const order = await db.$transaction(
+          async (tx) => {
+            const orderNumber = await getNextOrderNumber(tx);
+
+            return tx.orderConfirmation.create({
+              data: {
+                orderNumber,
+                quoteId: quote.id,
+                companyId: quote.companyId,
+                status: 'HAZIRLANIYOR',
+                notes: notes || null,
+                deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
+                createdById: user.id,
+              },
+              include: {
+                quote: {
+                  select: {
+                    id: true,
+                    quoteNumber: true,
+                    subject: true,
+                    currency: true,
+                    grandTotal: true,
+                  },
+                },
+                company: { select: { id: true, name: true } },
+                createdBy: { select: { id: true, fullName: true } },
+              },
+            });
           },
-        },
-        company: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, fullName: true } },
-      },
-    });
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          }
+        );
 
-    return NextResponse.json({ order }, { status: 201 });
+        return NextResponse.json({ order }, { status: 201 });
+      } catch (error) {
+        lastError = error;
+        if (!isUniqueConstraintError(error)) {
+          // Not a collision — re-throw immediately
+          throw error;
+        }
+        // Unique constraint collision — retry with fresh number
+      }
+    }
+
+    // All retries exhausted
+    console.error('Orders POST error: max retries reached', lastError);
+    return NextResponse.json(
+      { error: 'Siparis olusturulurken bir hata olustu' },
+      { status: 500 }
+    );
   } catch (error) {
     console.error('Orders POST error:', error);
     return NextResponse.json(

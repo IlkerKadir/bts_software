@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProjectForm } from './ProjectForm';
+import { formatDate } from '@/lib/utils/format';
+import type { Pagination } from '@/lib/types/pagination';
 
 interface Company {
   id: string;
@@ -20,13 +22,6 @@ interface Project {
   estimatedEnd?: string | null;
   notes?: string | null;
   _count?: { quotes: number };
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
 }
 
 interface ProjectListProps {
@@ -71,6 +66,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState<Project | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchProjects = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -128,6 +124,8 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   const handleDelete = async () => {
     if (!deletingProject) return;
 
+    setIsDeleting(true);
+    setDeleteError('');
     try {
       const response = await fetch(`/api/projects/${deletingProject.id}`, {
         method: 'DELETE',
@@ -136,14 +134,16 @@ export function ProjectList({ canDelete }: ProjectListProps) {
       const data = await response.json();
 
       if (!response.ok) {
-        setDeleteError(data.error || 'Silme işlemi başarısız');
+        setDeleteError(data.error || 'Silme islemi basarisiz');
         return;
       }
 
       setDeletingProject(null);
       fetchProjects();
     } catch {
-      setDeleteError('Bir hata oluştu');
+      setDeleteError('Bir hata olustu');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -154,11 +154,6 @@ export function ProjectList({ canDelete }: ProjectListProps) {
 
   const handleFormSuccess = () => {
     fetchProjects();
-  };
-
-  const formatDate = (dateString: string | null | undefined) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('tr-TR');
   };
 
   return (
@@ -327,14 +322,15 @@ export function ProjectList({ canDelete }: ProjectListProps) {
           <>
             <Button
               variant="secondary"
+              disabled={isDeleting}
               onClick={() => {
                 setDeletingProject(null);
                 setDeleteError('');
               }}
             >
-              İptal
+              Iptal
             </Button>
-            <Button variant="danger" onClick={handleDelete}>
+            <Button variant="danger" onClick={handleDelete} disabled={isDeleting} isLoading={isDeleting}>
               Sil
             </Button>
           </>

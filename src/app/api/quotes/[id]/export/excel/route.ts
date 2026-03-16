@@ -65,6 +65,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadi' }, { status: 404 });
     }
 
+    // Authorization: user must be the quote creator OR have canExport permission
+    if (quote.createdById !== user.id && !user.role.canExport) {
+      return NextResponse.json(
+        { error: 'Bu işlem için yetkiniz yok' },
+        { status: 403 }
+      );
+    }
+
     // Use the quote's persisted totals (computed by recalculateAndPersistQuoteTotals)
     const subtotal = Number(quote.subtotal);
     const totalVat = Number(quote.vatTotal);
@@ -85,7 +93,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return { itemType, description };
         }
 
-        // PRODUCT, CUSTOM, SERVICE - include quantity, unit and prices
+        // PRODUCT, CUSTOM, SET - include quantity, unit and prices
         return {
           itemType,
           description,
@@ -101,21 +109,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const notes = notlarTerms.map(term => ({
       text: term.value,
       sortOrder: term.sortOrder,
+      highlight: term.highlight,
     }));
 
-    // Commercial terms excluding NOTLAR (those go to notes section)
+    // All commercial terms (including NOTLAR — the service handles grouping)
     const commercialTerms = quote.commercialTerms
-      .filter(term => term.category !== 'NOTLAR')
       .map(term => ({
         category: term.category,
         value: term.value,
         sortOrder: term.sortOrder,
+        highlight: term.highlight,
       }));
 
     const excelData: QuoteDataForExcel = {
       quoteNumber: quote.quoteNumber,
-      refNo: null,
+      refNo: quote.refNo ?? null,
       subject: quote.subject,
+      description: quote.description ?? null,
       date: formatDate(quote.createdAt),
       validUntil: quote.validUntil ? formatDate(quote.validUntil) : null,
       currency: quote.currency,

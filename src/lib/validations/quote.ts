@@ -14,7 +14,7 @@ export const quoteStatusEnum = z.enum([
 
 export const currencyEnum = z.enum(['EUR', 'USD', 'GBP', 'TRY']);
 
-export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SERVICE', 'SUBTOTAL']);
+export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SET', 'SUBTOTAL']);
 
 export const quoteQuerySchema = z.object({
   search: z.string().optional(),
@@ -30,6 +30,7 @@ export const createQuoteSchema = z.object({
   companyId: z.string().min(1, 'Company ID is required'),
   projectId: z.string().optional(),
   subject: z.string().optional(),
+  description: z.string().optional(),
   currency: currencyEnum.default('EUR'),
   validityDays: z.number().int().positive().default(30),
   notes: z.string().optional(),
@@ -59,10 +60,29 @@ export const quoteItemUpdateSchema = quoteItemSchema.extend({
   unitPrice: z.number().optional(),
   totalPrice: z.number().optional(),
   parentItemId: z.string().nullish(),
+  costPrice: z.number().nullish(),
 });
 
 export const bulkQuoteItemUpdateSchema = z.object({
   items: z.array(quoteItemUpdateSchema).min(1, 'At least one item is required'),
+});
+
+export const languageEnum = z.enum(['TR', 'EN']);
+
+export const quoteUpdateSchema = z.object({
+  companyId: z.string().optional(),
+  projectId: z.string().nullable().optional(),
+  refNo: z.string().max(50).nullable().optional(),
+  subject: z.string().optional(),
+  description: z.string().nullable().optional(),
+  currency: currencyEnum.optional(),
+  exchangeRate: z.number().gt(0, 'Exchange rate must be greater than 0').lte(1000, 'Exchange rate must be at most 1000').optional(),
+  protectionPct: z.number().gte(0, 'Protection % must be at least 0').lte(100, 'Protection % must be at most 100').optional(),
+  protectionMap: z.any().optional(),
+  discountPct: z.number().gte(0, 'Discount % must be at least 0').lte(100, 'Discount % must be at most 100').optional(),
+  validityDays: z.number().gt(0, 'Validity days must be greater than 0').lte(365, 'Validity days must be at most 365').optional(),
+  notes: z.string().nullable().optional(),
+  language: languageEnum.optional(),
 });
 
 export const quoteStatusLabels: Record<string, string> = {

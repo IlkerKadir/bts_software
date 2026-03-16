@@ -11,6 +11,7 @@ import {
   DollarSign,
   Percent,
   TrendingDown,
+  Pencil,
 } from 'lucide-react';
 import { Button, Card, Badge, Spinner } from '@/components/ui';
 
@@ -257,6 +258,14 @@ export default function ApprovalsPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => router.push(`/quotes/${quote.id}/edit`)}
+                      title="Teklifi düzenle (katsayı vb. ayarla)"
+                    >
+                      <Pencil className="w-4 h-4 mr-1" />
+                      Düzenle
+                    </Button>
                     <Button
                       variant="secondary"
                       onClick={() => handleReject(quote.id)}

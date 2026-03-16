@@ -41,3 +41,40 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await getSession();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id: notificationId } = await params;
+
+    // Verify the notification belongs to the current user
+    const notification = await db.notification.findUnique({
+      where: { id: notificationId },
+      select: { userId: true },
+    });
+
+    if (!notification) {
+      return NextResponse.json({ error: 'Bildirim bulunamadı' }, { status: 404 });
+    }
+
+    if (notification.userId !== user.id) {
+      return NextResponse.json({ error: 'Yetkisiz erişim' }, { status: 403 });
+    }
+
+    await db.notification.delete({
+      where: { id: notificationId },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Notification DELETE error:', error);
+    return NextResponse.json(
+      { error: 'Bildirim silinirken bir hata oluştu' },
+      { status: 500 }
+    );
+  }
+}

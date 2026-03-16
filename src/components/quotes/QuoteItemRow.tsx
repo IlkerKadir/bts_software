@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   GripVertical,
   Trash2,
   Clock,
   Copy,
-  Wrench,
+  Package,
   Plus,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { formatPrice, formatNumber } from '@/lib/utils/format';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,7 +22,7 @@ export interface QuoteItemData {
   id: string;
   productId?: string | null;
   parentItemId?: string | null;
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE' | 'SUBTOTAL';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL';
   sortOrder: number;
   code?: string | null;
   brand?: string | null;
@@ -36,7 +39,11 @@ export interface QuoteItemData {
   notes?: string | null;
   isManualPrice?: boolean;
   costPrice?: number | null;
-  serviceMeta?: any;
+  productCurrency?: string | null;
+  productListPrice?: number | null;
+  productCostPrice?: number | null;
+  minKatsayi?: number | null;
+  maxKatsayi?: number | null;
   subRows?: QuoteItemData[];
 }
 
@@ -80,19 +87,8 @@ export interface QuoteItemRowProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function formatPrice(price: number, currency: string): string {
-  return new Intl.NumberFormat('tr-TR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(price) + ' ' + currency;
-}
-
-function formatNumber(value: number, decimals = 2): string {
-  return new Intl.NumberFormat('tr-TR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
+// Re-export formatPrice and formatNumber from shared utilities for backward compatibility
+export { formatPrice, formatNumber };
 
 // ---------------------------------------------------------------------------
 // DeltaCell - shows % deviation with color coding
@@ -157,7 +153,7 @@ function EditableCell({
     setEditing(false);
     if (type === 'number') {
       const parsed = parseFloat(draft.replace(',', '.'));
-      if (!isNaN(parsed) && parsed !== value) {
+      if (!isNaN(parsed) && Math.abs(parsed - (typeof value === 'number' ? value : 0)) > 0.0001) {
         onChange(parsed);
       }
     } else if (draft !== value) {
@@ -295,7 +291,18 @@ export function QuoteItemRow({
       ? ((effectiveUnitPrice - costPriceNum) / effectiveUnitPrice) * 100
       : null;
   const isLowMargin = margin !== null && margin < 15;
-  const stickyBg = isLowMargin && canViewCosts ? 'bg-red-50' : 'bg-white';
+
+  // Katsayi range check
+  const katsayiNum = Number(item.katsayi);
+  const hasMinKatsayi = item.minKatsayi != null;
+  const hasMaxKatsayi = item.maxKatsayi != null;
+  const isBelowMin = hasMinKatsayi && katsayiNum < Number(item.minKatsayi);
+  const isAboveMax = hasMaxKatsayi && katsayiNum > Number(item.maxKatsayi);
+  const isKatsayiOutOfRange = isBelowMin || isAboveMax;
+  const katsayiRangeLabel =
+    hasMinKatsayi || hasMaxKatsayi
+      ? `Aralik: ${hasMinKatsayi ? Number(item.minKatsayi).toFixed(3) : '-'} - ${hasMaxKatsayi ? Number(item.maxKatsayi).toFixed(3) : '-'}`
+      : null;
 
   // ColSpan for HEADER/NOTE rows (all columns except drag + delete)
   const spanColCount = totalColCount - 2;
@@ -444,14 +451,17 @@ export function QuoteItemRow({
             menuRef={menuRef}
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
+            onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
           />
         )}
       </>
     );
   }
 
-  // ---- PRODUCT / CUSTOM / SERVICE rows ----
-  const isService = item.itemType === 'SERVICE';
+  // ---- PRODUCT / CUSTOM / SET rows ----
+  const isCustom = item.itemType === 'CUSTOM';
+  const isSet = item.itemType === 'SET';
+  const isSetParent = isSet && !item.parentItemId;
 
   return (
     <>
@@ -468,17 +478,17 @@ export function QuoteItemRow({
           isSubRow && 'bg-blue-50/30 text-accent-500',
         )}
       >
-        {/* Drag handle - sticky */}
-        <td className={cn('w-8 border border-accent-200 px-1 py-1.5 text-center sticky left-0 z-10', isSubRow ? 'bg-blue-50/30' : stickyBg)}>
+        {/* Drag handle */}
+        <td className="w-8 border border-accent-200 px-1 py-1.5 text-center">
           {!isSubRow && (
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           )}
         </td>
 
         {/* POZ NO - sticky */}
-        <td className={cn('border border-accent-200 px-2 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap sticky left-[33px] z-10', stickyBg)}>
+        <td className="border border-accent-200 px-2 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap">
           <span className="flex items-center justify-center gap-1">
-            {isService && <Wrench className="h-3 w-3 text-accent-500" />}
+            {isSet && <Package className="h-3 w-3 text-accent-500" />}
             {pozNo ?? '-'}
           </span>
         </td>
@@ -487,13 +497,38 @@ export function QuoteItemRow({
         {columnVisibility.urun && (
           <>
             <td className="border border-accent-200 px-2 py-1.5 whitespace-nowrap text-xs text-accent-700 max-w-[100px] truncate" title={item.brand || undefined}>
-              {item.brand || '-'}
+              {isCustom ? (
+                <EditableCell
+                  value={item.brand || ''}
+                  displayValue={item.brand || '-'}
+                  onChange={(v) => onUpdate({ brand: String(v) || null })}
+                  className="text-xs"
+                />
+              ) : (
+                item.brand || '-'
+              )}
             </td>
             <td className="border border-accent-200 px-2 py-1.5 whitespace-nowrap text-xs text-accent-500 max-w-[100px] truncate" title={item.model || undefined}>
-              {item.model || '-'}
+              {isCustom ? (
+                <EditableCell
+                  value={item.model || ''}
+                  displayValue={item.model || '-'}
+                  onChange={(v) => onUpdate({ model: String(v) || null })}
+                  className="text-xs"
+                />
+              ) : (
+                item.model || '-'
+              )}
             </td>
             <td className="border border-accent-200 px-2 py-1.5 whitespace-nowrap max-w-[80px] truncate">
-              {item.code ? (
+              {isCustom ? (
+                <EditableCell
+                  value={item.code || ''}
+                  displayValue={item.code || '-'}
+                  onChange={(v) => onUpdate({ code: String(v) || null })}
+                  className="text-xs font-mono"
+                />
+              ) : item.code ? (
                 <code className="text-xs font-mono text-accent-600 bg-accent-50 px-1 rounded">
                   {item.code}
                 </code>
@@ -555,23 +590,51 @@ export function QuoteItemRow({
         {/* KATSAYI + LISTE FIYATI (canViewCosts + fiyat group) */}
         {canViewCosts && columnVisibility.fiyat && (
           <>
-            <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
-              <EditableCell
-                value={Number(item.katsayi)}
-                type="number"
-                readOnly={!canOverrideKatsayi}
-                onChange={(v) => {
-                  const k = Number(v);
-                  const newUnitPrice = item.isManualPrice ? Number(item.unitPrice) : Number(item.listPrice) * k;
-                  const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
-                  onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
-                }}
-                displayValue={formatNumber(Number(item.katsayi), 4)}
-                className="text-right"
-              />
+            <td
+              className={cn(
+                'border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap',
+                isKatsayiOutOfRange && 'bg-amber-50 border-amber-300',
+              )}
+              title={isKatsayiOutOfRange && katsayiRangeLabel ? `Belirlenen aralik disinda! ${katsayiRangeLabel}` : undefined}
+            >
+              <div className="flex items-center justify-end gap-1">
+                {isKatsayiOutOfRange && (
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                )}
+                <EditableCell
+                  value={Number(item.katsayi)}
+                  type="number"
+                  readOnly={isSetParent || (!isCustom && !isSubRow && !canOverrideKatsayi)}
+                  onChange={(v) => {
+                    const k = Number(v);
+                    const shouldCalc = isCustom || !item.isManualPrice;
+                    const newUnitPrice = shouldCalc ? Number(item.listPrice) * k : Number(item.unitPrice);
+                    const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+                    onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
+                  }}
+                  displayValue={formatNumber(Number(item.katsayi), 4)}
+                  className={cn('text-right', isKatsayiOutOfRange && 'text-amber-700 font-medium')}
+                />
+              </div>
+              {isKatsayiOutOfRange && katsayiRangeLabel && (
+                <div className="text-[10px] text-amber-600 mt-0.5 text-right">{katsayiRangeLabel}</div>
+              )}
             </td>
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
-              {formatPrice(Number(item.listPrice), currency)}
+              <EditableCell
+                value={Number(item.listPrice)}
+                type="number"
+                readOnly={isSetParent}
+                onChange={(v) => {
+                  const lp = Number(v);
+                  const shouldCalc = isCustom || !item.isManualPrice;
+                  const newUnitPrice = shouldCalc ? lp * Number(item.katsayi) : Number(item.unitPrice);
+                  const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+                  onUpdate({ listPrice: lp, unitPrice: newUnitPrice, totalPrice: total });
+                }}
+                displayValue={formatPrice(Number(item.listPrice), currency)}
+                className="text-right"
+              />
             </td>
           </>
         )}
@@ -582,7 +645,7 @@ export function QuoteItemRow({
             <EditableCell
               value={Number(item.unitPrice)}
               type="number"
-              readOnly={!item.isManualPrice}
+              readOnly={isSetParent || !item.isManualPrice}
               onChange={(v) => {
                 const up = Number(v);
                 const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
@@ -736,40 +799,37 @@ function ContextMenuOverlay({
   onDelete,
   onInsertHeaderAbove,
 }: ContextMenuOverlayProps) {
-  return (
-    <tr className="contents">
-      <td>
-        <div
-          ref={menuRef}
-          className="fixed z-50 min-w-[180px] rounded-lg border border-accent-200 bg-white py-1 shadow-lg"
-          style={{ top: y, left: x }}
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-50 min-w-[180px] rounded-lg border border-accent-200 bg-white py-1 shadow-lg"
+      style={{ top: y, left: x }}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
+        onClick={onDuplicate}
+      >
+        <Copy className="h-3.5 w-3.5" /> Kopyala
+      </button>
+      {onInsertHeaderAbove && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
+          onClick={onInsertHeaderAbove}
         >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
-            onClick={onDuplicate}
-          >
-            <Copy className="h-3.5 w-3.5" /> Kopyala
-          </button>
-          {onInsertHeaderAbove && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
-              onClick={onInsertHeaderAbove}
-            >
-              <Plus className="h-3.5 w-3.5" /> Üstüne Başlık Ekle
-            </button>
-          )}
-          <div className="my-1 border-t border-accent-200" />
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Sil
-          </button>
-        </div>
-      </td>
-    </tr>
+          <Plus className="h-3.5 w-3.5" /> Üstüne Başlık Ekle
+        </button>
+      )}
+      <div className="my-1 border-t border-accent-200" />
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-3.5 w-3.5" /> Sil
+      </button>
+    </div>,
+    document.body,
   );
 }

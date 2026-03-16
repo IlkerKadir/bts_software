@@ -10,8 +10,11 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  AlertCircle,
 } from 'lucide-react';
 import { Button, Select, Card, Badge } from '@/components/ui';
+import { formatCurrency, formatDate } from '@/lib/utils/format';
+import type { Pagination } from '@/lib/types/pagination';
 
 interface Company {
   id: string;
@@ -36,19 +39,12 @@ interface Order {
   createdAt: string;
 }
 
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
 const orderStatusLabels: Record<string, string> = {
-  HAZIRLANIYOR: 'Hazirlaniyor',
-  ONAYLANDI: 'Onaylandi',
-  GONDERILDI: 'Gonderildi',
-  TAMAMLANDI: 'Tamamlandi',
-  IPTAL: 'Iptal',
+  HAZIRLANIYOR: 'Hazırlanıyor',
+  ONAYLANDI: 'Onaylandı',
+  GONDERILDI: 'Gönderildi',
+  TAMAMLANDI: 'Tamamlandı',
+  IPTAL: 'İptal',
 };
 
 const orderStatusVariants: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
@@ -60,12 +56,12 @@ const orderStatusVariants: Record<string, 'default' | 'success' | 'warning' | 'e
 };
 
 const statusOptions = [
-  { value: '', label: 'Tum Durumlar' },
-  { value: 'HAZIRLANIYOR', label: 'Hazirlaniyor' },
-  { value: 'ONAYLANDI', label: 'Onaylandi' },
-  { value: 'GONDERILDI', label: 'Gonderildi' },
-  { value: 'TAMAMLANDI', label: 'Tamamlandi' },
-  { value: 'IPTAL', label: 'Iptal' },
+  { value: '', label: 'Tüm Durumlar' },
+  { value: 'HAZIRLANIYOR', label: 'Hazırlanıyor' },
+  { value: 'ONAYLANDI', label: 'Onaylandı' },
+  { value: 'GONDERILDI', label: 'Gönderildi' },
+  { value: 'TAMAMLANDI', label: 'Tamamlandı' },
+  { value: 'IPTAL', label: 'İptal' },
 ];
 
 type SortField = 'orderNumber' | 'company' | 'status' | 'createdAt';
@@ -80,31 +76,38 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   const fetchOrders = useCallback(async (page = 1) => {
     setIsLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (statusFilter) params.set('status', statusFilter);
       if (companyFilter) params.set('companyId', companyFilter);
+      if (sortField) params.set('sortField', sortField);
+      if (sortDirection) params.set('sortDirection', sortDirection);
       params.set('page', page.toString());
 
       const response = await fetch(`/api/orders?${params}`);
       const data = await response.json();
 
-      if (response.ok) {
-        setOrders(data.orders);
-        setPagination(data.pagination);
+      if (!response.ok) {
+        throw new Error(data.error || 'Siparisler yuklenirken bir hata olustu');
       }
-    } catch (error) {
-      console.error('Error fetching orders:', error);
+
+      setOrders(data.orders);
+      setPagination(data.pagination);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err instanceof Error ? err.message : 'Siparisler yuklenirken bir hata olustu');
     } finally {
       setIsLoading(false);
     }
-  }, [search, statusFilter, companyFilter]);
+  }, [search, statusFilter, companyFilter, sortField, sortDirection]);
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -128,26 +131,6 @@ export default function OrdersPage() {
     return () => clearTimeout(debounce);
   }, [fetchOrders]);
 
-  const formatPrice = (price: number | string | { toNumber?: () => number } | null | undefined, currency: string) => {
-    let numPrice = 0;
-    if (typeof price === 'number') {
-      numPrice = price;
-    } else if (typeof price === 'string') {
-      numPrice = parseFloat(price) || 0;
-    } else if (price && typeof price.toNumber === 'function') {
-      numPrice = price.toNumber();
-    }
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-    }).format(numPrice);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('tr-TR');
-  };
-
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -157,21 +140,8 @@ export default function OrdersPage() {
     }
   };
 
-  const sortedOrders = [...orders].sort((a, b) => {
-    const dir = sortDirection === 'asc' ? 1 : -1;
-    switch (sortField) {
-      case 'orderNumber':
-        return dir * a.orderNumber.localeCompare(b.orderNumber, 'tr');
-      case 'company':
-        return dir * a.company.name.localeCompare(b.company.name, 'tr');
-      case 'status':
-        return dir * a.status.localeCompare(b.status, 'tr');
-      case 'createdAt':
-        return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      default:
-        return 0;
-    }
-  });
+  // Sorting is now handled server-side; orders are already sorted by the API
+  const sortedOrders = orders;
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
@@ -189,8 +159,8 @@ export default function OrdersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-primary-900">Siparisler</h1>
-          <p className="text-sm text-primary-500">Siparis teyitlerini yonetin</p>
+          <h1 className="text-2xl font-bold text-primary-900">Siparişler</h1>
+          <p className="text-sm text-primary-500">Sipariş teyitlerini yönetin</p>
         </div>
       </div>
 
@@ -226,6 +196,20 @@ export default function OrdersPage() {
           </div>
         </div>
       </Card>
+
+      {/* Error banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <p className="text-sm text-red-700">{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto text-red-400 hover:text-red-600 text-sm cursor-pointer"
+          >
+            Kapat
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <Card>
@@ -272,7 +256,7 @@ export default function OrdersPage() {
                     <SortIcon field="createdAt" />
                   </div>
                 </th>
-                <th className="w-20">Islemler</th>
+                <th className="w-20">İşlemler</th>
               </tr>
             </thead>
             <tbody>
@@ -311,7 +295,7 @@ export default function OrdersPage() {
                       </button>
                     </td>
                     <td className="text-right text-xs tabular-nums font-medium">
-                      {formatPrice(order.quote.grandTotal, order.quote.currency)}
+                      {formatCurrency(order.quote.grandTotal, order.quote.currency)}
                     </td>
                     <td>
                       <Badge variant={orderStatusVariants[order.status] || 'default'}>
@@ -354,7 +338,7 @@ export default function OrdersPage() {
                 disabled={pagination.page === 1}
                 onClick={() => fetchOrders(pagination.page - 1)}
               >
-                Onceki
+                Önceki
               </Button>
               <Button
                 variant="secondary"

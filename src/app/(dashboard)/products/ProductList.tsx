@@ -5,7 +5,11 @@ import { Plus, Search, Pencil, Trash2, Upload, Settings, ArrowUpDown, ArrowUp, A
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProductForm } from './ProductForm';
 import { ProductImportModal } from '@/components/products/ProductImportModal';
+import { BulkPriceUpdateModal } from '@/components/products/BulkPriceUpdateModal';
 import { BrandCoefficientTable } from '@/components/products/BrandCoefficientTable';
+import { formatCurrency } from '@/lib/utils/format';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import type { Pagination } from '@/lib/types/pagination';
 
 interface Brand {
   id: string;
@@ -31,14 +35,9 @@ interface Product {
   costPrice?: number | null;
   currency: string;
   supplier?: string | null;
+  minKatsayi?: number | null;
+  maxKatsayi?: number | null;
   isActive: boolean;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
 }
 
 interface ProductListProps {
@@ -55,6 +54,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [brandFilter, setBrandFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -63,18 +63,24 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCoefficientModalOpen, setIsCoefficientModalOpen] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [isBulkPriceModalOpen, setIsBulkPriceModalOpen] = useState(false);
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const fetchProducts = useCallback(async (page = 1) => {
     setIsLoading(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams();
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (brandFilter) params.set('brandId', brandFilter);
       if (categoryFilter) params.set('categoryId', categoryFilter);
+      if (sortField) params.set('sortField', sortField);
+      if (sortDirection) params.set('sortDirection', sortDirection);
       params.set('page', page.toString());
 
       const response = await fetch(`/api/products?${params}`);
@@ -83,13 +89,16 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
       if (response.ok) {
         setProducts(data.products);
         setPagination(data.pagination);
+      } else {
+        setFetchError(data.error || 'Ürünler yüklenirken bir hata oluştu');
       }
     } catch (error) {
       console.error('Error fetching products:', error);
+      setFetchError('Sunucu ile bağlantı kurulamadı');
     } finally {
       setIsLoading(false);
     }
-  }, [search, brandFilter, categoryFilter]);
+  }, [debouncedSearch, brandFilter, categoryFilter, sortField, sortDirection]);
 
   useEffect(() => {
     const fetchLookups = async () => {
@@ -111,11 +120,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   }, []);
 
   useEffect(() => {
-    const debounce = setTimeout(() => {
-      fetchProducts();
-    }, 300);
-
-    return () => clearTimeout(debounce);
+    fetchProducts();
   }, [fetchProducts]);
 
   const handleEdit = (product: Product) => {
@@ -160,11 +165,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
 
   const formatPrice = (price: number | null | undefined, currency: string) => {
     if (price === null || price === undefined) return '-';
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-    }).format(price);
+    return formatCurrency(price, currency);
   };
 
   const handleSort = (field: SortField) => {
@@ -187,36 +188,11 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     );
   };
 
-  const sortedProducts = [...products].sort((a, b) => {
-    if (!sortField) return 0;
-
-    const dir = sortDirection === 'asc' ? 1 : -1;
-
-    switch (sortField) {
-      case 'code':
-        return dir * a.code.localeCompare(b.code, 'tr');
-      case 'shortCode':
-        return dir * (a.shortCode || '').localeCompare(b.shortCode || '', 'tr');
-      case 'name':
-        return dir * a.name.localeCompare(b.name, 'tr');
-      case 'brand':
-        return dir * (a.brand?.name || '').localeCompare(b.brand?.name || '', 'tr');
-      case 'model':
-        return dir * (a.model || '').localeCompare(b.model || '', 'tr');
-      case 'category':
-        return dir * (a.category?.name || '').localeCompare(b.category?.name || '', 'tr');
-      case 'listPrice':
-        return dir * (a.listPrice - b.listPrice);
-      case 'costPrice':
-        return dir * ((a.costPrice || 0) - (b.costPrice || 0));
-      case 'isActive':
-        return dir * (Number(a.isActive) - Number(b.isActive));
-      default:
-        return 0;
-    }
-  });
+  // Sorting is now handled server-side; products are already sorted by the API
+  const sortedProducts = products;
 
   const totalColumns =
+    1 + // Checkbox
     1 + // Kod
     1 + // Kısa Kod
     1 + // Ürün Adı
@@ -227,6 +203,32 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     (canViewCosts ? 1 : 0) + // Maliyet
     1 + // Durum
     ((canEditProducts || canDelete) ? 1 : 0); // İşlemler
+
+  const handleSelectAll = () => {
+    if (selectedProducts.size === sortedProducts.length) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(sortedProducts.map(p => p.id)));
+    }
+  };
+
+  const handleSelectProduct = (productId: string) => {
+    setSelectedProducts(prev => {
+      const next = new Set(prev);
+      if (next.has(productId)) {
+        next.delete(productId);
+      } else {
+        next.add(productId);
+      }
+      return next;
+    });
+  };
+
+  const selectedProductsForBulk = products.filter(p => selectedProducts.has(p.id)).map(p => ({
+    id: p.id,
+    code: p.code,
+    name: p.name,
+  }));
 
   return (
     <div className="space-y-6">
@@ -298,12 +300,55 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
         </div>
       </Card>
 
+      {/* Fetch Error Banner */}
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-red-700 font-medium">{fetchError}</p>
+          <button
+            onClick={() => fetchProducts()}
+            className="text-sm text-red-600 underline ml-4"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Actions Toolbar */}
+      {selectedProducts.size > 0 && (
+        <div className="flex items-center gap-3 bg-accent-50 border border-accent-200 rounded-lg px-4 py-3">
+          <span className="text-sm font-medium text-accent-700">
+            {selectedProducts.size} ürün seçildi
+          </span>
+          <Button
+            size="sm"
+            onClick={() => setIsBulkPriceModalOpen(true)}
+          >
+            Toplu Fiyat Güncelle
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSelectedProducts(new Set())}
+          >
+            Seçimi Temizle
+          </Button>
+        </div>
+      )}
+
       {/* Table */}
       <Card>
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
               <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={sortedProducts.length > 0 && selectedProducts.size === sortedProducts.length}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 rounded border-primary-300 text-accent-600 focus:ring-accent-500 cursor-pointer"
+                  />
+                </th>
                 <th
                   className="uppercase tracking-wider text-xs cursor-pointer select-none"
                   onClick={() => handleSort('code')}
@@ -408,6 +453,14 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
               ) : (
                 sortedProducts.map((product) => (
                   <tr key={product.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.has(product.id)}
+                        onChange={() => handleSelectProduct(product.id)}
+                        className="w-4 h-4 rounded border-primary-300 text-accent-600 focus:ring-accent-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="font-medium font-mono text-sm">{product.code}</td>
                     <td className="font-mono text-sm text-primary-600">{product.shortCode || '-'}</td>
                     <td>
@@ -559,6 +612,19 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
         >
           <BrandCoefficientTable canEdit={canEditProducts} />
         </Modal>
+      )}
+
+      {/* Bulk Price Update Modal */}
+      {isBulkPriceModalOpen && selectedProductsForBulk.length > 0 && (
+        <BulkPriceUpdateModal
+          products={selectedProductsForBulk}
+          onClose={() => setIsBulkPriceModalOpen(false)}
+          onSuccess={() => {
+            setIsBulkPriceModalOpen(false);
+            setSelectedProducts(new Set());
+            fetchProducts();
+          }}
+        />
       )}
     </div>
   );

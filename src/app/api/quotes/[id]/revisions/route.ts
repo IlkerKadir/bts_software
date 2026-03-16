@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { recalculateAndPersistQuoteTotals } from '@/lib/quote-calculations';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -20,12 +19,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Fetch the source quote with items and commercial terms
+    // Fetch the source quote with items, commercial terms, and ek maliyet
     const sourceQuote = await db.quote.findUnique({
       where: { id },
       include: {
         items: { orderBy: { sortOrder: 'asc' } },
         commercialTerms: { orderBy: { sortOrder: 'asc' } },
+        ekMaliyetler: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
@@ -74,31 +74,71 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Copy all QuoteItems
+    // Copy all QuoteItems (two passes: parent items first, then sub-items with remapped parentItemId)
     if (sourceQuote.items.length > 0) {
-      await db.quoteItem.createMany({
-        data: sourceQuote.items.map((item, index) => ({
-          quoteId: newQuote.id,
-          productId: item.productId,
-          itemType: item.itemType,
-          sortOrder: index,
-          code: item.code,
-          brand: item.brand,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          listPrice: item.listPrice,
-          katsayi: item.katsayi,
-          unitPrice: item.unitPrice,
-          discountPct: item.discountPct,
-          vatRate: item.vatRate,
-          totalPrice: item.totalPrice,
-          notes: item.notes,
-          isManualPrice: item.isManualPrice,
-          costPrice: item.costPrice,
-          serviceMeta: item.serviceMeta ?? undefined,
-        })),
-      });
+      const oldToNewId = new Map<string, string>();
+
+      // First pass: create parent items (no parentItemId)
+      const parentItems = sourceQuote.items.filter(item => !item.parentItemId);
+      for (const item of parentItems) {
+        const created = await db.quoteItem.create({
+          data: {
+            quoteId: newQuote.id,
+            productId: item.productId,
+            itemType: item.itemType,
+            sortOrder: item.sortOrder,
+            code: item.code,
+            brand: item.brand,
+            model: item.model,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            listPrice: item.listPrice,
+            katsayi: item.katsayi,
+            unitPrice: item.unitPrice,
+            discountPct: item.discountPct,
+            vatRate: item.vatRate,
+            totalPrice: item.totalPrice,
+            notes: item.notes,
+            isManualPrice: item.isManualPrice,
+            costPrice: item.costPrice,
+            serviceMeta: item.serviceMeta ?? undefined,
+          },
+        });
+        oldToNewId.set(item.id, created.id);
+      }
+
+      // Second pass: create sub-items with remapped parentItemId
+      const subItems = sourceQuote.items.filter(item => item.parentItemId);
+      for (const item of subItems) {
+        const newParentId = oldToNewId.get(item.parentItemId!);
+        const created = await db.quoteItem.create({
+          data: {
+            quoteId: newQuote.id,
+            productId: item.productId,
+            itemType: item.itemType,
+            sortOrder: item.sortOrder,
+            code: item.code,
+            brand: item.brand,
+            model: item.model,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            listPrice: item.listPrice,
+            katsayi: item.katsayi,
+            unitPrice: item.unitPrice,
+            discountPct: item.discountPct,
+            vatRate: item.vatRate,
+            totalPrice: item.totalPrice,
+            notes: item.notes,
+            isManualPrice: item.isManualPrice,
+            costPrice: item.costPrice,
+            serviceMeta: item.serviceMeta ?? undefined,
+            parentItemId: newParentId ?? null,
+          },
+        });
+        oldToNewId.set(item.id, created.id);
+      }
     }
 
     // Copy all QuoteCommercialTerms
@@ -109,6 +149,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           category: term.category,
           value: term.value,
           sortOrder: term.sortOrder,
+          highlight: term.highlight,
+        })),
+      });
+    }
+
+    // Copy QuoteEkMaliyet entries
+    if (sourceQuote.ekMaliyetler.length > 0) {
+      await db.quoteEkMaliyet.createMany({
+        data: sourceQuote.ekMaliyetler.map((em) => ({
+          quoteId: newQuote.id,
+          title: em.title,
+          amount: em.amount,
+          sortOrder: em.sortOrder,
         })),
       });
     }
@@ -183,15 +236,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       currentQuote = parent as typeof quote;
     }
 
-    // Get all revisions - the root and all its descendants
-    // We need to get all quotes that share the same quoteNumber base
+    // Get all revisions by matching the exact base quote number and its -R revisions
+    const baseQuoteNumber = quote.quoteNumber.split('-R')[0];
     const revisions = await db.quote.findMany({
       where: {
         OR: [
-          { id: rootQuoteId },
-          { parentQuoteId: rootQuoteId },
-          // Also include any quotes that have this quote as a parent (children)
-          { parentQuoteId: quote.id },
+          { quoteNumber: baseQuoteNumber },
+          { quoteNumber: { startsWith: `${baseQuoteNumber}-R` } },
         ],
       },
       select: {
@@ -213,41 +264,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { version: 'desc' },
     });
 
-    // If we only got one or zero revisions, try to get the full chain another way
-    // Get all quotes with the same base quote number
-    const baseQuoteNumber = quote.quoteNumber.split('-R')[0];
-    const allRelatedQuotes = await db.quote.findMany({
-      where: {
-        quoteNumber: {
-          startsWith: baseQuoteNumber,
-        },
-      },
-      select: {
-        id: true,
-        quoteNumber: true,
-        version: true,
-        status: true,
-        grandTotal: true,
-        currency: true,
-        parentQuoteId: true,
-        createdAt: true,
-        createdBy: {
-          select: {
-            id: true,
-            fullName: true,
-          },
-        },
-      },
-      orderBy: { version: 'desc' },
-    });
-
-    // Use whichever set has more revisions
-    const finalRevisions = allRelatedQuotes.length > revisions.length
-      ? allRelatedQuotes
-      : revisions;
-
     return NextResponse.json({
-      revisions: finalRevisions,
+      revisions,
       currentVersion: quote.version,
       currentQuoteId: quote.id,
     });

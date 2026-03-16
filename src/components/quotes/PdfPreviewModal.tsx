@@ -48,6 +48,10 @@ export function PdfPreviewModal({ isOpen, onClose, quoteId }: Props) {
 
     return () => {
       revoked = true;
+      setPdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
     };
   }, [isOpen, quoteId]);
 

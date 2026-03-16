@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
         { name: { contains: query.search, mode: 'insensitive' } },
         { nameTr: { contains: query.search, mode: 'insensitive' } },
         { model: { contains: query.search, mode: 'insensitive' } },
+        { brand: { name: { contains: query.search, mode: 'insensitive' } } },
       ];
     }
 
@@ -50,6 +51,44 @@ export async function GET(request: NextRequest) {
       where.isActive = query.isActive;
     }
 
+    // Server-side sorting
+    const sortField = searchParams.get('sortField') || 'code';
+    const sortDirection = (searchParams.get('sortDirection') === 'desc' ? 'desc' : 'asc') as Prisma.SortOrder;
+
+    let orderBy: Prisma.ProductOrderByWithRelationInput;
+    switch (sortField) {
+      case 'code':
+        orderBy = { code: sortDirection };
+        break;
+      case 'shortCode':
+        orderBy = { shortCode: sortDirection };
+        break;
+      case 'name':
+        orderBy = { name: sortDirection };
+        break;
+      case 'brand':
+        orderBy = { brand: { name: sortDirection } };
+        break;
+      case 'model':
+        orderBy = { model: sortDirection };
+        break;
+      case 'category':
+        orderBy = { category: { name: sortDirection } };
+        break;
+      case 'listPrice':
+        orderBy = { listPrice: sortDirection };
+        break;
+      case 'costPrice':
+        orderBy = { costPrice: sortDirection };
+        break;
+      case 'isActive':
+        orderBy = { isActive: sortDirection };
+        break;
+      default:
+        orderBy = { code: sortDirection };
+        break;
+    }
+
     const [products, total] = await Promise.all([
       db.product.findMany({
         where,
@@ -57,7 +96,7 @@ export async function GET(request: NextRequest) {
           brand: { select: { id: true, name: true } },
           category: { select: { id: true, name: true } },
         },
-        orderBy: { code: 'asc' },
+        orderBy,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
       }),
@@ -68,6 +107,8 @@ export async function GET(request: NextRequest) {
     const productsFiltered = products.map(p => ({
       ...p,
       costPrice: user.role.canViewCosts ? p.costPrice : null,
+      minKatsayi: p.minKatsayi != null ? Number(p.minKatsayi) : null,
+      maxKatsayi: p.maxKatsayi != null ? Number(p.maxKatsayi) : null,
     }));
 
     return NextResponse.json({

@@ -26,7 +26,7 @@ interface ProductImportModalProps {
 
 interface PreviewProduct {
   code: string;
-  brand: string;
+  brandName: string;
   name: string;
   listPrice: number;
   currency: string;
@@ -529,7 +529,7 @@ export function ProductImportModal({
                             {product.code}
                           </td>
                           <td className="px-3 py-2 text-primary-800">
-                            {product.brand}
+                            {product.brandName}
                           </td>
                           <td className="px-3 py-2 text-primary-800 truncate max-w-[200px]">
                             {product.name}

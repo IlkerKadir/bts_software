@@ -1,12 +1,24 @@
+// ---------------------------------------------------------------------------
+// Proforma Fatura PDF Template
+// Generates HTML for Puppeteer PDF export matching the company's standard
+// proforma invoice format. Reference: SA0065, SA0056 proforma PDFs.
+// Architecture: single <table> with <thead> (repeats on every printed page)
+// containing header image + client info box + column headers.
+// Commercial terms and NOTLAR render inside the main table <tbody>.
+// ---------------------------------------------------------------------------
+
 export interface QuoteDataForPdf {
   quote: {
     quoteNumber: string;
+    refNo?: string | null;
     subject?: string | null;
     createdAt: Date;
     validUntil?: Date | null;
     currency: string;
+    language: string;
     notes?: string | null;
   };
+  description?: string | null;
   company: {
     name: string;
     address?: string | null;
@@ -26,11 +38,19 @@ export interface QuoteDataForPdf {
   commercialTerms: {
     category: string;
     content: string;
+    highlight?: boolean;
   }[];
+  notes: {
+    text: string;
+    sortOrder: number;
+    highlight: boolean;
+  }[];
+  headerBase64?: string;
+  logoBase64?: string;
 }
 
 export interface QuoteItemForPdf {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SERVICE' | 'SUBTOTAL';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL';
   code?: string | null;
   brand?: string | null;
   description: string;
@@ -42,16 +62,69 @@ export interface QuoteItemForPdf {
   vatRate: number;
 }
 
-const currencySymbols: Record<string, string> = {
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
   EUR: '\u20AC', // €
   USD: '$',
   GBP: '\u00A3', // £
   TRY: '\u20BA', // ₺
 };
 
-function formatCurrency(amount: number, currency: string): string {
-  const symbol = currencySymbols[currency] || currency;
-  return `${symbol}${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const CURRENCY_NAMES: Record<string, string> = {
+  EUR: 'EURO',
+  USD: 'USD',
+  GBP: 'GBP',
+  TRY: 'TRY',
+};
+
+/**
+ * Category keys as stored in the database.
+ * Maps DB key -> PDF header label.
+ */
+const CATEGORY_LABELS: Record<string, string> = {
+  DAHIL_OLMAYAN: 'Dahil Olmayan Hizmetler:',
+  uretici_firmalar: 'ÜRETİCİ FİRMALAR',
+  onaylar: 'ONAYLAR',
+  garanti: 'GARANTİ',
+  teslim_yeri: 'TESLİM YERİ',
+  odeme: 'ÖDEME',
+  kdv: 'KDV',
+  teslimat: 'TESLİMAT',
+  opsiyon: 'OPSİYON',
+  NOTLAR: 'NOTLAR',
+};
+
+/**
+ * Ordered list of commercial term categories rendered under "TİCARİ ŞARTLAR".
+ * DAHIL_OLMAYAN is rendered ABOVE the heading; NOTLAR is rendered separately.
+ */
+const COMMERCIAL_TERM_ORDER = [
+  'uretici_firmalar',
+  'onaylar',
+  'garanti',
+  'teslim_yeri',
+  'odeme',
+  'kdv',
+  'teslimat',
+  'opsiyon',
+];
+
+const SECTION_BG = '#C6E0B4';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export function formatCurrency(amount: number, currency: string): string {
+  const symbol = CURRENCY_SYMBOLS[currency] || currency;
+  const formatted = amount.toLocaleString('tr-TR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${formatted} ${symbol}`;
 }
 
 function formatDate(date: Date): string {
@@ -62,7 +135,7 @@ function formatDate(date: Date): string {
   });
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   const escapeMap: Record<string, string> = {
     '&': '&amp;',
     '<': '&lt;',
@@ -76,410 +149,396 @@ function escapeHtml(text: string): string {
 function unitAbbr(unit: string): string {
   switch (unit) {
     case 'Adet': return 'Ad.';
-    case 'Metre': return 'm.';
+    case 'Metre': return 'mt.';
     case 'Set': return 'Set';
     default: return unit;
   }
 }
 
-/**
- * Compute the section sum for a SUBTOTAL row.
- * Sums totalPrice of all priced items (PRODUCT, CUSTOM, SERVICE) between
- * the previous SUBTOTAL (or start of list) and this SUBTOTAL row.
- */
 function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): number {
   let sum = 0;
-  // Walk backwards from the subtotal index to find the section boundary
   for (let i = subtotalIndex - 1; i >= 0; i--) {
     const item = items[i];
-    if (item.itemType === 'SUBTOTAL') break; // previous subtotal = section boundary
-    if (
-      item.itemType === 'PRODUCT' ||
-      item.itemType === 'CUSTOM' ||
-      item.itemType === 'SERVICE'
-    ) {
+    if (item.itemType === 'SUBTOTAL') break;
+    if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
       sum += item.totalPrice;
     }
   }
   return sum;
 }
 
-export function generateQuoteHtml(data: QuoteDataForPdf): string {
-  const { quote, company, project, items, totals, commercialTerms } = data;
-  const safeTerms = commercialTerms || [];
-  const currency = quote.currency;
+// ---------------------------------------------------------------------------
+// Main HTML generator
+// ---------------------------------------------------------------------------
 
+export function generateQuoteHtml(data: QuoteDataForPdf): string {
+  const { quote, company, project, items, totals, commercialTerms, notes, headerBase64, logoBase64 } = data;
+  const safeTerms = commercialTerms || [];
+  const safeNotes = notes || [];
+  const currency = quote.currency;
+  const lang = quote.language || 'TR';
+  const isTR = lang === 'TR';
+  const currencyName = CURRENCY_NAMES[currency] || currency;
+
+  const proformaTitle = isTR ? 'PROFORMA FATURA' : 'PROFORMA INVOICE';
+  const dateLabel = isTR ? 'Tarih' : 'Date';
+  const refLabel = 'Ref.No';
+  const quoteLabel = isTR ? 'Teklif No' : 'Quote No';
+
+  // ---------- Header image ----------
+  const headerImgSrc = headerBase64 || logoBase64;
+  const headerImgHtml = headerImgSrc
+    ? `<img src="${headerImgSrc}" style="width:100%;height:auto;display:block;" alt="BTS">`
+    : '<p style="font-size:14pt;font-weight:bold;color:#cc0000;padding:10pt;">BTS YANGIN</p>';
+
+  // ---------- Build item rows ----------
   let itemNumber = 0;
   const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
-      return `
-        <tr class="header-row">
-          <td colspan="8" class="header-cell">${escapeHtml(item.description)}</td>
-        </tr>
-      `;
+      return `<tr class="section-hdr" style="height:13pt">
+        <td><p><br></p></td>
+        <td><p class="s1" style="text-align:center;">${escapeHtml(item.description)}</p></td>
+        <td><p><br></p></td>
+        <td><p><br></p></td>
+        <td><p><br></p></td>
+      </tr>`;
     }
+
     if (item.itemType === 'NOTE') {
-      return `
-        <tr class="note-row">
-          <td colspan="8" class="note-cell">${escapeHtml(item.description)}</td>
-        </tr>
-      `;
+      return `<tr style="height:15pt">
+        <td><p class="s1" style="text-align:center;">NOT:</p></td>
+        <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtml(item.description)}</p></td>
+      </tr>`;
     }
+
     if (item.itemType === 'SUBTOTAL') {
       const sectionSum = computeSubtotalSum(items, index);
-      return `
-        <tr class="subtotal-row">
-          <td colspan="7" class="subtotal-label">Ara Toplam</td>
-          <td class="right subtotal-value">${formatCurrency(sectionSum, currency)}</td>
-        </tr>
-      `;
+      return `<tr style="height:13pt">
+        <td><p><br></p></td>
+        <td><p class="s1" style="text-align:right;padding-right:8pt;">Ara Toplam</p></td>
+        <td><p><br></p></td>
+        <td><p><br></p></td>
+        <td><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
+      </tr>`;
     }
-    // PRODUCT, CUSTOM, SERVICE - standard priced rows
-    itemNumber++;
-    return `
-      <tr class="product-row">
-        <td class="center">${itemNumber}</td>
-        <td>${item.code ? escapeHtml(item.code) : ''}</td>
-        <td>${item.brand ? escapeHtml(item.brand) : ''}</td>
-        <td>${escapeHtml(item.description)}</td>
-        <td class="center">${item.quantity} ${unitAbbr(item.unit || 'Adet')}</td>
-        <td class="center">${unitAbbr(item.unit || 'Adet')}</td>
-        <td class="right">${formatCurrency(item.unitPrice, currency)}</td>
-        <td class="right">${formatCurrency(item.totalPrice, currency)}</td>
-      </tr>
-    `;
-  }).join('');
 
-  const categoryLabels: Record<string, string> = {
-    payment: 'Odeme Kosullari',
-    delivery: 'Teslim Suresi',
-    warranty: 'Garanti',
-    vat: 'KDV',
-    teslim_yeri: 'Teslim Yeri',
-  };
+    // PRODUCT, CUSTOM — numbered rows
+    const isOptional = item.quantity === 0;
+    if (!isOptional) itemNumber++;
+    const pozText = isOptional ? 'OPSİYONEL' : `${itemNumber}`;
+    const qtyStr = `${item.quantity} ${unitAbbr(item.unit || 'Adet')}`;
 
-  const termsHtml = safeTerms.map(term => `
-    <div class="term">
-      <strong>${categoryLabels[term.category] || term.category}:</strong> ${escapeHtml(term.content)}
-    </div>
-  `).join('');
+    return `<tr>
+      <td><p class="s1" style="text-align:center;">${pozText}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
+      <td><p class="s2" style="text-align:right;padding-right:10pt;">${qtyStr}</p></td>
+      <td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
+      <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>
+    </tr>`;
+  }).join('\n');
 
+  // ---------- System total ----------
+  const systemTotalLabel = isTR
+    ? `SİSTEM GENEL TOPLAMI (${currencyName})`
+    : `SYSTEM GRAND TOTAL (${currencyName})`;
+
+  // ---------- Commercial terms + NOTLAR (inside main table) ----------
+  const termsRows = buildCommercialTermsRows(safeTerms, safeNotes, isTR);
+
+  // ---------- Info box left content ----------
+  let leftContent = `<p class="s1">${escapeHtml(company.name)}</p>`;
+  if (company.address) {
+    leftContent += `<p class="s2">${escapeHtml(company.address)}</p>`;
+  }
+  if (project) {
+    leftContent += `<p class="s1" style="padding-top:6pt;">${escapeHtml(project.name)}</p>`;
+  }
+  if (quote.subject) {
+    leftContent += `<p class="s1" style="padding-top:1pt;">${escapeHtml(quote.subject)}</p>`;
+  }
+  if (data.description) {
+    leftContent += `<p class="s1" style="padding-top:1pt;">${escapeHtml(data.description)}</p>`;
+  }
+
+  // ---------- Info box right content ----------
+  let rightDetailRows = '';
+  rightDetailRows += `<tr><td style="padding:2pt 2pt 1pt 8pt; border:none;"><p class="s1">${dateLabel}</p></td><td style="padding:2pt 2pt 1pt 2pt; border:none;"><p class="s1">: ${formatDate(quote.createdAt)}</p></td></tr>`;
+  if (quote.refNo) {
+    rightDetailRows += `<tr><td style="padding:1pt 2pt 1pt 8pt; border:none;"><p class="s1">${refLabel}</p></td><td style="padding:1pt 2pt 1pt 2pt; border:none;"><p class="s1">: ${escapeHtml(quote.refNo)}</p></td></tr>`;
+  }
+  rightDetailRows += `<tr><td style="padding:1pt 2pt 2pt 8pt; border:none;"><p class="s1">${quoteLabel}</p></td><td style="padding:1pt 2pt 2pt 2pt; border:none;"><p class="s1">: ${escapeHtml(quote.quoteNumber)}</p></td></tr>`;
+
+  // ---------- Full HTML ----------
   return `<!DOCTYPE html>
-<html lang="tr">
+<html lang="${isTR ? 'tr' : 'en'}">
 <head>
-  <meta charset="UTF-8">
-  <title>Teklif - ${escapeHtml(quote.quoteNumber)}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+<meta charset="UTF-8">
+<title>${proformaTitle} - ${escapeHtml(quote.quoteNumber)}</title>
+<style>
+@page { size: A4 portrait; margin: 5mm 10mm 15mm 10mm; }
+* { margin:0; padding:0; text-indent:0; }
+body { font-family: Arial, sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+.s1 { font-family:Arial,sans-serif; font-weight:bold; font-size:6.5pt; color:black; }
+.s2 { font-family:Arial,sans-serif; font-weight:normal; font-size:6.5pt; color:black; }
+.s3 { font-family:Arial,sans-serif; font-weight:bold; font-size:7.2pt; color:black; }
+.s4 { font-family:Arial,sans-serif; font-weight:normal; font-size:7.2pt; color:black; }
 
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 10pt;
-      color: #1a1a1a;
-      line-height: 1.4;
-    }
+p { font-family:Arial,sans-serif; font-weight:normal; font-size:6.5pt; color:black; margin:0; }
 
-    .container {
-      padding: 0;
-    }
+table.main { width:100%; border-collapse:collapse; }
+thead { display: table-header-group; }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 30px;
-      padding-bottom: 20px;
-      border-bottom: 2px solid #dc2626;
-    }
+/* Column widths */
+col.c1 { width: 8.7%; }
+col.c2 { width: 57.2%; }
+col.c3 { width: 9.5%; }
+col.c4 { width: 11.5%; }
+col.c5 { width: 13.1%; }
 
-    .logo {
-      font-size: 24pt;
-      font-weight: 700;
-      color: #dc2626;
-    }
+/* Header image row */
+.hdr-img-cell {
+  border: 1.2pt solid black;
+  padding: 0;
+}
+.hdr-img-cell img { width:100%; height:auto; display:block; }
 
-    .quote-info {
-      text-align: right;
-    }
+/* Client info box cells */
+.info-left, .info-right { border: 1.2pt solid black; }
+.info-right table td { border: none; }
 
-    .quote-number {
-      font-size: 14pt;
-      font-weight: 600;
-      color: #dc2626;
-      margin-bottom: 5px;
-    }
+/* Column header cells */
+.col-hdr {
+  border: 1.2pt solid black;
+  padding: 3pt 2pt;
+  background: white;
+}
 
-    .quote-date {
-      color: #666;
-    }
+/* Item rows — no borders (matches client's PDF format) */
+table.main tbody td {
+  border: none;
+  padding: 3pt 4pt;
+  vertical-align: top;
+}
+/* Prevent price text wrapping */
+table.main tbody td:nth-child(4),
+table.main tbody td:nth-child(5) {
+  white-space: nowrap;
+}
 
-    .parties {
-      display: flex;
-      gap: 40px;
-      margin-bottom: 30px;
-    }
+/* Section header (green) */
+.section-hdr td {
+  background-color: ${SECTION_BG};
+  border: none !important;
+}
 
-    .party {
-      flex: 1;
-    }
+/* System total row */
+.sys-total-label {
+  border: 1.2pt solid black !important;
+  padding: 3pt 6pt 3pt 2pt;
+}
+.sys-total-val {
+  border: 1.2pt solid black !important;
+  padding: 3pt 2pt;
+}
 
-    .party-label {
-      font-size: 8pt;
-      text-transform: uppercase;
-      color: #666;
-      margin-bottom: 5px;
-    }
+/* Commercial terms & NOTLAR rows (inside main table) */
+.terms-row td {
+  border: none !important;
+  padding: 1pt 2pt;
+  vertical-align: top;
+}
+.notes-row td {
+  border: none !important;
+  padding: 2pt 2pt;
+  vertical-align: top;
+}
+.last-row td {
+  border-bottom: none !important;
+}
 
-    .party-name {
-      font-size: 12pt;
-      font-weight: 600;
-      margin-bottom: 5px;
-    }
-
-    .subject {
-      background: #f8f8f8;
-      padding: 15px;
-      margin-bottom: 20px;
-      border-left: 3px solid #dc2626;
-    }
-
-    .subject-label {
-      font-size: 8pt;
-      text-transform: uppercase;
-      color: #666;
-      margin-bottom: 5px;
-    }
-
-    .subject-text {
-      font-weight: 500;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 20px;
-    }
-
-    th {
-      background: #1a1a1a;
-      color: white;
-      padding: 10px 8px;
-      text-align: left;
-      font-weight: 500;
-      font-size: 9pt;
-    }
-
-    td {
-      padding: 8px;
-      border-bottom: 1px solid #eee;
-    }
-
-    .center { text-align: center; }
-    .right { text-align: right; }
-
-    .header-row td {
-      background: #f3f4f6;
-      font-weight: 600;
-      padding: 10px 8px;
-    }
-
-    .header-cell {
-      font-weight: 600;
-    }
-
-    .note-row td {
-      font-style: italic;
-      color: #666;
-    }
-
-    .note-cell {
-      font-style: italic;
-    }
-
-    .subtotal-row td {
-      background: #e5e7eb;
-      font-weight: 700;
-      border-top: 2px solid #9ca3af;
-      border-bottom: 2px solid #9ca3af;
-      padding: 10px 8px;
-    }
-
-    .subtotal-label {
-      text-align: right;
-      font-weight: 700;
-      padding-right: 12px;
-    }
-
-    .subtotal-value {
-      font-weight: 700;
-    }
-
-    .totals {
-      display: flex;
-      justify-content: flex-end;
-      margin-bottom: 30px;
-    }
-
-    .totals-table {
-      width: 300px;
-    }
-
-    .totals-table td {
-      padding: 8px 12px;
-    }
-
-    .totals-table .label {
-      text-align: left;
-    }
-
-    .totals-table .value {
-      text-align: right;
-      font-weight: 500;
-    }
-
-    .totals-table .grand-total {
-      background: #dc2626;
-      color: white;
-      font-weight: 700;
-      font-size: 12pt;
-    }
-
-    .terms {
-      margin-bottom: 30px;
-    }
-
-    .terms-title {
-      font-weight: 600;
-      margin-bottom: 10px;
-      padding-bottom: 5px;
-      border-bottom: 1px solid #eee;
-    }
-
-    .term {
-      margin-bottom: 8px;
-    }
-
-    .notes {
-      background: #fffbeb;
-      padding: 15px;
-      border-left: 3px solid #f59e0b;
-    }
-
-    .notes-title {
-      font-weight: 600;
-      margin-bottom: 5px;
-    }
-
-    .validity {
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 1px solid #eee;
-      color: #666;
-      font-size: 9pt;
-    }
-  </style>
+/* Yellow highlight */
+.highlight-yellow {
+  background-color: #FFFF00;
+}
+</style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">BTS</div>
-      <div class="quote-info">
-        <div class="quote-number">${escapeHtml(quote.quoteNumber)}</div>
-        <div class="quote-date">Tarih: ${formatDate(quote.createdAt)}</div>
-        ${quote.validUntil ? `<div class="quote-date">Gecerlilik: ${formatDate(quote.validUntil)}</div>` : ''}
-      </div>
-    </div>
 
-    <div class="parties">
-      <div class="party">
-        <div class="party-label">Musteri</div>
-        <div class="party-name">${escapeHtml(company.name)}</div>
-        ${company.address ? `<div>${escapeHtml(company.address)}</div>` : ''}
-        ${company.taxId ? `<div>VKN: ${escapeHtml(company.taxId)}</div>` : ''}
-      </div>
-      ${project ? `
-        <div class="party">
-          <div class="party-label">Proje</div>
-          <div class="party-name">${escapeHtml(project.name)}</div>
-          ${project.location ? `<div>${escapeHtml(project.location)}</div>` : ''}
-        </div>
-      ` : ''}
-    </div>
+<table class="main">
+  <colgroup>
+    <col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5">
+  </colgroup>
 
-    ${quote.subject ? `
-      <div class="subject">
-        <div class="subject-label">Konu</div>
-        <div class="subject-text">${escapeHtml(quote.subject)}</div>
-      </div>
-    ` : ''}
+  <thead>
+    <!-- Row 1: Header banner image -->
+    <tr>
+      <td colspan="5" class="hdr-img-cell">${headerImgHtml}</td>
+    </tr>
 
-    <table>
-      <thead>
-        <tr>
-          <th class="center" style="width: 30px">#</th>
-          <th style="width: 80px">Kod</th>
-          <th style="width: 80px">Marka</th>
-          <th>Aciklama</th>
-          <th class="center" style="width: 50px">Miktar</th>
-          <th class="center" style="width: 50px">Birim</th>
-          <th class="right" style="width: 80px">B.Fiyat</th>
-          <th class="right" style="width: 100px">Toplam</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${itemRows}
-      </tbody>
-    </table>
+    <!-- Row 2: Client info box (colspan=3 left + colspan=2 right) -->
+    <tr>
+      <td colspan="3" class="info-left" style="border:1.2pt solid black; border-right:1.2pt solid black; vertical-align:top; padding:2pt 4pt 4pt 8pt;">
+        ${leftContent}
+      </td>
+      <td colspan="2" class="info-right" style="border:1.2pt solid black; border-left:none; vertical-align:top; padding:0;">
+        <p class="s1" style="text-align:center; padding:6pt 0 6pt 0; border-bottom:1.2pt solid black;">${proformaTitle}</p>
+        <table cellspacing="0" style="width:100%; border-collapse:collapse;">
+          ${rightDetailRows}
+        </table>
+      </td>
+    </tr>
 
-    <div class="totals">
-      <table class="totals-table">
-        <tr>
-          <td class="label">Ara Toplam</td>
-          <td class="value">${formatCurrency(totals.subtotal, currency)}</td>
-        </tr>
-        ${totals.totalDiscount > 0 ? `
-          <tr>
-            <td class="label">Iskonto</td>
-            <td class="value">-${formatCurrency(totals.totalDiscount, currency)}</td>
-          </tr>
-        ` : ''}
-        <tr>
-          <td class="label">KDV</td>
-          <td class="value">${formatCurrency(totals.totalVat, currency)}</td>
-        </tr>
-        <tr class="grand-total">
-          <td class="label">Genel Toplam</td>
-          <td class="value">${formatCurrency(totals.grandTotal, currency)}</td>
-        </tr>
-      </table>
-    </div>
+    <!-- Column headers -->
+    <tr style="height:14pt">
+      <td class="col-hdr"><p class="s1" style="text-align:center;">POZ NO</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">AÇIKLAMA</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">MİKTAR</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">BİRİM FİYAT</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">TOPLAM FİYAT</p></td>
+    </tr>
+  </thead>
 
-    ${safeTerms.length > 0 ? `
-      <div class="terms">
-        <div class="terms-title">Ticari Kosullar</div>
-        ${termsHtml}
-      </div>
-    ` : ''}
+  <tbody>
+    <tr><td colspan="5" style="height:6pt; border:none; padding:0;"></td></tr>
+    ${itemRows}
 
-    ${quote.notes ? `
-      <div class="notes">
-        <div class="notes-title">Notlar</div>
-        <div>${escapeHtml(quote.notes)}</div>
-      </div>
-    ` : ''}
+    <tr><td colspan="5" style="height:6pt; border:none; padding:0;"></td></tr>
+    <!-- System Total -->
+    <tr style="height:12pt">
+      <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${systemTotalLabel}</p></td>
+      <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(totals.grandTotal, currency)}</p></td>
+    </tr>
 
-    ${quote.validUntil ? `
-      <div class="validity">
-        Bu teklif ${formatDate(quote.validUntil)} tarihine kadar gecerlidir.
-      </div>
-    ` : ''}
-  </div>
+${termsRows}
+
+  </tbody>
+</table>
+
 </body>
 </html>`;
+}
+
+// ---------------------------------------------------------------------------
+// Commercial terms builder (inside main table tbody)
+// Handles both multi-value and single-value categories with correct rendering.
+// DAHIL_OLMAYAN renders ABOVE the "TİCARİ ŞARTLAR" heading.
+// NOTLAR renders as numbered items at the bottom with highlight support.
+// ---------------------------------------------------------------------------
+
+function buildCommercialTermsRows(
+  terms: { category: string; content: string; highlight?: boolean }[],
+  legacyNotes: { text: string; sortOrder: number; highlight: boolean }[],
+  isTR: boolean
+): string {
+  if ((!terms || terms.length === 0) && (!legacyNotes || legacyNotes.length === 0)) return '';
+
+  // Group all terms by category
+  const termsByCategory = new Map<string, { content: string; highlight?: boolean }[]>();
+  for (const term of terms) {
+    const existing = termsByCategory.get(term.category) || [];
+    existing.push({ content: term.content, highlight: term.highlight });
+    termsByCategory.set(term.category, existing);
+  }
+
+  let rows = '';
+
+  // 1) DAHIL_OLMAYAN — rendered ABOVE the TİCARİ ŞARTLAR heading
+  const dahilOlmayan = termsByCategory.get('DAHIL_OLMAYAN');
+  if (dahilOlmayan && dahilOlmayan.length > 0) {
+    const label = CATEGORY_LABELS['DAHIL_OLMAYAN'] || 'Dahil Olmayan Hizmetler:';
+    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:1pt;padding-top:8pt;">${escapeHtml(label)}</p></td></tr>\n`;
+    for (const entry of dahilOlmayan) {
+      rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
+    }
+  }
+
+  // 2) TİCARİ ŞARTLAR heading
+  // Check if there are any terms in the standard commercial term categories
+  const hasStandardTerms = COMMERCIAL_TERM_ORDER.some((key) => termsByCategory.has(key));
+  // Also check for unknown categories (not DAHIL_OLMAYAN, not NOTLAR, not in COMMERCIAL_TERM_ORDER)
+  const knownKeys = new Set([...COMMERCIAL_TERM_ORDER, 'DAHIL_OLMAYAN', 'NOTLAR']);
+  const unknownCats = Array.from(termsByCategory.keys()).filter((k) => !knownKeys.has(k));
+  const hasAnyCommercialTerms = hasStandardTerms || unknownCats.length > 0;
+
+  if (hasAnyCommercialTerms) {
+    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:1pt;padding-top:8pt;">${isTR ? 'TİCARİ ŞARTLAR' : 'COMMERCIAL TERMS'}</p></td></tr>\n`;
+  }
+
+  // 3) Render each category in defined order
+  for (const catKey of COMMERCIAL_TERM_ORDER) {
+    const values = termsByCategory.get(catKey);
+    if (!values || values.length === 0) continue;
+
+    const label = CATEGORY_LABELS[catKey] || catKey.toUpperCase();
+    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:40pt;">${escapeHtml(label)}</p></td></tr>\n`;
+
+    if (catKey === 'onaylar') {
+      // onaylar: ALL terms comma-joined on a single line
+      const joined = values.map((v) => v.content).join(', ');
+      rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(joined)}</p></td></tr>\n`;
+    } else if (catKey === 'uretici_firmalar') {
+      // uretici_firmalar: each term on its own line
+      for (const entry of values) {
+        rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
+      }
+    } else {
+      // All other single-value categories: each value as a paragraph
+      for (const entry of values) {
+        rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
+      }
+    }
+  }
+
+  // 4) Any terms with categories not in the predefined list
+  for (const catKey of unknownCats) {
+    const values = termsByCategory.get(catKey)!;
+    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:40pt;">${escapeHtml(catKey)}</p></td></tr>\n`;
+    for (const entry of values) {
+      rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
+    }
+  }
+
+  // 5) NOTLAR — numbered items with highlight support
+  // Merge NOTLAR from commercial terms AND from legacy notes array
+  const notlarFromTerms = termsByCategory.get('NOTLAR') || [];
+  const allNotes: { text: string; highlight: boolean; sortOrder: number }[] = [];
+
+  // Notes from commercial terms (NOTLAR category)
+  notlarFromTerms.forEach((entry, idx) => {
+    allNotes.push({
+      text: entry.content,
+      highlight: entry.highlight ?? false,
+      sortOrder: idx + 1,
+    });
+  });
+
+  // Legacy notes (from the separate notes array — only add if not already included via terms)
+  if (legacyNotes && legacyNotes.length > 0 && notlarFromTerms.length === 0) {
+    for (const note of legacyNotes) {
+      allNotes.push({
+        text: note.text,
+        highlight: note.highlight,
+        sortOrder: note.sortOrder,
+      });
+    }
+  }
+
+  if (allNotes.length > 0) {
+    const sorted = [...allNotes].sort((a, b) => a.sortOrder - b.sortOrder);
+    const title = isTR ? 'NOTLAR' : 'NOTES';
+
+    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:40pt;padding-top:6pt;">${title}</p></td></tr>\n`;
+
+    sorted.forEach((note, i) => {
+      const hlClass = note.highlight ? ' highlight-yellow' : '';
+      const isLast = i === sorted.length - 1;
+      rows += `    <tr class="notes-row${isLast ? ' last-row' : ''}">`;
+      rows += `<td style="text-align:right;padding-right:6pt;"${hlClass ? ` class="${hlClass.trim()}"` : ''}><p class="s1">${i + 1}</p></td>`;
+      rows += `<td colspan="4"${hlClass ? ` class="${hlClass.trim()}"` : ''}><p class="s2" style="line-height:108%;">${escapeHtml(note.text)}</p></td>`;
+      rows += '</tr>\n';
+    });
+  }
+
+  return rows;
 }

@@ -19,6 +19,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const terms = await db.quoteCommercialTerm.findMany({
       where: { quoteId },
       orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true,
+        category: true,
+        value: true,
+        sortOrder: true,
+        highlight: true,
+      },
     });
 
     return NextResponse.json({ terms });
@@ -61,6 +68,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         sortOrder: body.sortOrder ?? nextSortOrder,
         category: body.category,
         value: body.value,
+        highlight: body.highlight ?? false,
       },
     });
 
@@ -74,7 +82,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT - Bulk update commercial terms
+// PUT - Bulk update commercial terms (delete all + recreate)
+// Accepts body: { terms: Array<{ category, value, sortOrder?, highlight? }> }
+// Multiple entries per category are allowed (multi-value categories).
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getSession();
@@ -95,6 +105,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
+    // Authorization: only quote creator or admin can edit commercial terms
+    if (quote.createdById !== user.id && !user.role.canManageUsers) {
+      return NextResponse.json(
+        { error: 'Bu teklifi düzenleme yetkiniz bulunmamaktadır' },
+        { status: 403 }
+      );
+    }
+
     // Replace all terms in a transaction (delete + create)
     await db.$transaction(async (tx) => {
       await tx.quoteCommercialTerm.deleteMany({ where: { quoteId } });
@@ -106,6 +124,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           category: t.category,
           value: t.value,
           sortOrder: t.sortOrder ?? index + 1,
+          highlight: t.highlight ?? false,
         }));
 
       if (termsToCreate.length > 0) {
@@ -117,6 +136,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const terms = await db.quoteCommercialTerm.findMany({
       where: { quoteId },
       orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true,
+        category: true,
+        value: true,
+        sortOrder: true,
+        highlight: true,
+      },
     });
 
     return NextResponse.json({ terms });

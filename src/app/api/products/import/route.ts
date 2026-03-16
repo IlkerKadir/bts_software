@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { parseProductExcel, generateImportPreview } from '@/lib/product-import';
+import { validateImportFilename } from './validate';
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,12 +29,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
-    ];
-    if (file.type && !allowedTypes.includes(file.type) && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+    // Validate file extension strictly (always check, regardless of MIME type)
+    if (!validateImportFilename(file.name)) {
       return NextResponse.json(
         { error: 'Geçersiz dosya formatı. Lütfen Excel (.xlsx) dosyası yükleyin.' },
         { status: 400 }
@@ -87,6 +84,19 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          // Find or create category
+          let category = null;
+          if (product.categoryName) {
+            category = await tx.productCategory.findUnique({
+              where: { name: product.categoryName },
+            });
+            if (!category) {
+              category = await tx.productCategory.create({
+                data: { name: product.categoryName },
+              });
+            }
+          }
+
           const existing = await tx.product.findUnique({
             where: { code: product.code },
           });
@@ -99,12 +109,16 @@ export async function POST(request: NextRequest) {
               data: {
                 shortCode: product.shortCode || existing.shortCode,
                 brandId: brand?.id ?? existing.brandId,
+                categoryId: category?.id ?? existing.categoryId,
                 model: product.model || existing.model,
                 name: productName,
                 nameTr: product.nameTr || existing.nameTr,
                 nameEn: product.nameEn || existing.nameEn,
+                unit: product.unit || existing.unit,
                 listPrice: product.listPrice,
+                costPrice: product.costPrice > 0 ? product.costPrice : existing.costPrice,
                 currency: product.currency,
+                supplier: product.supplier || existing.supplier,
               },
             });
             updated++;
@@ -114,12 +128,16 @@ export async function POST(request: NextRequest) {
                 code: product.code,
                 shortCode: product.shortCode || null,
                 brandId: brand?.id ?? null,
+                categoryId: category?.id ?? null,
                 model: product.model || null,
                 name: productName,
                 nameTr: product.nameTr || null,
                 nameEn: product.nameEn || null,
+                unit: product.unit || 'Adet',
                 listPrice: product.listPrice,
+                costPrice: product.costPrice > 0 ? product.costPrice : null,
                 currency: product.currency,
+                supplier: product.supplier || null,
               },
             });
             created++;

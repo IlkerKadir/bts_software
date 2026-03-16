@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 import { recalculateAndPersistQuoteTotals } from '@/lib/quote-calculations';
+import { z } from 'zod';
+import { quoteUpdateSchema } from '@/lib/validations/quote';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -31,6 +33,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               include: {
                 brand: true,
                 category: true,
+              },
+            },
+            subRows: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                product: {
+                  include: { brand: true, category: true },
+                },
               },
             },
           },
@@ -62,6 +72,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           costPrice: item.costPrice ? Number(item.costPrice) : null,
           quantity: Number(item.quantity),
           itemType: item.itemType,
+          parentItemId: item.parentItemId,
         })),
         Number(quote.discountPct) || 0
       );
@@ -98,11 +109,41 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
+
+    // Validate request body with Zod schema
+    const parseResult = quoteUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: 'Geçersiz veri', details: parseResult.error.issues },
+        { status: 400 }
+      );
+    }
+    const body = parseResult.data;
 
     const existingQuote = await db.quote.findUnique({ where: { id } });
     if (!existingQuote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
+    }
+
+    // Authorization: only quote creator or admin can edit
+    // For ONAY_BEKLIYOR quotes, only users with canApprove permission can edit
+    const isOwnerOrAdmin = existingQuote.createdById === user.id || user.role.canManageUsers;
+    const isApproverOnPending = existingQuote.status === 'ONAY_BEKLIYOR' && user.role.canApprove;
+
+    if (!isOwnerOrAdmin && !isApproverOnPending) {
+      return NextResponse.json(
+        { error: 'Bu teklifi düzenleme yetkiniz bulunmamaktadır' },
+        { status: 403 }
+      );
+    }
+
+    // Regular users (non-approvers) cannot edit quotes in ONAY_BEKLIYOR status
+    if (existingQuote.status === 'ONAY_BEKLIYOR' && !user.role.canApprove) {
+      return NextResponse.json(
+        { error: 'Onay bekleyen teklifler sadece onay yetkisi olan kullanıcılar tarafından düzenlenebilir' },
+        { status: 403 }
+      );
     }
 
     // Build update data
@@ -116,13 +157,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         updateData.project = { disconnect: true };
       }
     }
+    if (body.refNo !== undefined) updateData.refNo = body.refNo;
     if (body.subject !== undefined) updateData.subject = body.subject;
+    if (body.description !== undefined) updateData.description = body.description;
     if (body.currency !== undefined) updateData.currency = body.currency;
     if (body.exchangeRate !== undefined) updateData.exchangeRate = body.exchangeRate;
     if (body.protectionPct !== undefined) updateData.protectionPct = body.protectionPct;
+    if (body.protectionMap !== undefined) updateData.protectionMap = body.protectionMap;
     if (body.discountPct !== undefined) updateData.discountPct = body.discountPct;
     if (body.validityDays !== undefined) updateData.validityDays = body.validityDays;
     if (body.notes !== undefined) updateData.notes = body.notes;
+    if (body.language !== undefined) updateData.language = body.language;
 
     await db.quote.update({
       where: { id },

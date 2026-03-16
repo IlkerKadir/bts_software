@@ -198,43 +198,6 @@ async function main() {
 
   console.log('✅ Exchange rates created');
 
-  // Seed ServiceCostConfig with July 2025 rates
-  await prisma.serviceCostConfig.create({
-    data: {
-      dailySalary: 3575,
-      dailyHotel: 2000,
-      dailyMealsOutCity: 475,
-      dailyMealsOffice: 270,
-      dailyVehicle: 1800,
-      perKmCost: 4,
-      distanceBrackets: [75, 150, 200, 250, 500, 750, 1000, 1250],
-      validFrom: new Date('2025-07-01'),
-      isActive: true,
-    },
-  });
-
-  console.log('✅ Service cost config created (July 2025 rates)');
-
-  // Seed LiftingEquipmentRates
-  const liftingEquipment = [
-    { name: 'Akulu Eklemli Platform 12-15m', dailyRate: 466, transportCost: 5000 },
-    { name: 'Akulu Makasli Platform 6-8m', dailyRate: 45, transportCost: 5000 },
-  ];
-
-  for (const equip of liftingEquipment) {
-    await prisma.liftingEquipmentRate.create({
-      data: {
-        name: equip.name,
-        dailyRate: equip.dailyRate,
-        transportCost: equip.transportCost,
-        validFrom: new Date('2025-07-01'),
-        isActive: true,
-      },
-    });
-  }
-
-  console.log('✅ Lifting equipment rates created');
-
   // Get brand and category IDs
   const zetaBrand = await prisma.productBrand.findUnique({ where: { name: 'ZETA' } });
   const xtralisBrand = await prisma.productBrand.findUnique({ where: { name: 'XTRALIS' } });

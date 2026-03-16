@@ -76,10 +76,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validatedData = companySchema.parse(body);
 
-    // Clean empty email
-    if (validatedData.email === '') {
-      validatedData.email = null;
-    }
+    // Empty email is already cleaned to null by the validation preprocess
 
     // Prepare data for Prisma (handle Json field)
     const createData = {
@@ -94,8 +91,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ company }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.name === 'ZodError') {
+      const zodError = error as import('zod').ZodError;
+      const fieldErrors = zodError.errors.map((e) => {
+        const field = e.path.join('.');
+        const fieldLabels: Record<string, string> = {
+          name: 'Firma Adı',
+          type: 'Firma Tipi',
+          email: 'E-posta',
+          phone: 'Telefon',
+          address: 'Adres',
+          taxNumber: 'Vergi No',
+        };
+        const label = fieldLabels[field] || field;
+        return `${label}: ${e.message}`;
+      });
       return NextResponse.json(
-        { error: 'Geçersiz veri', details: error },
+        { error: fieldErrors.join(', ') },
         { status: 400 }
       );
     }

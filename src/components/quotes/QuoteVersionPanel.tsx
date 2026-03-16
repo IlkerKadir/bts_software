@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button, Badge, Spinner, Modal } from '@/components/ui';
 import { QuoteCompareModal } from './QuoteCompareModal';
+import { formatCurrency, formatDateTime } from '@/lib/utils/format';
 
 interface Revision {
   id: string;
@@ -32,18 +33,6 @@ interface QuoteVersionPanelProps {
   currentVersion: number;
   onRevert?: (newQuoteId: string) => void;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  TASLAK: 'Taslak',
-  ONAY_BEKLIYOR: 'Onay Bekliyor',
-  ONAYLANDI: 'Onaylandı',
-  GONDERILDI: 'Gönderildi',
-  TAKIPTE: 'Takipte',
-  REVIZYON: 'Revizyon',
-  KAZANILDI: 'Kazanıldı',
-  KAYBEDILDI: 'Kaybedildi',
-  IPTAL: 'İptal',
-};
 
 export function QuoteVersionPanel({
   quoteId,
@@ -73,25 +62,6 @@ export function QuoteVersionPanel({
   useEffect(() => {
     fetchRevisions();
   }, [fetchRevisions]);
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('tr-TR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatCurrency = (value: number, currency: string) => {
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
 
   const handleRevert = async (sourceQuoteId: string) => {
     if (!confirm('Bu versiyona geri dönmek istediğinize emin misiniz? Yeni bir revizyon oluşturulacak.')) {
@@ -182,7 +152,7 @@ export function QuoteVersionPanel({
                   <div className="flex items-center gap-4 text-sm text-primary-500">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {formatDate(revision.createdAt)}
+                      {formatDateTime(revision.createdAt)}
                     </span>
                     <span>{revision.createdBy.fullName}</span>
                   </div>

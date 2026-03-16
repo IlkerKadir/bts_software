@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { Button, Select, Card, Badge, Spinner } from '@/components/ui';
 import { QuoteStatus } from '@prisma/client';
+import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { quoteStatusLabels } from '@/lib/validations/quote';
 
 interface Company {
   id: string;
@@ -50,23 +52,18 @@ interface ReportData {
   topCompanies: { name: string; count: number; value: number }[];
   topUsers: { name: string; count: number; value: number }[];
   quotes: Quote[];
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
-
-const STATUS_LABELS: Record<QuoteStatus, string> = {
-  TASLAK: 'Taslak',
-  ONAY_BEKLIYOR: 'Onay Bekliyor',
-  ONAYLANDI: 'Onaylandı',
-  GONDERILDI: 'Gönderildi',
-  TAKIPTE: 'Takipte',
-  REVIZYON: 'Revizyon',
-  KAZANILDI: 'Kazanıldı',
-  KAYBEDILDI: 'Kaybedildi',
-  IPTAL: 'İptal',
-};
 
 export default function ReportsPage() {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
 
@@ -81,9 +78,11 @@ export default function ReportsPage() {
   const [companyFilter, setCompanyFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fetchReportData = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (startDate) params.set('startDate', startDate);
@@ -91,19 +90,25 @@ export default function ReportsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (companyFilter) params.set('companyId', companyFilter);
       if (userFilter) params.set('createdById', userFilter);
+      params.set('page', String(currentPage));
+      params.set('limit', '50');
 
       const response = await fetch(`/api/reports/quotes?${params}`);
       const data = await response.json();
 
-      if (response.ok) {
-        setReportData(data);
+      if (!response.ok) {
+        setError(data.error || 'Rapor verisi yuklenirken bir hata olustu');
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching report:', error);
+
+      setReportData(data);
+    } catch (err) {
+      console.error('Error fetching report:', err);
+      setError('Rapor verisi yuklenirken bir hata olustu');
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, statusFilter, companyFilter, userFilter]);
+  }, [startDate, endDate, statusFilter, companyFilter, userFilter, currentPage]);
 
   const fetchFilters = useCallback(async () => {
     try {
@@ -126,6 +131,11 @@ export default function ReportsPage() {
     }
   }, []);
 
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [startDate, endDate, statusFilter, companyFilter, userFilter]);
+
   useEffect(() => {
     fetchFilters();
   }, [fetchFilters]);
@@ -133,23 +143,6 @@ export default function ReportsPage() {
   useEffect(() => {
     fetchReportData();
   }, [fetchReportData]);
-
-  const formatCurrency = (value: number, currency = 'EUR') => {
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('tr-TR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-  };
 
   const handleExport = async () => {
     try {
@@ -188,6 +181,19 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Error banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 flex items-center justify-between">
+          <p className="text-sm text-red-700 font-medium">{error}</p>
+          <button
+            onClick={() => fetchReportData()}
+            className="text-sm text-red-600 underline ml-4"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -241,7 +247,7 @@ export default function ReportsPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 options={[
                   { value: '', label: 'Tüm Durumlar' },
-                  ...Object.entries(STATUS_LABELS).map(([value, label]) => ({
+                  ...Object.entries(quoteStatusLabels).map(([value, label]) => ({
                     value,
                     label,
                   })),
@@ -431,7 +437,7 @@ export default function ReportsPage() {
             <div className="p-4 border-b border-primary-200 flex items-center justify-between">
               <h3 className="font-semibold text-primary-900">Teklif Listesi</h3>
               <span className="text-sm text-primary-500">
-                {reportData.quotes.length} teklif
+                {reportData.pagination ? reportData.pagination.total : reportData.quotes.length} teklif
               </span>
             </div>
             <div className="overflow-x-auto">
@@ -475,6 +481,33 @@ export default function ReportsPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {reportData.pagination && reportData.pagination.totalPages > 1 && (
+              <div className="px-4 py-3 border-t border-primary-200 flex items-center justify-between">
+                <p className="text-sm text-primary-500">
+                  Sayfa {reportData.pagination.page} / {reportData.pagination.totalPages}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  >
+                    Önceki
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={currentPage === reportData.pagination.totalPages}
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                  >
+                    Sonraki
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </>
       )}

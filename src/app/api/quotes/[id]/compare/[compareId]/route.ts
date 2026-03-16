@@ -8,34 +8,17 @@ interface RouteParams {
 
 interface QuoteItemForCompare {
   id: string;
+  productId: string | null;
   code: string | null;
   brand: string | null;
   description: string;
   quantity: number;
   unit: string;
+  katsayi: number;
   unitPrice: number;
   totalPrice: number;
   itemType: string;
   sortOrder: number;
-}
-
-interface QuoteForCompare {
-  id: string;
-  quoteNumber: string;
-  version: number;
-  status: string;
-  currency: string;
-  subtotal: number;
-  discountTotal: number;
-  discountPct: number;
-  vatTotal: number;
-  grandTotal: number;
-  protectionPct: number;
-  exchangeRate: number;
-  validityDays: number;
-  notes: string | null;
-  createdAt: Date;
-  items: QuoteItemForCompare[];
 }
 
 interface ItemDiff {
@@ -51,7 +34,8 @@ interface ItemDiff {
 
 /**
  * GET /api/quotes/[id]/compare/[compareId]
- * Compares two quote versions and returns the differences
+ * Compares two quote versions and returns the differences.
+ * Matches items by productId first, then by code, then by description.
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -68,6 +52,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         where: { id: quoteId },
         include: {
           items: {
+            where: { parentItemId: null },
             orderBy: { sortOrder: 'asc' },
           },
           createdBy: { select: { id: true, fullName: true } },
@@ -77,6 +62,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         where: { id: compareId },
         include: {
           items: {
+            where: { parentItemId: null },
             orderBy: { sortOrder: 'asc' },
           },
           createdBy: { select: { id: true, fullName: true } },
@@ -86,7 +72,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!quote1 || !quote2) {
       return NextResponse.json(
-        { error: 'Karşılaştırılacak tekliflerden biri bulunamadı' },
+        { error: 'Karsilastirilacak tekliflerden biri bulunamadi' },
         { status: 404 }
       );
     }
@@ -101,13 +87,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const fieldsToCompare = [
       { key: 'currency', label: 'Para Birimi' },
-      { key: 'exchangeRate', label: 'Döviz Kuru' },
+      { key: 'exchangeRate', label: 'Doviz Kuru' },
       { key: 'protectionPct', label: 'Kur Koruma %' },
-      { key: 'discountPct', label: 'İskonto %' },
-      { key: 'validityDays', label: 'Geçerlilik Süresi' },
-      { key: 'notes', label: 'Notlar' },
+      { key: 'discountPct', label: 'Iskonto %' },
+      { key: 'validityDays', label: 'Gecerlilik Suresi' },
       { key: 'subtotal', label: 'Ara Toplam' },
-      { key: 'discountTotal', label: 'İskonto Toplam' },
+      { key: 'discountTotal', label: 'Iskonto Toplam' },
       { key: 'vatTotal', label: 'KDV Toplam' },
       { key: 'grandTotal', label: 'Genel Toplam' },
     ];
@@ -129,19 +114,34 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Compare items
-    const oldItemsMap = new Map(
-      oldQuote.items.map((item) => [item.code || item.description, item])
-    );
-    const newItemsMap = new Map(
-      newQuote.items.map((item) => [item.code || item.description, item])
-    );
+    // Only compare PRODUCT, CUSTOM, and SET items (skip HEADER, NOTE, SUBTOTAL)
+    const comparableTypes = ['PRODUCT', 'CUSTOM', 'SET'];
+    const oldItems = oldQuote.items.filter(i => comparableTypes.includes(i.itemType));
+    const newItems = newQuote.items.filter(i => comparableTypes.includes(i.itemType));
+
+    // Build match keys: prefer productId, then code, then description
+    function matchKey(item: { productId: string | null; code: string | null; description: string }): string {
+      if (item.productId) return `pid:${item.productId}`;
+      if (item.code) return `code:${item.code}`;
+      return `desc:${item.description}`;
+    }
+
+    const oldItemsByKey = new Map<string, typeof oldItems[number]>();
+    for (const item of oldItems) {
+      oldItemsByKey.set(matchKey(item), item);
+    }
+
+    const newItemsByKey = new Map<string, typeof newItems[number]>();
+    for (const item of newItems) {
+      newItemsByKey.set(matchKey(item), item);
+    }
 
     const itemDiffs: ItemDiff[] = [];
+    const matchedNewKeys = new Set<string>();
 
     // Check for modified and removed items
-    for (const [key, oldItem] of oldItemsMap) {
-      const newItem = newItemsMap.get(key);
+    for (const [key, oldItem] of oldItemsByKey) {
+      const newItem = newItemsByKey.get(key);
 
       if (!newItem) {
         // Item was removed
@@ -150,6 +150,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           oldItem: formatItem(oldItem),
         });
       } else {
+        matchedNewKeys.add(key);
         // Compare items
         const changes = compareItems(oldItem, newItem);
         if (changes.length > 0) {
@@ -170,8 +171,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check for added items
-    for (const [key, newItem] of newItemsMap) {
-      if (!oldItemsMap.has(key)) {
+    for (const [key, newItem] of newItemsByKey) {
+      if (!matchedNewKeys.has(key)) {
         itemDiffs.push({
           type: 'added',
           newItem: formatItem(newItem),
@@ -179,8 +180,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Sort diffs: added first, then modified, then unchanged, then removed
-    const sortOrder = { added: 0, modified: 1, unchanged: 2, removed: 3 };
+    // Sort diffs: modified first, then added, then removed, then unchanged
+    const sortOrder = { modified: 0, added: 1, removed: 2, unchanged: 3 };
     itemDiffs.sort((a, b) => sortOrder[a.type] - sortOrder[b.type]);
 
     return NextResponse.json({
@@ -217,7 +218,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     console.error('Compare quotes error:', error);
     return NextResponse.json(
-      { error: 'Teklifler karşılaştırılırken bir hata oluştu' },
+      { error: 'Teklifler karsilastirilirken bir hata olustu' },
       { status: 500 }
     );
   }
@@ -225,11 +226,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 function formatItem(item: {
   id: string;
+  productId: string | null;
   code: string | null;
   brand: string | null;
   description: string;
   quantity: unknown;
   unit: string;
+  katsayi: unknown;
   unitPrice: unknown;
   totalPrice: unknown;
   itemType: string;
@@ -237,11 +240,13 @@ function formatItem(item: {
 }): QuoteItemForCompare {
   return {
     id: item.id,
+    productId: item.productId,
     code: item.code,
     brand: item.brand,
     description: item.description,
     quantity: Number(item.quantity),
     unit: item.unit,
+    katsayi: Number(item.katsayi),
     unitPrice: Number(item.unitPrice),
     totalPrice: Number(item.totalPrice),
     itemType: item.itemType,
@@ -250,24 +255,33 @@ function formatItem(item: {
 }
 
 function compareItems(
-  oldItem: { quantity: unknown; unitPrice: unknown; totalPrice: unknown; unit: string },
-  newItem: { quantity: unknown; unitPrice: unknown; totalPrice: unknown; unit: string }
+  oldItem: { description: string; quantity: unknown; unit: string; katsayi: unknown; unitPrice: unknown; totalPrice: unknown },
+  newItem: { description: string; quantity: unknown; unit: string; katsayi: unknown; unitPrice: unknown; totalPrice: unknown }
 ): { field: string; oldValue: unknown; newValue: unknown }[] {
   const changes: { field: string; oldValue: unknown; newValue: unknown }[] = [];
 
-  const fields = [
+  // Check description change
+  if (oldItem.description !== newItem.description) {
+    changes.push({
+      field: 'Aciklama',
+      oldValue: oldItem.description,
+      newValue: newItem.description,
+    });
+  }
+
+  const numericFields = [
     { key: 'quantity', label: 'Miktar' },
-    { key: 'unit', label: 'Birim' },
+    { key: 'katsayi', label: 'Katsayi' },
     { key: 'unitPrice', label: 'Birim Fiyat' },
     { key: 'totalPrice', label: 'Toplam Fiyat' },
   ];
 
-  for (const field of fields) {
+  for (const field of numericFields) {
     const oldValue = (oldItem as Record<string, unknown>)[field.key];
     const newValue = (newItem as Record<string, unknown>)[field.key];
 
-    const oldNum = typeof oldValue === 'object' && oldValue !== null ? Number(oldValue) : oldValue;
-    const newNum = typeof newValue === 'object' && newValue !== null ? Number(newValue) : newValue;
+    const oldNum = typeof oldValue === 'object' && oldValue !== null ? Number(oldValue) : Number(oldValue);
+    const newNum = typeof newValue === 'object' && newValue !== null ? Number(newValue) : Number(newValue);
 
     if (oldNum !== newNum) {
       changes.push({
@@ -276,6 +290,15 @@ function compareItems(
         newValue: newNum,
       });
     }
+  }
+
+  // Check unit change
+  if (oldItem.unit !== newItem.unit) {
+    changes.push({
+      field: 'Birim',
+      oldValue: oldItem.unit,
+      newValue: newItem.unit,
+    });
   }
 
   return changes;

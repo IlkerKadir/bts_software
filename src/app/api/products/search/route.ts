@@ -11,24 +11,32 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q') || '';
+    const brandId = searchParams.get('brandId') || '';
+    const categoryId = searchParams.get('categoryId') || '';
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
-    if (query.length < 2) {
+    // Need at least a search term or a filter
+    if (query.length < 2 && !brandId && !categoryId) {
       return NextResponse.json({ products: [] });
     }
 
+    const where: any = { isActive: true };
+
+    if (query.length >= 2) {
+      where.OR = [
+        { code: { contains: query, mode: 'insensitive' } },
+        { shortCode: { contains: query, mode: 'insensitive' } },
+        { name: { contains: query, mode: 'insensitive' } },
+        { nameTr: { contains: query, mode: 'insensitive' } },
+        { model: { contains: query, mode: 'insensitive' } },
+        { brand: { name: { contains: query, mode: 'insensitive' } } },
+      ];
+    }
+    if (brandId) where.brandId = brandId;
+    if (categoryId) where.categoryId = categoryId;
+
     const products = await db.product.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { code: { contains: query, mode: 'insensitive' } },
-          { shortCode: { contains: query, mode: 'insensitive' } },
-          { name: { contains: query, mode: 'insensitive' } },
-          { nameTr: { contains: query, mode: 'insensitive' } },
-          { model: { contains: query, mode: 'insensitive' } },
-          { brand: { name: { contains: query, mode: 'insensitive' } } },
-        ],
-      },
+      where,
       include: {
         brand: { select: { id: true, name: true } },
         category: { select: { id: true, name: true } },
@@ -44,6 +52,8 @@ export async function GET(request: NextRequest) {
       ...product,
       listPrice: Number(product.listPrice),
       costPrice: user.role.canViewCosts ? (product.costPrice ? Number(product.costPrice) : null) : null,
+      minKatsayi: product.minKatsayi != null ? Number(product.minKatsayi) : null,
+      maxKatsayi: product.maxKatsayi != null ? Number(product.maxKatsayi) : null,
     }));
 
     return NextResponse.json({ products: sanitizedProducts });

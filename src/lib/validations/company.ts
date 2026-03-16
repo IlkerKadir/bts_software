@@ -8,7 +8,10 @@ export const companySchema = z.object({
   address: z.string().optional().nullable(),
   taxNumber: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
-  email: z.string().email('Geçersiz e-posta adresi').optional().nullable().or(z.literal('')),
+  email: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() === '' ? null : val),
+    z.string().email('Geçersiz e-posta adresi').nullable().optional()
+  ),
   contacts: z.array(z.object({
     name: z.string(),
     title: z.string().optional(),
@@ -24,7 +27,7 @@ export type CompanyInput = z.infer<typeof companySchema>;
 export const companyQuerySchema = z.object({
   search: z.string().optional(),
   type: z.enum(['CLIENT', 'PARTNER']).optional(),
-  isActive: z.string().transform(val => val === 'true').optional(),
+  isActive: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
   page: z.coerce.number().default(1),
   limit: z.coerce.number().default(20),
 });

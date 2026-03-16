@@ -113,7 +113,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const validatedData = createUserSchema.parse(body);
+    const validation = createUserSchema.safeParse(body);
+    if (!validation.success) {
+      const firstError = validation.error.issues[0];
+      return NextResponse.json(
+        { error: firstError?.message || 'Geçersiz veri' },
+        { status: 400 }
+      );
+    }
+    const validatedData = validation.data;
 
     // Check if username already exists
     const existingUser = await db.user.findUnique({

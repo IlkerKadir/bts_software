@@ -45,6 +45,11 @@ export async function GET(request: NextRequest) {
     // Build where clause
     const where: Prisma.QuoteWhereInput = {};
 
+    // Sales reps can only see their own quotes in reports
+    if (!user.role.canManageUsers && !user.role.canApprove) {
+      where.createdById = user.id;
+    }
+
     if (query.startDate) {
       where.createdAt = {
         ...((where.createdAt as Prisma.DateTimeFilter) || {}),

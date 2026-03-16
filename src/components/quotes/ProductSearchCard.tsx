@@ -20,6 +20,8 @@ export interface ProductForQuote {
   unit: string;
   pricingType: 'LIST_PRICE' | 'PROJECT_BASED';
   defaultKatsayi: number;
+  minKatsayi?: number | null;
+  maxKatsayi?: number | null;
 }
 
 export interface ProductSearchCardProps {

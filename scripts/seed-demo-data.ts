@@ -215,7 +215,7 @@ async function main() {
   await prisma.quoteItem.create({
     data: {
       quoteId: quote1.id,
-      itemType: 'SERVICE',
+      itemType: 'SET',
       sortOrder: sortOrder++,
       description: 'Montaj ve Devreye Alma Hizmeti',
       quantity: 1,

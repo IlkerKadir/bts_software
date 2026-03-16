@@ -95,11 +95,11 @@ export function StatusChangeDropdown({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <Button
-        variant="secondary"
+      <button
+        type="button"
         onClick={handleToggle}
         disabled={isUpdating}
-        className="gap-2"
+        className="inline-flex items-center gap-1.5 px-1 py-0.5 rounded-md hover:bg-primary-100 transition-colors cursor-pointer disabled:opacity-50"
       >
         <Badge variant={statusVariants[currentStatus] || 'default'}>
           {currentStatusLabel}
@@ -109,7 +109,7 @@ export function StatusChangeDropdown({
         ) : (
           <ChevronDown className="w-4 h-4" />
         )}
-      </Button>
+      </button>
 
       {isOpen && (
         <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-primary-200 rounded-lg shadow-lg z-50">
