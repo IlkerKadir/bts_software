@@ -175,9 +175,6 @@ export async function GET(request: NextRequest) {
         case 'createdBy':
           cmp = a.createdBy.fullName.localeCompare(b.createdBy.fullName);
           break;
-        case 'profitMargin':
-          cmp = Number(a.profitMargin ?? 0) - Number(b.profitMargin ?? 0);
-          break;
         case 'createdAt':
         default:
           cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
