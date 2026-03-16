@@ -26,10 +26,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow Next.js internals and favicon only
+  // Allow Next.js internals, static assets, and favicon
   if (
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon')
+    pathname.startsWith('/favicon') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.svg') ||
+    pathname.endsWith('.ico') ||
+    pathname.endsWith('.jpg') ||
+    pathname.endsWith('.jpeg')
   ) {
     return NextResponse.next();
   }
