@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
             created++;
           }
         }
-      });
+      }, { timeout: 120000 }); // 2 minutes for large imports (2500+ products)
 
       return NextResponse.json({
         message: `İçe aktarma tamamlandı: ${created} yeni, ${updated} güncellendi`,
