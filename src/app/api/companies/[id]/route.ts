@@ -92,7 +92,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.name === 'ZodError') {
       const zodError = error as import('zod').ZodError;
-      const fieldErrors = zodError.errors.map((e) => {
+      const fieldErrors = zodError.issues.map((e) => {
         const field = e.path.join('.');
         const fieldLabels: Record<string, string> = {
           name: 'Firma Adı',
