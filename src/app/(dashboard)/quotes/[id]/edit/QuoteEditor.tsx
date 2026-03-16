@@ -14,6 +14,19 @@ import type { ApiQuoteItem, CommercialTerm, CreateItemPayload } from '@/lib/type
 import { PriceHistory } from './PriceHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return generateId();
+  }
+  // Fallback for non-secure contexts (HTTP)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface QuoteData {
@@ -627,7 +640,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // Find sub-rows that belong to this item
       const originalSubRows = items.filter((item) => item.parentItemId === itemId);
 
-      const tempId = crypto.randomUUID();
+      const tempId = generateId();
       const duplicated: QuoteItemData = {
         ...original,
         id: tempId,
@@ -637,7 +650,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // Create temp sub-rows with temp IDs pointing to the new parent temp ID
       const tempSubRows = originalSubRows.map((sub) => ({
         ...sub,
-        id: crypto.randomUUID(),
+        id: generateId(),
         parentItemId: tempId,
         sortOrder: sub.sortOrder + 1,
       }));
@@ -823,7 +836,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   const handleAddProduct = useCallback(
     async (product: ProductForQuote) => {
-      const tempId = crypto.randomUUID();
+      const tempId = generateId();
       const lang = headerFields.language;
       const quoteCurrency = headerFields.currency;
       const productCurrency = product.currency;
@@ -950,7 +963,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Add header row ─────────────────────────────────────────────────────────
 
   const handleAddHeader = useCallback(async () => {
-    const tempId = crypto.randomUUID();
+    const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'HEADER',
@@ -1003,7 +1016,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Add note row ───────────────────────────────────────────────────────────
 
   const handleAddNote = useCallback(async () => {
-    const tempId = crypto.randomUUID();
+    const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'NOTE',
@@ -1057,7 +1070,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Add custom item ──────────────────────────────────────────────────────
 
   const handleAddCustomItem = useCallback(async () => {
-    const tempId = crypto.randomUUID();
+    const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'CUSTOM',
@@ -1114,7 +1127,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Add subtotal row ────────────────────────────────────────────────────
 
   const handleAddSubtotal = useCallback(async () => {
-    const tempId = crypto.randomUUID();
+    const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'SUBTOTAL',
