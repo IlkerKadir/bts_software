@@ -187,7 +187,7 @@ export function BrandProfitSummary({
     if (!canViewCosts) {
       const grouped: Record<
         string,
-        { totalRevenue: number; katsayiWeightedSum: number; revenueWeightSum: number; count: number; allManual: boolean }
+        { totalRevenue: number; katsayiWeightedSum: number; revenueWeightSum: number; count: number }
       > = {};
 
       for (const item of filteredItems) {
