@@ -9,12 +9,13 @@ import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { UpcomingReminders } from '@/components/dashboard/UpcomingReminders';
 
 async function getPipelineCounts() {
-  const [taslak, onayBekliyor, onaylandi, gonderildi, takipte] = await Promise.all([
+  const [taslak, onayBekliyor, onaylandi, gonderildi, takipte, revizyon] = await Promise.all([
     db.quote.count({ where: { status: 'TASLAK' } }),
     db.quote.count({ where: { status: 'ONAY_BEKLIYOR' } }),
     db.quote.count({ where: { status: 'ONAYLANDI' } }),
     db.quote.count({ where: { status: 'GONDERILDI' } }),
     db.quote.count({ where: { status: 'TAKIPTE' } }),
+    db.quote.count({ where: { status: 'REVIZYON' } }),
   ]);
 
   return {
@@ -23,6 +24,7 @@ async function getPipelineCounts() {
     ONAYLANDI: onaylandi,
     GONDERILDI: gonderildi,
     TAKIPTE: takipte,
+    REVIZYON: revizyon,
   };
 }
 

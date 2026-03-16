@@ -75,6 +75,8 @@ describe('POST /api/orders', () => {
     vi.clearAllMocks();
     vi.mocked(getSession).mockResolvedValue(mockUser as never);
     vi.mocked(db.quote.findUnique).mockResolvedValue(mockQuote as never);
+    // By default, no existing active order for the quote (dedup check passes)
+    vi.mocked(db.orderConfirmation.findFirst).mockResolvedValue(null as never);
   });
 
   it('returns 401 if not authenticated', async () => {
@@ -148,11 +150,12 @@ describe('POST /api/orders', () => {
           throw error;
         }
         // Second attempt: succeed
+        const findFirstMock = vi.fn()
+          .mockResolvedValueOnce(null)  // dedup check
+          .mockResolvedValueOnce({ orderNumber: 'SIP-2026-0001' });  // number generation
         const tx = {
           orderConfirmation: {
-            findFirst: vi.fn().mockResolvedValue({
-              orderNumber: 'SIP-2026-0001',
-            }),
+            findFirst: findFirstMock,
             create: vi.fn().mockResolvedValue({
               ...mockOrder,
               orderNumber: 'SIP-2026-0002',
@@ -194,14 +197,60 @@ describe('POST /api/orders', () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 
-  it('generates sequential order number within the transaction', async () => {
+  it('returns 400 if an active order already exists for this quoteId', async () => {
+    // Dedup check runs INSIDE the transaction now
     vi.mocked(db.$transaction).mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           orderConfirmation: {
             findFirst: vi.fn().mockResolvedValue({
-              orderNumber: 'SIP-2026-0005',
+              id: 'existing-order',
+              orderNumber: 'SIP-2026-0001',
+              quoteId: 'quote1',
+              status: 'HAZIRLANIYOR',
             }),
+            create: vi.fn(),
+          },
+        };
+        return fn(tx);
+      }
+    );
+
+    const res = await POST(makeRequest({ quoteId: 'quote1' }));
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe('Bu teklif için zaten bir sipariş oluşturulmuş.');
+  });
+
+  it('allows order creation if existing order for quote is IPTAL', async () => {
+    // Existing order is cancelled — should not block
+    vi.mocked(db.orderConfirmation.findFirst).mockResolvedValue(null as never);
+
+    vi.mocked(db.$transaction).mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          orderConfirmation: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockResolvedValue(mockOrder),
+          },
+        };
+        return fn(tx);
+      }
+    );
+
+    const res = await POST(makeRequest({ quoteId: 'quote1' }));
+    expect(res.status).toBe(201);
+  });
+
+  it('generates sequential order number within the transaction', async () => {
+    vi.mocked(db.$transaction).mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const findFirstMock = vi.fn()
+          .mockResolvedValueOnce(null)  // 1st call: dedup check — no existing order
+          .mockResolvedValueOnce({ orderNumber: 'SIP-2026-0005' });  // 2nd call: number generation
+        const tx = {
+          orderConfirmation: {
+            findFirst: findFirstMock,
             create: vi.fn().mockImplementation(async (args: { data: { orderNumber: string } }) => {
               // Verify the generated order number is sequential
               expect(args.data.orderNumber).toBe('SIP-2026-0006');

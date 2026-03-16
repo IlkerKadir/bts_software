@@ -1188,7 +1188,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   }, [items]);
 
   useEffect(() => {
-    if (!quote || !user?.role.canViewCosts) return;
+    if (!quote || !user) return;
     if (!productIdsKey) return;
 
     const fetchBatchHistory = async () => {
@@ -1208,7 +1208,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     };
 
     fetchBatchHistory();
-  }, [quote, user?.role.canViewCosts, productIdsKey]);
+  }, [quote, user, productIdsKey]);
 
   const [priceHistoryProductId, setPriceHistoryProductId] = useState<string | null>(null);
 
@@ -1363,7 +1363,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') return item;
           if (item.itemType === 'SET' && !item.parentItemId) return item;
           if (item.isManualPrice) return item;
-          if (!item.productCurrency || item.productListPrice == null) return item;
+          if (!item.productCurrency || item.productListPrice == null || item.productListPrice === 0) return item;
           if (item.productCurrency === quoteCurrency) return item;
 
           // Re-convert from product's original price using fresh rateMatrix + protection
@@ -1480,10 +1480,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Render: Main ───────────────────────────────────────────────────────────
 
-  // "Submit for Approval" only when editing a TASLAK/REVIZYON quote
+  // "Submit for Approval" — any user can submit their quote for approval
   const canSubmitForApproval =
-    (quote.status === 'TASLAK' || quote.status === 'REVIZYON') &&
-    !hasChanges && user.role.canApprove
+    (quote.status === 'TASLAK' || quote.status === 'REVIZYON') && !hasChanges
       ? handleSubmitForApproval
       : undefined;
 

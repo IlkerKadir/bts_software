@@ -62,7 +62,7 @@ const COLUMN_GROUPS = [
   { key: 'urun' as const, label: 'Ürün', Icon: Package, requiresCosts: false },
   { key: 'fiyat' as const, label: 'Fiyat', Icon: DollarSign, requiresCosts: false },
   { key: 'maliyet' as const, label: 'Maliyet', Icon: Calculator, requiresCosts: true },
-  { key: 'gecmis' as const, label: 'Geçmiş', Icon: Clock, requiresCosts: true },
+  { key: 'gecmis' as const, label: 'Geçmiş', Icon: Clock, requiresCosts: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -283,10 +283,10 @@ export function QuoteItemsTable({
     if (columnVisibility.urun) count += 3; // Marka, Model, Kod
     if (columnVisibility.fiyat) {
       count += 2; // Birim Fiyat, Toplam Fiyat
-      if (canViewCosts) count += 2; // Katsayi, Liste Fiyati
+      count += 2; // Katsayi, Liste Fiyati (visible to all users)
     }
     if (canViewCosts && columnVisibility.maliyet) count += 3; // Maliyet, Kar, Kar%
-    if (canViewCosts && columnVisibility.gecmis) count += 8; // 4 prices + 4 deltas
+    if (columnVisibility.gecmis) count += 8; // 4 prices + 4 deltas
 
     return count;
   }, [columnVisibility, canViewCosts]);
@@ -673,7 +673,7 @@ export function QuoteItemsTable({
               {/* Currency */}
               <th className="px-1 py-1 border-l border-accent-700">PB</th>
               {/* Gecmis group */}
-              {canViewCosts && columnVisibility.gecmis && (
+              {columnVisibility.gecmis && (
                 <th colSpan={8} className="px-2 py-1 text-center border-l border-accent-700">Fiyat Geçmişi</th>
               )}
               {/* Delete */}
@@ -697,7 +697,7 @@ export function QuoteItemsTable({
               <th className="px-2 py-2 text-left whitespace-nowrap">Açıklama</th>
               <th className="px-2 py-2 text-right whitespace-nowrap">Miktar</th>
 
-              {canViewCosts && columnVisibility.fiyat && (
+              {columnVisibility.fiyat && (
                 <>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Katsayı</th>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Liste Fiyatı</th>
@@ -720,7 +720,7 @@ export function QuoteItemsTable({
 
               <th className="px-1 py-2 text-center whitespace-nowrap">PB</th>
 
-              {canViewCosts && columnVisibility.gecmis && (
+              {columnVisibility.gecmis && (
                 <>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Son Teklif</th>
                   <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>

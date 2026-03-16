@@ -13,6 +13,8 @@ import {
   ArrowDown,
   Calendar,
   Trash2,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
@@ -36,9 +38,11 @@ interface Quote {
   grandTotal: number | { toNumber: () => number };
   profitMargin?: number | null;
   status: string;
+  version: number;
   validUntil?: string | null;
   createdBy: { id: string; fullName: string };
   createdAt: string;
+  revisions?: Quote[];
 }
 
 interface QuoteListProps {
@@ -75,6 +79,11 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
   IPTAL: 'error',
 };
 
+/** Extract base quote number: "BTS-2026-0001-R2" -> "BTS-2026-0001" */
+function getBaseQuoteNumber(quoteNumber: string): string {
+  return quoteNumber.split('-R')[0];
+}
+
 export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) {
   const router = useRouter();
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -103,6 +112,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [deletingQuote, setDeletingQuote] = useState<Quote | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [expandedQuotes, setExpandedQuotes] = useState<Set<string>>(new Set());
 
   const fetchQuotes = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -116,6 +126,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       if (dateTo) params.set('dateTo', dateTo);
       if (sortField) params.set('sortField', sortField);
       if (sortDirection) params.set('sortDirection', sortDirection);
+      params.set('groupRevisions', 'true');
       params.set('page', page.toString());
 
       const response = await fetch(`/api/quotes?${params}`);
@@ -220,6 +231,18 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       setSortField(field);
       setSortDirection('asc');
     }
+  };
+
+  const toggleExpand = (baseNumber: string) => {
+    setExpandedQuotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(baseNumber)) {
+        next.delete(baseNumber);
+      } else {
+        next.add(baseNumber);
+      }
+      return next;
+    });
   };
 
   // Sorting is now handled server-side; quotes are already sorted by the API
@@ -467,80 +490,29 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                   </td>
                 </tr>
               ) : (
-                sortedQuotes.map((quote) => (
-                  <tr
-                    key={quote.id}
-                    className="cursor-pointer hover:bg-primary-50 transition-colors"
-                    onClick={() => router.push(`/quotes/${quote.id}`)}
-                  >
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedQuoteIds.has(quote.id)}
-                        onChange={() => toggleQuoteSelection(quote.id)}
-                        className="rounded border-primary-300 cursor-pointer"
-                      />
-                    </td>
-                    <td className="font-medium font-mono text-xs tabular-nums">
-                      {quote.quoteNumber}
-                    </td>
-                    <td className="text-xs">{quote.company.name}</td>
-                    <td className="text-xs text-primary-600">
-                      {quote.project?.name || '-'}
-                    </td>
-                    <td className="text-right text-xs tabular-nums font-medium">
-                      {formatCurrency(quote.grandTotal, quote.currency)}
-                    </td>
-                    {canViewCosts && (
-                      <td className="text-right text-xs tabular-nums">
-                        {quote.profitMargin != null
-                          ? `%${Number(quote.profitMargin).toFixed(1)}`
-                          : '-'}
-                      </td>
-                    )}
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant={statusVariants[quote.status] || 'default'}>
-                          {quoteStatusLabels[quote.status] || quote.status}
-                        </Badge>
-                        {quote.validUntil && isExpired(quote.validUntil) && (
-                          <span title="Geçerlilik süresi doldu">
-                            <Clock className="w-3.5 h-3.5 text-red-500" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="text-xs">{quote.createdBy.fullName}</td>
-                    <td className="text-xs tabular-nums">{formatDate(quote.createdAt)}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          onClick={() => router.push(`/quotes/${quote.id}`)}
-                          className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
-                          title="Görüntüle"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => router.push(`/quotes/${quote.id}/edit`)}
-                          className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
-                          title="Düzenle"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </button>
-                        {quote.status === 'TASLAK' && (
-                          <button
-                            onClick={() => setDeletingQuote(quote)}
-                            className="p-1.5 rounded hover:bg-red-50 text-red-500 cursor-pointer"
-                            title="Sil"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                sortedQuotes.map((quote) => {
+                  const baseNumber = getBaseQuoteNumber(quote.quoteNumber);
+                  const hasRevisions = quote.revisions && quote.revisions.length > 0;
+                  const isExpanded = expandedQuotes.has(baseNumber);
+
+                  return (
+                    <QuoteGroupRows
+                      key={quote.id}
+                      quote={quote}
+                      baseNumber={baseNumber}
+                      hasRevisions={!!hasRevisions}
+                      isExpanded={isExpanded}
+                      onToggleExpand={toggleExpand}
+                      canViewCosts={canViewCosts}
+                      selectedQuoteIds={selectedQuoteIds}
+                      onToggleSelection={toggleQuoteSelection}
+                      onNavigate={(id) => router.push(`/quotes/${id}`)}
+                      onEdit={(id) => router.push(`/quotes/${id}/edit`)}
+                      onDelete={setDeletingQuote}
+                      isExpiredFn={isExpired}
+                    />
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -686,4 +658,206 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       )}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* QuoteGroupRows — renders one primary row + optional revision rows   */
+/* ------------------------------------------------------------------ */
+
+interface QuoteGroupRowsProps {
+  quote: Quote;
+  baseNumber: string;
+  hasRevisions: boolean;
+  isExpanded: boolean;
+  onToggleExpand: (baseNumber: string) => void;
+  canViewCosts: boolean;
+  selectedQuoteIds: Set<string>;
+  onToggleSelection: (id: string) => void;
+  onNavigate: (id: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (quote: Quote) => void;
+  isExpiredFn: (validUntil: string | null | undefined) => boolean;
+}
+
+function QuoteGroupRows({
+  quote,
+  baseNumber,
+  hasRevisions,
+  isExpanded,
+  onToggleExpand,
+  canViewCosts,
+  selectedQuoteIds,
+  onToggleSelection,
+  onNavigate,
+  onEdit,
+  onDelete,
+  isExpiredFn,
+}: QuoteGroupRowsProps) {
+  const rows: React.ReactNode[] = [];
+
+  // --- Primary row ---
+  rows.push(
+    <tr
+      key={quote.id}
+      className="cursor-pointer hover:bg-primary-50 transition-colors"
+      onClick={() => onNavigate(quote.id)}
+    >
+      <td onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={selectedQuoteIds.has(quote.id)}
+            onChange={() => onToggleSelection(quote.id)}
+            className="rounded border-primary-300 cursor-pointer"
+          />
+        </div>
+      </td>
+      <td className="font-medium font-mono text-xs tabular-nums">
+        <div className="flex items-center gap-1.5">
+          {hasRevisions ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand(baseNumber);
+              }}
+              className="p-0.5 rounded hover:bg-primary-200 text-primary-500 cursor-pointer flex-shrink-0"
+              title={isExpanded ? 'Daralt' : 'Genişlet'}
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+            </button>
+          ) : (
+            <span className="w-4.5 flex-shrink-0" />
+          )}
+          <span>{quote.quoteNumber}</span>
+          {quote.version > 1 && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent-100 text-accent-700 leading-none">
+              v{quote.version}
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="text-xs">{quote.company.name}</td>
+      <td className="text-xs text-primary-600">
+        {quote.project?.name || '-'}
+      </td>
+      <td className="text-right text-xs tabular-nums font-medium">
+        {formatCurrency(quote.grandTotal, quote.currency)}
+      </td>
+      {canViewCosts && (
+        <td className="text-right text-xs tabular-nums">
+          {quote.profitMargin != null
+            ? `%${Number(quote.profitMargin).toFixed(1)}`
+            : '-'}
+        </td>
+      )}
+      <td>
+        <div className="flex items-center gap-1.5">
+          <Badge variant={statusVariants[quote.status] || 'default'}>
+            {quoteStatusLabels[quote.status] || quote.status}
+          </Badge>
+          {quote.validUntil && isExpiredFn(quote.validUntil) && (
+            <span title="Geçerlilik süresi doldu">
+              <Clock className="w-3.5 h-3.5 text-red-500" />
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="text-xs">{quote.createdBy.fullName}</td>
+      <td className="text-xs tabular-nums">{formatDate(quote.createdAt)}</td>
+      <td onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => onNavigate(quote.id)}
+            className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
+            title="Görüntüle"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onEdit(quote.id)}
+            className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
+            title="Düzenle"
+          >
+            <FileText className="w-4 h-4" />
+          </button>
+          {quote.status === 'TASLAK' && (
+            <button
+              onClick={() => onDelete(quote)}
+              className="p-1.5 rounded hover:bg-red-50 text-red-500 cursor-pointer"
+              title="Sil"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+
+  // --- Revision sub-rows (when expanded) ---
+  if (hasRevisions && isExpanded) {
+    for (const rev of quote.revisions!) {
+      rows.push(
+        <tr
+          key={rev.id}
+          className="cursor-pointer hover:bg-primary-100 transition-colors bg-primary-50"
+          onClick={() => onNavigate(rev.id)}
+        >
+          {/* Checkbox cell — empty for sub-rows */}
+          <td />
+          {/* Quote number cell — indented with version label */}
+          <td className="pl-8 font-mono text-xs tabular-nums text-primary-500">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary-200 text-primary-600 leading-none">
+                v{rev.version}
+              </span>
+              <span>{rev.quoteNumber}</span>
+            </div>
+          </td>
+          {/* Firma — same as parent, show dash */}
+          <td className="text-xs text-primary-400">—</td>
+          {/* Proje — same as parent, show dash */}
+          <td className="text-xs text-primary-400">—</td>
+          {/* Tutar */}
+          <td className="text-right text-xs tabular-nums text-primary-500">
+            {formatCurrency(rev.grandTotal, rev.currency)}
+          </td>
+          {/* Kar Marjı */}
+          {canViewCosts && (
+            <td className="text-right text-xs tabular-nums text-primary-400">
+              {rev.profitMargin != null
+                ? `%${Number(rev.profitMargin).toFixed(1)}`
+                : '-'}
+            </td>
+          )}
+          {/* Durum */}
+          <td>
+            <Badge variant={statusVariants[rev.status] || 'default'}>
+              {quoteStatusLabels[rev.status] || rev.status}
+            </Badge>
+          </td>
+          {/* Oluşturan */}
+          <td className="text-xs text-primary-500">{rev.createdBy.fullName}</td>
+          {/* Tarih */}
+          <td className="text-xs tabular-nums text-primary-500">{formatDate(rev.createdAt)}</td>
+          {/* İşlemler — minimal for sub-rows */}
+          <td onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => onNavigate(rev.id)}
+              className="p-1.5 rounded hover:bg-primary-100 text-primary-400 cursor-pointer"
+              title="Görüntüle"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+          </td>
+        </tr>
+      );
+    }
+  }
+
+  return <>{rows}</>;
 }

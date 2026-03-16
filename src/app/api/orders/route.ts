@@ -187,6 +187,18 @@ export async function POST(request: NextRequest) {
       try {
         const order = await db.$transaction(
           async (tx) => {
+            // Dedup check INSIDE transaction to prevent TOCTOU race
+            const existingOrder = await tx.orderConfirmation.findFirst({
+              where: {
+                quoteId: quote.id,
+                status: { not: 'IPTAL' },
+              },
+            });
+
+            if (existingOrder) {
+              throw new Error('DUPLICATE_ORDER');
+            }
+
             const orderNumber = await getNextOrderNumber(tx);
 
             return tx.orderConfirmation.create({
@@ -221,6 +233,13 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ order }, { status: 201 });
       } catch (error) {
+        // Duplicate order check thrown from inside transaction
+        if (error instanceof Error && error.message === 'DUPLICATE_ORDER') {
+          return NextResponse.json(
+            { error: 'Bu teklif için zaten bir sipariş oluşturulmuş.' },
+            { status: 400 }
+          );
+        }
         lastError = error;
         if (!isUniqueConstraintError(error)) {
           // Not a collision — re-throw immediately

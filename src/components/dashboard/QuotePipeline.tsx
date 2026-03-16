@@ -8,9 +8,10 @@ import {
   CheckCircle2,
   Send,
   Eye,
+  RotateCcw,
 } from 'lucide-react';
 
-type PipelineStatus = 'TASLAK' | 'ONAY_BEKLIYOR' | 'ONAYLANDI' | 'GONDERILDI' | 'TAKIPTE';
+type PipelineStatus = 'TASLAK' | 'ONAY_BEKLIYOR' | 'ONAYLANDI' | 'GONDERILDI' | 'TAKIPTE' | 'REVIZYON';
 
 interface PipelineCounts {
   TASLAK: number;
@@ -18,6 +19,7 @@ interface PipelineCounts {
   ONAYLANDI: number;
   GONDERILDI: number;
   TAKIPTE: number;
+  REVIZYON: number;
 }
 
 interface QuotePipelineProps {
@@ -72,11 +74,19 @@ const pipelineConfig: {
     iconColor: 'text-purple-600',
     icon: Eye,
   },
+  {
+    status: 'REVIZYON',
+    label: 'Revizyon',
+    borderColor: 'border-l-orange-500',
+    iconBg: 'bg-orange-50',
+    iconColor: 'text-orange-600',
+    icon: RotateCcw,
+  },
 ];
 
 export function QuotePipeline({ counts }: QuotePipelineProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
       {pipelineConfig.map((item) => {
         const Icon = item.icon;
         const count = counts[item.status];

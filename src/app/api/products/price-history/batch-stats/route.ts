@@ -11,10 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Only canViewCosts users can access price history stats
-    if (!user.role.canViewCosts) {
-      return NextResponse.json({ error: 'Yetkisiz erişim' }, { status: 403 });
-    }
+    // Price history shows historical unitPrice/katsayi — not cost data, visible to all users
 
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');

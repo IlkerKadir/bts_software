@@ -587,8 +587,8 @@ export function QuoteItemRow({
           </select>
         </td>
 
-        {/* KATSAYI + LISTE FIYATI (canViewCosts + fiyat group) */}
-        {canViewCosts && columnVisibility.fiyat && (
+        {/* KATSAYI + LISTE FIYATI (visible to all users in fiyat group) */}
+        {columnVisibility.fiyat && (
           <>
             <td
               className={cn(
@@ -604,7 +604,7 @@ export function QuoteItemRow({
                 <EditableCell
                   value={Number(item.katsayi)}
                   type="number"
-                  readOnly={isSetParent || (!isCustom && !isSubRow && !canOverrideKatsayi)}
+                  readOnly={isSetParent}
                   onChange={(v) => {
                     const k = Number(v);
                     const shouldCalc = isCustom || !item.isManualPrice;
@@ -702,7 +702,7 @@ export function QuoteItemRow({
         </td>
 
         {/* PRICE HISTORY: Son Teklif + Δ% | Sipariş + Δ% | En Yüksek + Δ% | En Düşük + Δ% */}
-        {canViewCosts && columnVisibility.gecmis && (
+        {columnVisibility.gecmis && (
           <>
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-xs text-accent-700">
               {priceHistory?.lastQuoted

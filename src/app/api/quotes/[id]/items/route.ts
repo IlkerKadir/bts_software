@@ -250,6 +250,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Recalculate quote totals
     await recalculateAndPersistQuoteTotals(quoteId);
 
+    // Record history entry for item updates
+    await db.quoteHistory.create({
+      data: {
+        quoteId,
+        userId: user.id,
+        action: 'UPDATE',
+        changes: { itemsUpdated: validatedItems.length },
+      },
+    });
+
     // Fetch updated items
     const items = await db.quoteItem.findMany({
       where: { quoteId },

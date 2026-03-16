@@ -328,7 +328,7 @@ export function QuoteEditorHeader({
               value={refNo}
               onChange={(e) => onRefNoChange(e.target.value)}
               disabled={!isEditable}
-              placeholder="Örn: 219AC"
+              placeholder=""
               className={cn(
                 'px-2 py-1 border rounded-md text-sm text-primary-900 bg-white w-28',
                 'placeholder:text-primary-400',

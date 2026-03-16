@@ -51,6 +51,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // When submitting for approval, check that quote has at least one priced item
+    if (newStatus === 'ONAY_BEKLIYOR') {
+      const pricedItems = await db.quoteItem.findMany({
+        where: {
+          quoteId,
+          itemType: { in: ['PRODUCT', 'CUSTOM', 'SET'] },
+        },
+      });
+
+      if (pricedItems.length === 0) {
+        return NextResponse.json(
+          { error: 'Onaya göndermek için en az bir kalem gereklidir.' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Check permissions for approval
     if (newStatus === 'ONAYLANDI' && !user.role.canApprove) {
       return NextResponse.json(

@@ -5,6 +5,15 @@ import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 import { generateQuoteNumber, getCurrentYearPrefix, getNextSequence } from '@/lib/quote-number';
 
+/**
+ * Extract the base quote number by splitting on `-R`.
+ * e.g. "BTS-2026-0001-R2" -> "BTS-2026-0001"
+ *      "BTS-2026-0001"     -> "BTS-2026-0001"
+ */
+function getBaseQuoteNumber(quoteNumber: string): string {
+  return quoteNumber.split('-R')[0];
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getSession();
@@ -13,6 +22,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const groupRevisions = searchParams.get('groupRevisions') !== 'false'; // default true
+
     const query = quoteQuerySchema.parse({
       search: searchParams.get('search') || undefined,
       companyId: searchParams.get('companyId') || undefined,
@@ -60,10 +71,7 @@ export async function GET(request: NextRequest) {
       where.createdAt = { ...(where.createdAt as Prisma.DateTimeFilter || {}), lte: new Date(dateTo + 'T23:59:59.999Z') };
     }
 
-    // Sales reps can only see their own quotes
-    if (!user.role.canManageUsers && !user.role.canApprove) {
-      where.createdById = user.id;
-    }
+    // All users can see all quotes (cost data is filtered based on role permissions)
 
     // Server-side sorting
     const sortField = searchParams.get('sortField') || 'createdAt';
@@ -89,28 +97,107 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    const [quotes, total] = await Promise.all([
-      db.quote.findMany({
-        where,
-        include: {
-          company: { select: { id: true, name: true } },
-          project: { select: { id: true, name: true } },
-          createdBy: { select: { id: true, fullName: true } },
+    if (!groupRevisions) {
+      // Legacy flat list behavior
+      const [quotes, total] = await Promise.all([
+        db.quote.findMany({
+          where,
+          include: {
+            company: { select: { id: true, name: true } },
+            project: { select: { id: true, name: true } },
+            createdBy: { select: { id: true, fullName: true } },
+          },
+          orderBy,
+          skip: (query.page - 1) * query.limit,
+          take: query.limit,
+        }),
+        db.quote.count({ where }),
+      ]);
+
+      return NextResponse.json({
+        quotes,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total,
+          totalPages: Math.ceil(total / query.limit),
         },
-        orderBy,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-      }),
-      db.quote.count({ where }),
-    ]);
+      });
+    }
+
+    // --- Grouped revisions mode ---
+    // 1. Fetch ALL quotes matching the filters (we need to group them in JS)
+    const allQuotes = await db.quote.findMany({
+      where,
+      include: {
+        company: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, fullName: true } },
+      },
+      orderBy: { version: 'desc' },
+    });
+
+    // 2. Group by base quote number
+    const groupMap = new Map<string, typeof allQuotes>();
+    for (const q of allQuotes) {
+      const base = getBaseQuoteNumber(q.quoteNumber);
+      if (!groupMap.has(base)) {
+        groupMap.set(base, []);
+      }
+      groupMap.get(base)!.push(q);
+    }
+
+    // 3. For each group, the highest version is the primary; rest are revisions
+    //    Each group's members are already sorted by version DESC (from orderBy above).
+    const groups = Array.from(groupMap.values()).map((members) => {
+      // Sort within group by version DESC to ensure primary is first
+      members.sort((a, b) => b.version - a.version);
+      const [primary, ...revisions] = members;
+      return { ...primary, revisions };
+    });
+
+    // 4. Apply user-requested sorting on the primary (group representative)
+    groups.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'quoteNumber':
+          cmp = a.quoteNumber.localeCompare(b.quoteNumber);
+          break;
+        case 'company':
+          cmp = a.company.name.localeCompare(b.company.name);
+          break;
+        case 'grandTotal':
+          cmp = Number(a.grandTotal) - Number(b.grandTotal);
+          break;
+        case 'status':
+          cmp = a.status.localeCompare(b.status);
+          break;
+        case 'createdBy':
+          cmp = a.createdBy.fullName.localeCompare(b.createdBy.fullName);
+          break;
+        case 'profitMargin':
+          cmp = Number(a.profitMargin ?? 0) - Number(b.profitMargin ?? 0);
+          break;
+        case 'createdAt':
+        default:
+          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          break;
+      }
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    // 5. Paginate by groups (not individual quotes)
+    const totalGroups = groups.length;
+    const start = (query.page - 1) * query.limit;
+    const paginatedGroups = groups.slice(start, start + query.limit);
 
     return NextResponse.json({
-      quotes,
+      quotes: paginatedGroups,
       pagination: {
         page: query.page,
         limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
+        total: totalGroups,
+        totalPages: Math.ceil(totalGroups / query.limit),
       },
     });
   } catch (error) {

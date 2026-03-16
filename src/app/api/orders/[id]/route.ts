@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { OrderStatus } from '@prisma/client';
+
+const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
+
+/** Order status state machine: maps current status to valid next statuses */
+const orderStatusTransitions: Record<string, string[]> = {
+  HAZIRLANIYOR: ['ONAYLANDI', 'IPTAL'],
+  ONAYLANDI: ['GONDERILDI', 'IPTAL'],
+  GONDERILDI: ['TAMAMLANDI', 'IPTAL'],
+  TAMAMLANDI: [], // terminal
+  IPTAL: [], // terminal
+};
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -68,7 +80,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const updateData: Record<string, any> = {};
 
-    if (body.status !== undefined) updateData.status = body.status;
+    if (body.status !== undefined) {
+      // Validate status enum value
+      if (!VALID_ORDER_STATUSES.includes(body.status)) {
+        return NextResponse.json(
+          { error: 'Geçersiz sipariş durumu.' },
+          { status: 400 }
+        );
+      }
+
+      // Validate state machine transition
+      const currentStatus = existingOrder.status as string;
+      const allowedNextStatuses = orderStatusTransitions[currentStatus] || [];
+      if (!allowedNextStatuses.includes(body.status)) {
+        return NextResponse.json(
+          { error: 'Bu durum geçişi yapılamaz' },
+          { status: 400 }
+        );
+      }
+
+      updateData.status = body.status;
+    }
     if (body.notes !== undefined) updateData.notes = body.notes;
     if (body.deliveryDate !== undefined) {
       updateData.deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : null;

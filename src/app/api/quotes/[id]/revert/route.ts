@@ -68,6 +68,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         commercialTerms: {
           orderBy: { sortOrder: 'asc' },
         },
+        ekMaliyetler: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
@@ -88,6 +91,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           companyId: sourceQuote.companyId,
           projectId: sourceQuote.projectId,
           subject: sourceQuote.subject,
+          language: sourceQuote.language,
           currency: sourceQuote.currency,
           exchangeRate: sourceQuote.exchangeRate,
           protectionPct: sourceQuote.protectionPct,
@@ -186,6 +190,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
       }
 
+      // Copy ekMaliyetler
+      if (sourceQuote.ekMaliyetler.length > 0) {
+        await tx.quoteEkMaliyet.createMany({
+          data: sourceQuote.ekMaliyetler.map((em) => ({
+            quoteId: quote.id,
+            title: em.title,
+            amount: em.amount,
+            sortOrder: em.sortOrder,
+          })),
+        });
+      }
+
       // Create history entry
       await tx.quoteHistory.create({
         data: {
@@ -217,6 +233,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           orderBy: { sortOrder: 'asc' },
         },
         commercialTerms: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        ekMaliyetler: {
           orderBy: { sortOrder: 'asc' },
         },
       },
