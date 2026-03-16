@@ -45,7 +45,6 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/pdf ./pdf
 COPY --from=builder /app/prisma ./prisma
 
 # Standalone output includes server.js and required node_modules

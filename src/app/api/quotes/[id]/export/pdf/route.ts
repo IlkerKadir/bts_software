@@ -88,7 +88,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const mainItems = quote.items.filter(item => !item.parentItemId);
 
     // Load header banner image (full header with logo + company info + badge)
-    const headerBase64 = loadImageBase64('pdf/header/BTS_teklif_form.png');
+    const headerBase64 = loadImageBase64('public/header/BTS_teklif_form.png') || loadImageBase64('pdf/header/BTS_teklif_form.png');
     // Fallback: load just the logo if header banner not found
     const logoBase64 = headerBase64 ? undefined : loadImageBase64('public/btslogo.png');
 

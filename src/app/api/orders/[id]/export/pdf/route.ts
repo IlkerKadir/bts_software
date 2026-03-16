@@ -65,7 +65,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Load header banner image
-    const headerBase64 = loadImageBase64('pdf/header/BTS_teklif_form.png');
+    const headerBase64 = loadImageBase64('public/header/BTS_teklif_form.png') || loadImageBase64('pdf/header/BTS_teklif_form.png');
     const logoBase64 = headerBase64 ? undefined : loadImageBase64('public/btslogo.png');
 
     // Prepare data for template
