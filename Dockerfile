@@ -17,6 +17,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV JWT_SECRET=build-time-placeholder
+ENV CRON_SECRET=build-time-placeholder
 RUN npx prisma generate
 RUN npm run build
 
