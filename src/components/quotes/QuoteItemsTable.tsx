@@ -97,6 +97,9 @@ export function QuoteItemsTable({
   // Collapsed parent state for sub-row toggle
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
 
+  // Editable discount label
+  const [discountLabel, setDiscountLabel] = useState('İskonto');
+
   // Column visibility with localStorage persistence
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(() => {
     if (typeof window === 'undefined') return defaultVisibility;
@@ -313,8 +316,36 @@ export function QuoteItemsTable({
     return map;
   }, [items]);
 
-  // Label span for summary rows (all cols except Toplam Fiyat + delete)
-  const labelSpan = totalColCount - 2;
+  // Label span for summary rows: spans from first col up to (but not including) Toplam Fiyat
+  // New column order: Drag | Poz | [Marka,Model,Kod] | Aciklama | Miktar | [BirimFiyat, ToplamFiyat, Katsayi, ListeFiyati] | [Maliyet,Kar,Kar%] | PB | [Gecmis x8] | Delete
+  // When fiyat visible: Label = everything before Toplam Fiyat, value = Toplam Fiyat col, trailing = rest
+  // When fiyat hidden: fallback to old layout (label = totalColCount - 2, value col, delete col)
+  const labelSpan = useMemo(() => {
+    if (!columnVisibility.fiyat) {
+      // Fallback: all columns except value + delete
+      return totalColCount - 2;
+    }
+    let count = 2; // drag handle + Poz No
+    if (columnVisibility.urun) count += 3;
+    count += 1; // Aciklama
+    count += 1; // Miktar
+    count += 1; // Birim Fiyat (before Toplam Fiyat)
+    return count;
+  }, [columnVisibility, totalColCount]);
+
+  // Trailing columns after Toplam Fiyat value cell
+  const trailingSpan = useMemo(() => {
+    if (!columnVisibility.fiyat) {
+      return 1; // just Delete
+    }
+    let count = 0;
+    count += 2; // Katsayi + Liste Fiyati
+    if (canViewCosts && columnVisibility.maliyet) count += 3;
+    count += 1; // PB
+    if (columnVisibility.gecmis) count += 8;
+    count += 1; // Delete
+    return count;
+  }, [columnVisibility, canViewCosts]);
 
   // Summary calculations – always uses full items array
   const summary = useMemo(() => {
@@ -471,7 +502,7 @@ export function QuoteItemsTable({
         {onCreateSet && (
           <Button variant="secondary" size="sm" onClick={onCreateSet}>
             <Layers className="h-4 w-4" />
-            Set Oluştur
+            Serbest Kalem Ekle
           </Button>
         )}
         {onOpenEkMaliyet && (
@@ -641,7 +672,7 @@ export function QuoteItemsTable({
       {/* ---- Table ---- */}
       <div className="overflow-x-auto rounded-lg border border-accent-200 bg-white">
         <table className="min-w-full text-sm border-collapse">
-          {/* ---- Two-row sticky header ---- */}
+          {/* ---- Three-row sticky header ---- */}
           <thead className="sticky top-0 z-20">
             {/* Group header row */}
             <tr className="bg-accent-900 text-white text-[10px] uppercase tracking-wider">
@@ -657,13 +688,15 @@ export function QuoteItemsTable({
               <th className="px-2 py-1 border-l border-accent-700">Açıklama</th>
               {/* Miktar */}
               <th className="px-2 py-1">Miktar</th>
-              {/* Fiyat group */}
+              {/* Fiyat sub-groups */}
               {columnVisibility.fiyat && (
-                <th
-                  colSpan={canViewCosts ? 4 : 2}
-                  className="px-2 py-1 text-center border-l border-accent-700"
-                >
-                  Fiyatlandırma
+                <th colSpan={2} className="px-2 py-1 text-center border-l border-accent-700">
+                  Teklif Satış Fiyatları
+                </th>
+              )}
+              {columnVisibility.fiyat && (
+                <th colSpan={2} className="px-2 py-1 text-center border-l border-accent-700">
+                  Teklif Hazırlama
                 </th>
               )}
               {/* Maliyet group */}
@@ -683,53 +716,55 @@ export function QuoteItemsTable({
             {/* Individual column header row */}
             <tr className="bg-accent-800 text-white text-xs uppercase tracking-wider">
               {/* Drag handle */}
-              <th className="w-8 px-1 py-2" />
-              <th className="px-2 py-2 text-center whitespace-nowrap">Poz No</th>
+              <th className="w-8 px-1 py-2" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 32 }} />
+              <th className="px-2 py-2 text-center whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 48 }}>Poz No</th>
 
               {columnVisibility.urun && (
                 <>
-                  <th className="px-2 py-2 text-left whitespace-nowrap">Marka</th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap">Model</th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap">Kod</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Marka</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Model</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Kod</th>
                 </>
               )}
 
-              <th className="px-2 py-2 text-left whitespace-nowrap">Açıklama</th>
-              <th className="px-2 py-2 text-right whitespace-nowrap">Miktar</th>
+              <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 100 }}>Açıklama</th>
+              <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Miktar</th>
 
+              {/* Teklif Satış Fiyatları: Birim Fiyat, Toplam Fiyat */}
               {columnVisibility.fiyat && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Katsayı</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Liste Fiyatı</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 80 }}>Birim Fiyat</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 80 }}>Toplam Fiyat</th>
                 </>
               )}
+              {/* Teklif Hazırlama: Katsayı, Liste Fiyatı */}
               {columnVisibility.fiyat && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Birim Fiyat</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Toplam Fiyat</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Katsayı</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 80 }}>Liste Fiyatı</th>
                 </>
               )}
 
               {canViewCosts && columnVisibility.maliyet && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Maliyet</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Kar</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Kar %</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Maliyet</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Kar</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 50 }}>Kar %</th>
                 </>
               )}
 
-              <th className="px-1 py-2 text-center whitespace-nowrap">PB</th>
+              <th className="px-1 py-2 text-center whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 36 }}>PB</th>
 
               {columnVisibility.gecmis && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Son Teklif</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Sipariş</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">En Yüksek</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">En Düşük</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Son Teklif</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Sipariş</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>En Yüksek</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>En Düşük</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
                 </>
               )}
 
@@ -807,7 +842,7 @@ export function QuoteItemsTable({
                                     className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
                                   >
                                     <Plus className="h-3 w-3" />
-                                    Alt Kalem Ekle
+                                    Serbest Kalem Ekle
                                   </button>
                                 )}
                               </div>
@@ -835,7 +870,7 @@ export function QuoteItemsTable({
                         </>
                       );
                     }
-                    // Show "Alt Kalem Ekle" for SET parents that have no sub-rows yet
+                    // Show "Serbest Kalem Ekle" for SET parents that have no sub-rows yet
                     if (item.itemType === 'SET' && onAddSubItem) {
                       return (
                         <tr>
@@ -846,7 +881,7 @@ export function QuoteItemsTable({
                               className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
                             >
                               <Plus className="h-3 w-3" />
-                              Alt Kalem Ekle
+                              Serbest Kalem Ekle
                             </button>
                           </td>
                         </tr>
@@ -889,14 +924,21 @@ export function QuoteItemsTable({
               <td className="px-2 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
                 {formatPrice(summary.araTotal, currency)}
               </td>
-              <td />
+              {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>
 
             {/* Iskonto */}
             <tr>
               <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-700">
                 <span className="inline-flex items-center gap-2">
-                  İskonto %
+                  <input
+                    type="text"
+                    value={discountLabel}
+                    onChange={(e) => setDiscountLabel(e.target.value)}
+                    className="w-32 rounded border border-transparent px-1 py-0.5 text-right text-sm font-medium text-accent-700 hover:border-accent-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                    title="İskonto etiketini düzenle"
+                  />
+                  %
                   <input
                     type="number"
                     min={0}
@@ -914,7 +956,7 @@ export function QuoteItemsTable({
               <td className="px-2 py-2 text-right tabular-nums text-red-600 whitespace-nowrap">
                 {summary.discountAmount > 0 ? `- ${formatPrice(summary.discountAmount, currency)}` : '-'}
               </td>
-              <td />
+              {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>
 
             {/* KDV Toplam */}
@@ -925,7 +967,7 @@ export function QuoteItemsTable({
               <td className="px-2 py-2 text-right tabular-nums text-accent-800 whitespace-nowrap">
                 {formatPrice(summary.totalVat, currency)}
               </td>
-              <td />
+              {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>
 
             {/* GENEL TOPLAM */}
@@ -936,7 +978,7 @@ export function QuoteItemsTable({
               <td className="px-2 py-2.5 text-right tabular-nums text-base font-bold text-accent-900 whitespace-nowrap">
                 {formatPrice(summary.grandTotal, currency)}
               </td>
-              <td />
+              {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>
 
             {/* Cost summary – only for canViewCosts */}
@@ -949,7 +991,7 @@ export function QuoteItemsTable({
                   <td className="px-2 py-2 text-right tabular-nums text-accent-700 whitespace-nowrap">
                     {formatPrice(summary.totalCost, currency)}
                   </td>
-                  <td />
+                  {trailingSpan > 0 && <td colSpan={trailingSpan} />}
                 </tr>
                 <tr>
                   <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-600">
@@ -965,7 +1007,7 @@ export function QuoteItemsTable({
                   >
                     {formatPrice(summary.totalProfit, currency)}
                   </td>
-                  <td />
+                  {trailingSpan > 0 && <td colSpan={trailingSpan} />}
                 </tr>
                 <tr>
                   <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-600">
@@ -981,7 +1023,7 @@ export function QuoteItemsTable({
                   >
                     %{formatNumber(summary.profitMargin, 1)}
                   </td>
-                  <td />
+                  {trailingSpan > 0 && <td colSpan={trailingSpan} />}
                 </tr>
               </>
             )}

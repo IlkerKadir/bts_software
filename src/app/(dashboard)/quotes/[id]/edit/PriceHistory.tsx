@@ -28,6 +28,7 @@ interface PriceStats {
 
 interface PriceHistoryProps {
   productId: string;
+  companyId?: string;
   currentPrice?: number;
   currency?: string;
   onApplyPrice?: (unitPrice: number, katsayi: number) => void;
@@ -53,7 +54,7 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
   KAYBEDILDI: 'error',
 };
 
-export function PriceHistory({ productId, currentPrice, currency = 'EUR', onApplyPrice }: PriceHistoryProps) {
+export function PriceHistory({ productId, companyId, currentPrice, currency = 'EUR', onApplyPrice }: PriceHistoryProps) {
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [stats, setStats] = useState<PriceStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +62,8 @@ export function PriceHistory({ productId, currentPrice, currency = 'EUR', onAppl
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await fetch(`/api/products/${productId}/price-history?limit=10`);
+        const url = `/api/products/${productId}/price-history?limit=10${companyId ? `&companyId=${companyId}` : ''}`;
+        const response = await fetch(url);
         const data = await response.json();
 
         if (response.ok) {
@@ -76,7 +78,7 @@ export function PriceHistory({ productId, currentPrice, currency = 'EUR', onAppl
     };
 
     fetchHistory();
-  }, [productId]);
+  }, [productId, companyId]);
 
   const formatPrice = (price: number | string | null | undefined, cur: string = currency) => {
     const numPrice = typeof price === 'number' ? price : (typeof price === 'string' ? parseFloat(price) || 0 : 0);

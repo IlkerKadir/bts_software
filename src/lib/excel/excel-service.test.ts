@@ -48,6 +48,8 @@ describe('ExcelService', () => {
         quantity: 50,
         unitPrice: 85.5,
         totalPrice: 4275,
+        katsayi: 1.2,
+        listPrice: 71.25,
       },
       {
         itemType: 'SET',
@@ -66,6 +68,8 @@ describe('ExcelService', () => {
         quantity: 100,
         unitPrice: 5,
         totalPrice: 500,
+        katsayi: 1.0,
+        listPrice: 5,
       },
     ],
     totals: {
@@ -217,18 +221,30 @@ describe('ExcelService', () => {
       expect(sheetContains(sheet, 'TYCO ZETTLER')).toBe(true);
     });
 
-    // --- 5-Column Table Header ---
+    // --- 8-Column Table Header with Group Headers ---
 
-    it('has 5-column header structure with Turkish characters', async () => {
+    it('has group headers TEKLİF SATIŞ FİYATLARI and TEKLİF HAZIRLAMA at row 12', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Teklif')!;
 
-      // Table header is at row 12
-      const headerRow = sheet.getRow(12);
-      const expectedHeaders = ['POZ NO', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
+      // Row 12 is the group header row
+      expect(sheetContains(sheet, 'TEKLİF SATIŞ FİYATLARI')).toBe(true);
+      expect(sheetContains(sheet, 'TEKLİF HAZIRLAMA')).toBe(true);
+    });
+
+    it('has 8-column header structure with Turkish characters', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel(mockQuoteData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Teklif')!;
+
+      // Column header is at row 13 (group header at row 12)
+      const headerRow = sheet.getRow(13);
+      const expectedHeaders = ['POZ NO', 'AÇIKLAMA', 'MİKTAR', 'BİRİM', 'BİRİM FİYAT', 'TOPLAM FİYAT', 'KATSAYI', 'LİSTE FİYATI'];
 
       const actualHeaders: string[] = [];
       headerRow.eachCell({ includeEmpty: false }, (cell) => {
@@ -240,34 +256,33 @@ describe('ExcelService', () => {
       expectedHeaders.forEach(header => {
         expect(actualHeaders).toContain(header);
       });
-      expect(actualHeaders.length).toBe(5);
+      expect(actualHeaders.length).toBe(8);
     });
 
-    it('has white/light background on column headers (not dark blue)', async () => {
+    it('has gray background on column headers (not dark blue)', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Teklif')!;
 
-      const headerCell = sheet.getCell(12, 1);
-      // Should NOT have the old dark blue header
+      // Column header is at row 13
+      const headerCell = sheet.getCell(13, 1);
       const fillColor = (headerCell.fill as ExcelJS.FillPattern)?.fgColor?.argb;
       expect(fillColor).not.toBe('FF1F3864'); // old dark blue
-      // Should be white
-      expect(fillColor).toBe('FFFFFFFF');
+      expect(fillColor).toBe('FFF2F2F2'); // light gray
     });
 
-    it('does NOT include internal columns', async () => {
+    it('does NOT include old internal column abbreviations', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Teklif')!;
 
-      // These internal columns must never appear
-      const forbiddenHeaders = ['BS', 'SS', 'KKOD', 'MARKA', 'MODEL', 'KATSAYI', 'LISTE', 'MKTR', 'PBRM'];
-      const headerRow = sheet.getRow(12);
+      // These old internal column abbreviations must never appear in headers
+      const forbiddenHeaders = ['BS', 'SS', 'KKOD', 'MARKA', 'MODEL', 'MKTR', 'PBRM'];
+      const headerRow = sheet.getRow(13);
       const actualHeaders: string[] = [];
       headerRow.eachCell({ includeEmpty: false }, (cell) => {
         if (cell.value) actualHeaders.push(cell.value.toString());
@@ -289,8 +304,9 @@ describe('ExcelService', () => {
 
       expect(sheetContains(sheet, 'Algilama Ekipmanlari')).toBe(true);
 
-      // Header row (row 13) should have green fill matching PDF (#C6E0B4)
-      const headerItemCell = sheet.getCell(13, 1);
+      // Header row (row 14) should have green fill matching PDF (#C6E0B4)
+      // Data starts at row 14 (group header at 12, col headers at 13)
+      const headerItemCell = sheet.getCell(14, 1);
       const fillColor = (headerItemCell.fill as ExcelJS.FillPattern)?.fgColor?.argb;
       expect(fillColor).toBe('FFC6E0B4');
     });
@@ -343,15 +359,15 @@ describe('ExcelService', () => {
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Teklif')!;
 
-      // Data starts at row 13 (header at 12, first item is HEADER so no POZ)
-      // Row 13: HEADER (no POZ)
-      // Row 14: PRODUCT => POZ 1
-      // Row 15: SET => POZ 2
-      // Row 16: NOTE (no POZ)
-      // Row 17: CUSTOM => POZ 3
-      expect(sheet.getCell(14, 1).value).toBe(1); // First PRODUCT
-      expect(sheet.getCell(15, 1).value).toBe(2); // SET
-      expect(sheet.getCell(17, 1).value).toBe(3); // CUSTOM
+      // Data starts at row 14 (group header at 12, col headers at 13)
+      // Row 14: HEADER (no POZ)
+      // Row 15: PRODUCT => POZ 1
+      // Row 16: SET => POZ 2
+      // Row 17: NOTE (no POZ)
+      // Row 18: CUSTOM => POZ 3
+      expect(sheet.getCell(15, 1).value).toBe(1); // First PRODUCT
+      expect(sheet.getCell(16, 1).value).toBe(2); // SET
+      expect(sheet.getCell(18, 1).value).toBe(3); // CUSTOM
     });
 
     it('uses Turkish currency format for prices', async () => {
@@ -408,7 +424,8 @@ describe('ExcelService', () => {
 
       expect(totalRow).not.toBeNull();
       if (totalRow) {
-        const valueCell = sheet.getCell(totalRow, 5);
+        // Grand total value is in column 6 (Toplam Fiyat column)
+        const valueCell = sheet.getCell(totalRow, 6);
         // Should NOT have red background
         const fillColor = (valueCell.fill as ExcelJS.FillPattern)?.fgColor?.argb;
         expect(fillColor).not.toBe('FFE31E24'); // old red
@@ -676,13 +693,17 @@ describe('ExcelService', () => {
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Teklif')!;
 
-      // SET item should appear at row 13 (first data row after header at 12)
-      expect(sheet.getCell(13, 1).value).toBe(1); // POZ NO = 1
-      expect(sheet.getCell(13, 2).value).toBe('Muhendislik Hizmeti');
-      expect(sheet.getCell(13, 3).value).toBe('5 Ad.'); // quantity with unit abbreviation
-      // Prices are now formatted as Turkish currency strings
-      expect(sheet.getCell(13, 4).value).toContain('200');
-      expect(sheet.getCell(13, 5).value).toContain('1.000');
+      // SET item should appear at row 14 (group header at 12, col headers at 13)
+      expect(sheet.getCell(14, 1).value).toBe(1); // POZ NO = 1
+      expect(sheet.getCell(14, 2).value).toBe('Muhendislik Hizmeti');
+      expect(sheet.getCell(14, 3).value).toBe(5); // quantity as number
+      expect(sheet.getCell(14, 4).value).toBe('Ad.'); // unit abbreviation in separate column
+      // Prices are formatted as Turkish currency strings
+      expect(sheet.getCell(14, 5).value).toContain('200');
+      expect(sheet.getCell(14, 6).value).toContain('1.000');
+      // SET items show "-" for katsayı and liste fiyatı
+      expect(sheet.getCell(14, 7).value).toBe('-');
+      expect(sheet.getCell(14, 8).value).toBe('-');
     });
 
     // --- Print Setup ---

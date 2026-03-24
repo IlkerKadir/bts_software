@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Clock, Package, Plus } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -33,7 +34,7 @@ export interface ProductSearchCardProps {
     currency: string;
     quotedAt: string;
   } | null;
-  onAdd: () => void;
+  onAdd: (quantity?: number) => void;
 }
 
 function formatCurrency(value: number, currency: string): string {
@@ -115,8 +116,8 @@ export function ProductSearchCard({
         )}
       </div>
 
-      {/* Price + Add button - right side */}
-      <div className="flex items-center gap-3 shrink-0">
+      {/* Price + Quantity + Add button - right side */}
+      <div className="flex items-center gap-2 shrink-0">
         <div className="text-right">
           <p className="text-sm font-semibold text-primary-900 tabular-nums">
             {formatCurrency(product.listPrice, product.currency)}
@@ -126,10 +127,30 @@ export function ProductSearchCard({
           </p>
         </div>
 
+        <input
+          type="number"
+          min="1"
+          placeholder="1"
+          className="w-14 px-1.5 py-1 text-sm text-center border border-primary-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
+          title="Adet"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const val = parseInt((e.target as HTMLInputElement).value) || undefined;
+              onAdd(val);
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          ref={(el) => { if (el) el.dataset.qtyInput = 'true'; }}
+        />
+
         <Button
           variant="secondary"
           size="sm"
-          onClick={onAdd}
+          onClick={(e) => {
+            const input = (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLInputElement>('input[data-qty-input]');
+            const qty = input ? parseInt(input.value) || undefined : undefined;
+            onAdd(qty);
+          }}
           className="opacity-70 group-hover:opacity-100 transition-opacity"
           title="Teklife ekle"
         >

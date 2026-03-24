@@ -21,7 +21,10 @@ const TERM_CATEGORIES = [
 type CategoryKey = (typeof TERM_CATEGORIES)[number]['key'];
 
 /** Categories that support multiple selected values (checkbox list). */
-const MULTI_VALUE_CATEGORIES: string[] = ['uretici_firmalar', 'onaylar', 'NOTLAR'];
+const MULTI_VALUE_CATEGORIES: string[] = ['onaylar', 'NOTLAR'];
+
+/** Brand × system matrix category – handled with dedicated UI. */
+const MATRIX_CATEGORY = 'uretici_firmalar';
 
 interface TermData {
   id?: string;
@@ -57,6 +60,84 @@ interface CommercialTermsSectionProps {
 function isMultiValue(category: string): boolean {
   return MULTI_VALUE_CATEGORIES.includes(category);
 }
+
+function isMatrixCategory(category: string): boolean {
+  return category === MATRIX_CATEGORY;
+}
+
+/** Parse matrix JSON stored as term values back into a Record. */
+type MatrixData = Record<string, string[]>;
+
+function parseMatrixValue(values: string[]): MatrixData {
+  // The matrix is stored as a single JSON string
+  if (values.length === 0) return {};
+  const first = values[0];
+  if (!first) return {};
+  try {
+    const parsed = JSON.parse(first);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as MatrixData;
+    }
+  } catch {
+    // Not JSON – might be legacy flat values. Try to parse "BRAND- System" format.
+    const matrix: MatrixData = {};
+    for (const v of values) {
+      const dashIdx = v.indexOf('-');
+      if (dashIdx > 0) {
+        const brand = v.substring(0, dashIdx).trim();
+        const system = v.substring(dashIdx + 1).trim();
+        if (!matrix[brand]) matrix[brand] = [];
+        if (system && !matrix[brand].includes(system)) {
+          matrix[brand].push(system);
+        }
+      }
+    }
+    return matrix;
+  }
+  return {};
+}
+
+function matrixToJsonString(matrix: MatrixData): string {
+  // Only include brands that have at least one system selected
+  const cleaned: MatrixData = {};
+  for (const [brand, systems] of Object.entries(matrix)) {
+    if (systems.length > 0) {
+      cleaned[brand] = systems;
+    }
+  }
+  if (Object.keys(cleaned).length === 0) return '';
+  return JSON.stringify(cleaned);
+}
+
+/** Extract brand names and system types from templates for uretici_firmalar. */
+function extractBrandsAndSystems(tpls: TemplateOption[]): {
+  brands: string[];
+  systems: string[];
+} {
+  const brands: string[] = [];
+  const systems: string[] = [];
+  for (const tpl of tpls) {
+    if (tpl.name.startsWith('Sistem:')) {
+      systems.push(tpl.name.replace('Sistem:', '').trim());
+    } else {
+      brands.push(tpl.name);
+    }
+  }
+  return { brands, systems };
+}
+
+/** Short display labels for system types in matrix column headers. */
+const SYSTEM_ABBREVIATIONS: Record<string, string> = {
+  'Yangın Algılama ve İhbar Sistemi': 'Yangın Algılama',
+  'Fiber Optik Doğrusal Yangın Alarm Sistemi': 'Fiber Optik',
+  'Acil Anons Sistemi EN54': 'Acil Anons',
+  'CCTV Sistemi': 'CCTV',
+  'Kartlı Giriş Sistemi': 'Kartlı Giriş',
+  'Yangın Söndürme Sistemi': 'Yangın Söndürme',
+  'Gaz Algılama Sistemi': 'Gaz Algılama',
+  'Lineer Isı Algılama Sistemi': 'Lineer Isı',
+  'Aspirasyonlu Algılama Sistemi': 'Aspirasyon',
+};
 
 /**
  * Internal state shape: every category stores an array of values.
@@ -367,6 +448,30 @@ export const CommercialTermsSection = forwardRef<CommercialTermsSectionHandle, C
   const activeCategoryTemplates = templates[activeTab] || [];
   const activeTermValues = terms[activeTab] || [];
   const isMulti = isMultiValue(activeTab);
+  const isMatrix = isMatrixCategory(activeTab);
+
+  // Matrix-specific derived data
+  const { brands: matrixBrands, systems: matrixSystems } = isMatrix
+    ? extractBrandsAndSystems(activeCategoryTemplates)
+    : { brands: [], systems: [] };
+  const matrixData: MatrixData = isMatrix ? parseMatrixValue(activeTermValues) : {};
+
+  // Handler to toggle a cell in the brand × system matrix
+  const handleMatrixToggle = (brand: string, system: string) => {
+    setTerms((prev) => {
+      const current = parseMatrixValue(prev[MATRIX_CATEGORY] || []);
+      const brandSystems = current[brand] || [];
+      if (brandSystems.includes(system)) {
+        current[brand] = brandSystems.filter((s) => s !== system);
+      } else {
+        current[brand] = [...brandSystems, system];
+      }
+      // Clean up empty brands
+      if (current[brand].length === 0) delete current[brand];
+      const json = matrixToJsonString(current);
+      return { ...prev, [MATRIX_CATEGORY]: json ? [json] : [] };
+    });
+  };
 
   return (
     <div className="border border-primary-200 rounded-xl bg-white overflow-hidden">
@@ -456,6 +561,17 @@ export const CommercialTermsSection = forwardRef<CommercialTermsSectionHandle, C
                       {vals.length}
                     </span>
                   )}
+                  {isMatrixCategory(cat.key) && vals && vals.length > 0 && (() => {
+                    const count = Object.keys(parseMatrixValue(vals)).length;
+                    return count > 0 ? (
+                      <span className={cn(
+                        'ml-0.5 text-xs rounded-full px-1.5 py-0.5',
+                        isActive ? 'bg-white/20 text-white' : 'bg-primary-200 text-primary-700'
+                      )}>
+                        {count}
+                      </span>
+                    ) : null;
+                  })()}
                 </button>
               );
             })}
@@ -470,14 +586,98 @@ export const CommercialTermsSection = forwardRef<CommercialTermsSectionHandle, C
                 {isMulti && (
                   <span className="ml-2 text-xs font-normal text-primary-400">(birden fazla seçilebilir)</span>
                 )}
+                {isMatrix && (
+                  <span className="ml-2 text-xs font-normal text-primary-400">(marka × sistem matrisi)</span>
+                )}
               </label>
               {activeTermValues.some((v) => v.trim().length > 0) && (
                 <span className="text-xs text-green-600 flex items-center gap-1">
                   <Check className="w-3 h-3" />
-                  {isMulti ? `${activeTermValues.length} seçim` : 'Değer girildi'}
+                  {isMulti
+                    ? `${activeTermValues.length} seçim`
+                    : isMatrix
+                      ? `${Object.keys(matrixData).length} marka seçili`
+                      : 'Değer girildi'}
                 </span>
               )}
             </div>
+
+            {/* ---------- MATRIX: Brand × System grid ---------- */}
+            {isMatrix && (
+              <div className="space-y-2">
+                {isLoadingTemplates && !templates[activeTab] ? (
+                  <div className="flex items-center gap-2 px-3 py-2 border border-primary-200 rounded-lg bg-primary-50">
+                    <Spinner size="sm" />
+                    <span className="text-sm text-primary-500">
+                      Şablonlar yükleniyor...
+                    </span>
+                  </div>
+                ) : matrixBrands.length > 0 && matrixSystems.length > 0 ? (
+                  <div className="border border-primary-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-xs border-collapse min-w-[600px]">
+                      <thead>
+                        <tr className="bg-primary-50">
+                          <th className="text-left px-2 py-1.5 font-semibold text-primary-700 border-b border-r border-primary-200 sticky left-0 bg-primary-50 z-10 min-w-[120px]">
+                            Marka
+                          </th>
+                          {matrixSystems.map((sys) => (
+                            <th
+                              key={sys}
+                              className="px-1.5 py-1.5 font-medium text-primary-600 border-b border-r border-primary-200 text-center whitespace-nowrap"
+                              title={sys}
+                            >
+                              {SYSTEM_ABBREVIATIONS[sys] || (sys.length > 18 ? sys.substring(0, 16) + '…' : sys)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matrixBrands.map((brand, bIdx) => {
+                          const brandSystems = matrixData[brand] || [];
+                          const isOddRow = bIdx % 2 === 1;
+                          return (
+                            <tr
+                              key={brand}
+                              className={cn(
+                                'transition-colors hover:bg-accent-50',
+                                isOddRow && 'bg-primary-50/40'
+                              )}
+                            >
+                              <td className={cn(
+                                'px-2 py-1 font-medium text-primary-800 border-r border-b border-primary-200 sticky left-0 z-10',
+                                isOddRow ? 'bg-primary-50/40' : 'bg-white'
+                              )}>
+                                {brand}
+                              </td>
+                              {matrixSystems.map((sys) => {
+                                const isChecked = brandSystems.includes(sys);
+                                return (
+                                  <td
+                                    key={sys}
+                                    className="text-center border-r border-b border-primary-200 px-1 py-0.5"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => handleMatrixToggle(brand, sys)}
+                                      className="w-3.5 h-3.5 rounded border-primary-300 text-accent-600 focus:ring-accent-500 cursor-pointer"
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-primary-400">
+                    Marka ve sistem şablonları bulunamadı. Ayarlardan &quot;Üretici Firmalar&quot; kategorisine marka ve &quot;Sistem:&quot; önekli sistem şablonları ekleyin.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* ---------- MULTI-VALUE: Checkbox list ---------- */}
             {isMulti && (
@@ -673,7 +873,7 @@ export const CommercialTermsSection = forwardRef<CommercialTermsSectionHandle, C
             )}
 
             {/* ---------- SINGLE-VALUE: Template dropdown + Textarea ---------- */}
-            {!isMulti && (
+            {!isMulti && !isMatrix && (
               <>
                 {/* Template Dropdown */}
                 <div className="space-y-1.5">
@@ -723,9 +923,6 @@ export const CommercialTermsSection = forwardRef<CommercialTermsSectionHandle, C
 
                 {/* Free Text Area */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-primary-500">
-                    Değer
-                  </label>
                   <textarea
                     value={activeTermValues[0] || ''}
                     onChange={(e) => handleTermChange(e.target.value)}

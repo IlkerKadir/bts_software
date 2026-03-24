@@ -43,6 +43,7 @@ model User {
   documents      QuoteDocument[]
   orders         OrderConfirmation[]  @relation("OrderCreatedBy")
   reminders      Reminder[]
+  projectAccess  ProjectUserAccess[]
 }
 
 // ==================== COMPANIES ====================
@@ -81,12 +82,19 @@ enum ProjectStatus {
   IPTAL
 }
 
+enum ProjectVisibility {
+  CREATOR_ONLY
+  SPECIFIC_USERS
+  EVERYONE
+}
+
 model Project {
   id             String            @id @default(cuid())
   name           String
   clientId       String
   client         Company           @relation(fields: [clientId], references: [id], onDelete: Restrict)
   status         ProjectStatus     @default(TEKLIF_ASAMASINDA)
+  visibility     ProjectVisibility @default(CREATOR_ONLY)
   estimatedStart DateTime?
   estimatedEnd   DateTime?
   notes          String?
@@ -96,6 +104,7 @@ model Project {
   documents      ProjectDocument[]
   activities     ProjectActivity[]
   reminders      Reminder[]
+  visibleTo      ProjectUserAccess[]
 }
 
 model ProjectDocument {
@@ -118,6 +127,17 @@ model ProjectActivity {
   action    String
   note      String
   createdAt DateTime @default(now())
+}
+
+model ProjectUserAccess {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
 }
 
 // ==================== PRODUCTS ====================

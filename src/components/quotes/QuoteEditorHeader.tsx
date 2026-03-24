@@ -19,11 +19,13 @@ import {
   ExternalLink,
   CheckCircle,
   XCircle,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Input, Select, Card, Badge } from '@/components/ui';
 import { ExchangeRateModal } from './ExchangeRateModal';
 import { PdfPreviewModal } from './PdfPreviewModal';
+import { RefNoBuilderModal } from './RefNoBuilderModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +66,8 @@ export interface QuoteEditorHeaderProps {
   validityDays: number;
   hasChanges: boolean;
   isSaving: boolean;
+  /** Full name of the current session user (for RefNo builder initials) */
+  userFullName?: string;
   onProjectChange: (projectId: string | null) => void;
   onRefNoChange: (value: string) => void;
   onSystemBrandChange: (value: string) => void;
@@ -113,6 +117,7 @@ export function QuoteEditorHeader({
   validityDays,
   hasChanges,
   isSaving,
+  userFullName,
   onProjectChange,
   onRefNoChange,
   onSystemBrandChange,
@@ -145,6 +150,9 @@ export function QuoteEditorHeader({
 
   // PDF preview modal state
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+
+  // RefNo builder modal state
+  const [showRefNoBuilder, setShowRefNoBuilder] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -313,7 +321,7 @@ export function QuoteEditorHeader({
         </div>
         </div>
 
-        {/* Sub-row 1b: Ref. No + Teklif Adı + Açıklama */}
+        {/* Sub-row 1b: Ref. No + Teklif Adı + Sistem Başlık */}
         <div className="flex items-center gap-4 pl-9">
           <div className="flex items-center gap-1.5">
             <label
@@ -337,6 +345,16 @@ export function QuoteEditorHeader({
                 'border-primary-300'
               )}
             />
+            {isEditable && (
+              <button
+                type="button"
+                onClick={() => setShowRefNoBuilder(true)}
+                className="p-1 rounded-md hover:bg-primary-100 text-primary-400 hover:text-primary-600 transition-colors cursor-pointer"
+                title="Ref. No Oluşturucu"
+              >
+                <Wrench className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -368,7 +386,7 @@ export function QuoteEditorHeader({
               htmlFor="description"
               className="text-xs font-medium text-primary-500 whitespace-nowrap"
             >
-              Açıklama
+              Sistem Başlık
             </label>
             <input
               id="description"
@@ -476,7 +494,7 @@ export function QuoteEditorHeader({
         <div className="flex items-end gap-1.5">
           <div className="w-20">
             <Input
-              label="Geçerlilik"
+              label="Geçerlilik Süresi"
               type="number"
               min={1}
               max={365}
@@ -579,6 +597,16 @@ export function QuoteEditorHeader({
         isOpen={showPdfPreview}
         onClose={() => setShowPdfPreview(false)}
         quoteId={quoteId}
+      />
+
+      {/* RefNo Builder Modal */}
+      <RefNoBuilderModal
+        isOpen={showRefNoBuilder}
+        onClose={() => setShowRefNoBuilder(false)}
+        onConfirm={(newRefNo) => onRefNoChange(newRefNo)}
+        userFullName={userFullName || ''}
+        projectName={currentProjectName !== 'Proje Yok' ? currentProjectName : undefined}
+        currentRefNo={refNo}
       />
     </Card>
   );

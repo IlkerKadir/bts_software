@@ -5,7 +5,9 @@ import * as path from 'path';
 // ==================== Interfaces ====================
 
 /**
- * Customer-facing quote item - NO internal pricing columns
+ * Quote item for Excel export.
+ * Includes customer-facing columns AND internal pricing columns (katsayı, listPrice).
+ * The Excel groups them under "TEKLİF SATIŞ FİYATLARI" and "TEKLİF HAZIRLAMA".
  */
 export interface QuoteItemForExcel {
   itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL';
@@ -14,6 +16,8 @@ export interface QuoteItemForExcel {
   unit?: string | null;
   unitPrice?: number;
   totalPrice?: number;
+  katsayi?: number;
+  listPrice?: number;
 }
 
 export interface CommercialTermForExcel {
@@ -55,20 +59,33 @@ export interface QuoteDataForExcel {
 
 // ==================== Template Constants ====================
 
-const TOTAL_COLUMNS = 5;
+const TOTAL_COLUMNS = 8;
 
+/**
+ * 8-column layout matching the client-requested order:
+ * Poz No | Açıklama | Miktar | Birim | Birim Fiyat | Toplam Fiyat | Katsayı | Liste Fiyatı
+ *
+ * Columns 1-6: "TEKLİF SATIŞ FİYATLARI"  (customer-facing)
+ * Columns 7-8: "TEKLİF HAZIRLAMA"          (internal pricing)
+ */
 const COLUMN_CONFIG = [
   { key: 'pozNo', header: 'POZ NO', width: 8 },
-  { key: 'aciklama', header: 'AÇIKLAMA', width: 55 },
-  { key: 'miktar', header: 'MİKTAR', width: 12 },
+  { key: 'aciklama', header: 'AÇIKLAMA', width: 48 },
+  { key: 'miktar', header: 'MİKTAR', width: 10 },
+  { key: 'birim', header: 'BİRİM', width: 8 },
   { key: 'birimFiyat', header: 'BİRİM FİYAT', width: 15 },
-  { key: 'toplamFiyat', header: 'TOPLAM FİYAT', width: 18 },
+  { key: 'toplamFiyat', header: 'TOPLAM FİYAT', width: 16 },
+  { key: 'katsayi', header: 'KATSAYI', width: 10 },
+  { key: 'listeFiyati', header: 'LİSTE FİYATI', width: 15 },
 ];
 
 const COLORS = {
   SECTION_GREEN: 'FFC6E0B4',
   WHITE: 'FFFFFFFF',
   BLACK: 'FF000000',
+  LIGHT_BLUE: 'FFD6E4F0',   // Group header: TEKLİF SATIŞ FİYATLARI
+  LIGHT_ORANGE: 'FFFCE4D6',  // Group header: TEKLİF HAZIRLAMA
+  HEADER_GRAY: 'FFF2F2F2',   // Column header row background
 };
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -230,32 +247,32 @@ export class ExcelService {
       right: { style: 'thin' },
     };
 
-    // Row 1: Company name (C1:E1)
-    sheet.mergeCells('C1:E1');
+    // Row 1: Company name (C1:H1)
+    sheet.mergeCells('C1:H1');
     const nameCell = sheet.getCell('C1');
     nameCell.value = companyInfo.name;
     nameCell.font = { bold: true, size: 10 };
     nameCell.alignment = { vertical: 'middle' };
     nameCell.border = { top: { style: 'thin' }, right: { style: 'thin' } };
 
-    // Row 2: Address (C2:E2)
-    sheet.mergeCells('C2:E2');
+    // Row 2: Address (C2:H2)
+    sheet.mergeCells('C2:H2');
     const addrCell = sheet.getCell('C2');
     addrCell.value = companyInfo.address;
     addrCell.font = { size: 8, color: { argb: 'FF666666' } };
     addrCell.alignment = { vertical: 'middle', wrapText: true };
     addrCell.border = { right: { style: 'thin' } };
 
-    // Row 3: Phone/Fax (C3:E3)
-    sheet.mergeCells('C3:E3');
+    // Row 3: Phone/Fax (C3:H3)
+    sheet.mergeCells('C3:H3');
     const phoneCell = sheet.getCell('C3');
     phoneCell.value = companyInfo.phone;
     phoneCell.font = { size: 8, color: { argb: 'FF666666' } };
     phoneCell.alignment = { vertical: 'middle' };
     phoneCell.border = { right: { style: 'thin' } };
 
-    // Row 4: Email/Web + Ticaret Sicil (C4:E4)
-    sheet.mergeCells('C4:E4');
+    // Row 4: Email/Web + Ticaret Sicil (C4:H4)
+    sheet.mergeCells('C4:H4');
     const contactCell = sheet.getCell('C4');
     contactCell.value = `${companyInfo.contact}   ${companyInfo.ticaret}`;
     contactCell.font = { size: 8, color: { argb: 'FF666666' } };
@@ -265,62 +282,55 @@ export class ExcelService {
 
   /**
    * Build customer info block (rows 6-10) matching PDF layout.
-   * Left: company name (bold), address, project, subject, description
-   * Right: PROFORMA FATURA centered, then Tarih/Ref.No/Teklif No with borders
+   * Left: company name (bold), address, project, subject, description (A-F)
+   * Right: PROFORMA FATURA centered, then Tarih/Ref.No/Teklif No with borders (G-H)
    */
   private buildCustomerBlock(sheet: ExcelJS.Worksheet, data: QuoteDataForExcel): void {
-    // --- LEFT SIDE: Customer info (A6:C10) ---
+    // --- LEFT SIDE: Customer info (A6:F10) ---
     // Row 6: Company name (bold)
-    sheet.mergeCells('A6:C6');
+    sheet.mergeCells('A6:F6');
     const companyCell = sheet.getCell('A6');
     companyCell.value = data.company.name;
     companyCell.font = { bold: true, size: 9 };
     companyCell.alignment = { vertical: 'middle' };
-    companyCell.border = { left: blackBoxBorder().left, top: blackBoxBorder().top };
-    sheet.getCell('B6').border = { top: blackBoxBorder().top };
-    sheet.getCell('C6').border = { top: blackBoxBorder().top, right: blackBoxBorder().right };
+    companyCell.border = { left: blackBoxBorder().left, top: blackBoxBorder().top, right: blackBoxBorder().right };
 
     // Row 7: Address
-    sheet.mergeCells('A7:C7');
+    sheet.mergeCells('A7:F7');
     const addrCell = sheet.getCell('A7');
     addrCell.value = data.company.address || '';
     addrCell.font = { size: 8 };
     addrCell.alignment = { vertical: 'middle', wrapText: true };
-    addrCell.border = { left: blackBoxBorder().left };
-    sheet.getCell('C7').border = { right: blackBoxBorder().right };
+    addrCell.border = { left: blackBoxBorder().left, right: blackBoxBorder().right };
 
     // Row 8: Project name
-    sheet.mergeCells('A8:C8');
+    sheet.mergeCells('A8:F8');
     const projectCell = sheet.getCell('A8');
     projectCell.value = data.project || '';
     projectCell.font = { bold: true, size: 8 };
     projectCell.alignment = { vertical: 'middle' };
-    projectCell.border = { left: blackBoxBorder().left };
-    sheet.getCell('C8').border = { right: blackBoxBorder().right };
+    projectCell.border = { left: blackBoxBorder().left, right: blackBoxBorder().right };
 
     // Row 9: Subject
-    sheet.mergeCells('A9:C9');
+    sheet.mergeCells('A9:F9');
     const subjCell = sheet.getCell('A9');
     subjCell.value = data.subject || '';
     subjCell.font = { bold: true, size: 8 };
     subjCell.alignment = { vertical: 'middle' };
-    subjCell.border = { left: blackBoxBorder().left };
-    sheet.getCell('C9').border = { right: blackBoxBorder().right };
+    subjCell.border = { left: blackBoxBorder().left, right: blackBoxBorder().right };
 
     // Row 10: Description
-    sheet.mergeCells('A10:C10');
+    sheet.mergeCells('A10:F10');
     const descCell = sheet.getCell('A10');
     descCell.value = data.description || '';
     descCell.font = { bold: true, size: 8 };
     descCell.alignment = { vertical: 'middle' };
-    descCell.border = { left: blackBoxBorder().left, bottom: blackBoxBorder().bottom };
-    sheet.getCell('B10').border = { bottom: blackBoxBorder().bottom };
-    sheet.getCell('C10').border = { right: blackBoxBorder().right, bottom: blackBoxBorder().bottom };
+    descCell.border = { left: blackBoxBorder().left, bottom: blackBoxBorder().bottom, right: blackBoxBorder().right };
 
-    // --- RIGHT SIDE: PROFORMA FATURA + date/ref/quote (D6:E10) ---
+    // --- RIGHT SIDE: PROFORMA FATURA + date/ref/quote (G6:H10) ---
     // Row 6-7: PROFORMA FATURA centered
-    sheet.mergeCells('D6:E7');
-    const proformaCell = sheet.getCell('D6');
+    sheet.mergeCells('G6:H7');
+    const proformaCell = sheet.getCell('G6');
     proformaCell.value = 'PROFORMA FATURA';
     proformaCell.font = { bold: true, size: 12 };
     proformaCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -332,62 +342,105 @@ export class ExcelService {
     };
 
     // Row 8: Tarih
-    sheet.getCell('D8').value = 'Tarih';
-    sheet.getCell('D8').font = { bold: true, size: 8 };
-    sheet.getCell('D8').border = blackBoxBorder();
-    sheet.getCell('D8').alignment = { vertical: 'middle' };
-    sheet.getCell('E8').value = data.date;
-    sheet.getCell('E8').font = { size: 8 };
-    sheet.getCell('E8').alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getCell('E8').border = blackBoxBorder();
+    sheet.getCell('G8').value = 'Tarih';
+    sheet.getCell('G8').font = { bold: true, size: 8 };
+    sheet.getCell('G8').border = blackBoxBorder();
+    sheet.getCell('G8').alignment = { vertical: 'middle' };
+    sheet.getCell('H8').value = data.date;
+    sheet.getCell('H8').font = { size: 8 };
+    sheet.getCell('H8').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getCell('H8').border = blackBoxBorder();
 
     // Row 9: Ref.No
-    sheet.getCell('D9').value = 'Ref.No';
-    sheet.getCell('D9').font = { bold: true, size: 8 };
-    sheet.getCell('D9').border = blackBoxBorder();
-    sheet.getCell('D9').alignment = { vertical: 'middle' };
-    sheet.getCell('E9').value = data.refNo || '';
-    sheet.getCell('E9').font = { size: 8 };
-    sheet.getCell('E9').alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getCell('E9').border = blackBoxBorder();
+    sheet.getCell('G9').value = 'Ref.No';
+    sheet.getCell('G9').font = { bold: true, size: 8 };
+    sheet.getCell('G9').border = blackBoxBorder();
+    sheet.getCell('G9').alignment = { vertical: 'middle' };
+    sheet.getCell('H9').value = data.refNo || '';
+    sheet.getCell('H9').font = { size: 8 };
+    sheet.getCell('H9').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getCell('H9').border = blackBoxBorder();
 
     // Row 10: Teklif No
-    sheet.getCell('D10').value = 'Teklif No';
-    sheet.getCell('D10').font = { bold: true, size: 8 };
-    sheet.getCell('D10').border = blackBoxBorder();
-    sheet.getCell('D10').alignment = { vertical: 'middle' };
-    sheet.getCell('E10').value = data.quoteNumber;
-    sheet.getCell('E10').font = { size: 8 };
-    sheet.getCell('E10').alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getCell('E10').border = blackBoxBorder();
+    sheet.getCell('G10').value = 'Teklif No';
+    sheet.getCell('G10').font = { bold: true, size: 8 };
+    sheet.getCell('G10').border = blackBoxBorder();
+    sheet.getCell('G10').alignment = { vertical: 'middle' };
+    sheet.getCell('H10').value = data.quoteNumber;
+    sheet.getCell('H10').font = { size: 8 };
+    sheet.getCell('H10').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getCell('H10').border = blackBoxBorder();
   }
 
   /**
-   * Build column headers row for the product table.
-   * White/light background, black borders, bold text, centered — matching PDF.
+   * Build group header row + column headers row for the product table.
+   *
+   * Row `groupRow`: Two merged group headers
+   *   - Columns 1-6: "TEKLİF SATIŞ FİYATLARI" (light blue)
+   *   - Columns 7-8: "TEKLİF HAZIRLAMA" (light orange)
+   *
+   * Row `headerRow` (groupRow + 1): Individual column headers with borders.
+   *
+   * Returns the header row number (where column names are).
    */
-  private buildTableHeader(sheet: ExcelJS.Worksheet, row: number): void {
+  private buildTableHeader(sheet: ExcelJS.Worksheet, groupRow: number): number {
+    const headerRow = groupRow + 1;
+
+    // --- Group header row ---
+    // "TEKLİF SATIŞ FİYATLARI" spanning columns 1-6 (Poz No through Toplam Fiyat)
+    sheet.mergeCells(groupRow, 1, groupRow, 6);
+    const salesGroupCell = sheet.getCell(groupRow, 1);
+    salesGroupCell.value = 'TEKLİF SATIŞ FİYATLARI';
+    salesGroupCell.font = { bold: true, size: 9 };
+    salesGroupCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: COLORS.LIGHT_BLUE },
+    };
+    salesGroupCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    salesGroupCell.border = blackBoxBorder();
+
+    // "TEKLİF HAZIRLAMA" spanning columns 7-8 (Katsayı, Liste Fiyatı)
+    sheet.mergeCells(groupRow, 7, groupRow, 8);
+    const prepGroupCell = sheet.getCell(groupRow, 7);
+    prepGroupCell.value = 'TEKLİF HAZIRLAMA';
+    prepGroupCell.font = { bold: true, size: 9 };
+    prepGroupCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: COLORS.LIGHT_ORANGE },
+    };
+    prepGroupCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    prepGroupCell.border = blackBoxBorder();
+
+    sheet.getRow(groupRow).height = 18;
+
+    // --- Column header row ---
     COLUMN_CONFIG.forEach((col, index) => {
-      const cell = sheet.getCell(row, index + 1);
+      const cell = sheet.getCell(headerRow, index + 1);
       cell.value = col.header;
       cell.font = { bold: true, size: 8 };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: COLORS.WHITE },
+        fgColor: { argb: COLORS.HEADER_GRAY },
       };
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       cell.border = blackBoxBorder();
     });
-    sheet.getRow(row).height = 20;
+    sheet.getRow(headerRow).height = 20;
+
+    return headerRow;
   }
 
   /**
    * Build items rows in the product table matching PDF format.
+   * 8 columns: Poz No | Açıklama | Miktar | Birim | Birim Fiyat | Toplam Fiyat | Katsayı | Liste Fiyatı
+   *
    * - HEADER: green background (#C6E0B4), centered description, no borders
    * - PRODUCT / CUSTOM / SET: sequential POZ NO, no borders, Turkish currency format
    * - NOTE: "NOT:" in POZ NO column, description merged across remaining columns
-   * - SUBTOTAL: "Ara Toplam" right-aligned with value
+   * - SUBTOTAL: "Ara Toplam" right-aligned with value in Toplam Fiyat column
    *
    * Returns the next row after all items.
    */
@@ -440,62 +493,100 @@ export class ExcelService {
         // SUBTOTAL row - "Ara Toplam" right-aligned with computed section sum
         const sectionSum = computeExcelSubtotalSum(items, index);
 
-        // Merge columns A-D for the label
-        sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
+        // Merge columns A-E (Poz No through Birim Fiyat) for the label
+        sheet.mergeCells(currentRow, 1, currentRow, 5);
         const labelCell = sheet.getCell(currentRow, 1);
         labelCell.value = 'Ara Toplam';
         labelCell.font = { bold: true, size: 8 };
         labelCell.alignment = { horizontal: 'right', vertical: 'middle' };
         labelCell.border = noBorder();
 
-        // Column E: section sum value (formatted as Turkish currency)
-        const sumCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
+        // Column 6 (Toplam Fiyat): section sum value
+        const sumCell = sheet.getCell(currentRow, 6);
         sumCell.value = formatTurkishCurrency(sectionSum, currency);
         sumCell.font = { bold: true, size: 8 };
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
         sumCell.border = noBorder();
+
+        // Columns 7-8 empty for subtotal rows
+        for (let col = 7; col <= TOTAL_COLUMNS; col++) {
+          sheet.getCell(currentRow, col).border = noBorder();
+        }
       } else {
         // PRODUCT, CUSTOM, SET - standard data row, no borders
         pozCounter++;
 
-        // Column A: POZ NO
+        // Column 1: POZ NO
         const pozCell = sheet.getCell(currentRow, 1);
         pozCell.value = pozCounter;
         pozCell.font = { bold: true, size: 7 };
         pozCell.alignment = { horizontal: 'center', vertical: 'middle' };
         pozCell.border = noBorder();
 
-        // Column B: AÇIKLAMA
+        // Column 2: AÇIKLAMA
         const descCell = sheet.getCell(currentRow, 2);
         descCell.value = item.description;
         descCell.font = { size: 7 };
         descCell.alignment = { wrapText: true, vertical: 'middle' };
         descCell.border = noBorder();
 
-        // Column C: MİKTAR (with unit abbreviation)
-        const unit = item.unit || 'Adet';
+        // Column 3: MİKTAR (number only)
         const qtyCell = sheet.getCell(currentRow, 3);
-        qtyCell.value = `${item.quantity ?? 0} ${unitAbbr(unit)}`;
+        qtyCell.value = item.quantity ?? 0;
         qtyCell.font = { size: 7 };
-        qtyCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        qtyCell.alignment = { horizontal: 'center', vertical: 'middle' };
         qtyCell.border = noBorder();
 
-        // Column D: BİRİM FİYAT (Turkish currency format)
-        const unitPriceCell = sheet.getCell(currentRow, 4);
+        // Column 4: BİRİM (unit abbreviation)
+        const unit = item.unit || 'Adet';
+        const unitCell = sheet.getCell(currentRow, 4);
+        unitCell.value = unitAbbr(unit);
+        unitCell.font = { size: 7 };
+        unitCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        unitCell.border = noBorder();
+
+        // Column 5: BİRİM FİYAT (Turkish currency format)
+        const unitPriceCell = sheet.getCell(currentRow, 5);
         unitPriceCell.value = formatTurkishCurrency(item.unitPrice ?? 0, currency);
         unitPriceCell.font = { size: 7 };
         unitPriceCell.alignment = { horizontal: 'right', vertical: 'middle' };
         unitPriceCell.border = noBorder();
 
-        // Column E: TOPLAM FİYAT (Turkish currency format)
-        const totalCell = sheet.getCell(currentRow, 5);
+        // Column 6: TOPLAM FİYAT (Turkish currency format)
+        const totalCell = sheet.getCell(currentRow, 6);
         totalCell.value = formatTurkishCurrency(item.totalPrice ?? 0, currency);
         totalCell.font = { size: 7 };
         totalCell.alignment = { horizontal: 'right', vertical: 'middle' };
         totalCell.border = noBorder();
 
+        // Column 7: KATSAYI
+        const katsayiCell = sheet.getCell(currentRow, 7);
+        if (item.itemType === 'SET') {
+          // SET rows show "-" for katsayı (per client request)
+          katsayiCell.value = '-';
+        } else {
+          katsayiCell.value = item.katsayi != null ? Number(item.katsayi.toFixed(3)) : '-';
+        }
+        katsayiCell.font = { size: 7 };
+        katsayiCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        katsayiCell.border = noBorder();
+
+        // Column 8: LİSTE FİYATI (Turkish currency format)
+        const listPriceCell = sheet.getCell(currentRow, 8);
+        if (item.itemType === 'SET') {
+          // SET rows show "-" for liste fiyatı (per client request)
+          listPriceCell.value = '-';
+        } else {
+          listPriceCell.value = item.listPrice != null
+            ? formatTurkishCurrency(item.listPrice, currency)
+            : '-';
+        }
+        listPriceCell.font = { size: 7 };
+        listPriceCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        listPriceCell.border = noBorder();
+
         // Auto row height for long descriptions
-        const lineCount = Math.ceil(item.description.length / 70);
+        const lineCount = Math.ceil(item.description.length / 60);
         if (lineCount > 1) {
           sheet.getRow(currentRow).height = Math.max(15, lineCount * 15);
         }
@@ -510,6 +601,7 @@ export class ExcelService {
   /**
    * Build system grand total row matching PDF format.
    * Label: "SİSTEM GENEL TOPLAMI (CURRENCY)" with black borders.
+   * Merged across columns 1-5, value in column 6, columns 7-8 empty.
    */
   private buildTotalsSection(
     sheet: ExcelJS.Worksheet,
@@ -521,19 +613,25 @@ export class ExcelService {
 
     const currencyName = CURRENCY_NAMES[currency] || currency;
 
-    // SİSTEM GENEL TOPLAMI (CURRENCY) - merged A-D for label, E for value
-    sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
+    // SİSTEM GENEL TOPLAMI (CURRENCY) - merged cols 1-5 for label, col 6 for value
+    sheet.mergeCells(currentRow, 1, currentRow, 5);
     const labelCell = sheet.getCell(currentRow, 1);
     labelCell.value = `SİSTEM GENEL TOPLAMI (${currencyName})`;
     labelCell.font = { bold: true, size: 9 };
     labelCell.alignment = { horizontal: 'right', vertical: 'middle' };
     labelCell.border = blackBoxBorder();
 
-    const valueCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
+    const valueCell = sheet.getCell(currentRow, 6);
     valueCell.value = formatTurkishCurrency(totals.grandTotal, currency);
     valueCell.font = { bold: true, size: 9 };
     valueCell.alignment = { horizontal: 'right', vertical: 'middle' };
     valueCell.border = blackBoxBorder();
+
+    // Columns 7-8: empty but with border for consistency
+    for (let col = 7; col <= TOTAL_COLUMNS; col++) {
+      const cell = sheet.getCell(currentRow, col);
+      cell.border = blackBoxBorder();
+    }
 
     currentRow++;
 
@@ -764,8 +862,10 @@ export class ExcelService {
     this.buildCustomerBlock(sheet, data);
 
     // --- Section 3: Product Table ---
-    const tableHeaderRow = 12;
-    this.buildTableHeader(sheet, tableHeaderRow);
+    // Row 12: group headers (TEKLİF SATIŞ FİYATLARI / TEKLİF HAZIRLAMA)
+    // Row 13: column headers (POZ NO, AÇIKLAMA, etc.)
+    const groupHeaderRow = 12;
+    const tableHeaderRow = this.buildTableHeader(sheet, groupHeaderRow);
 
     const dataStartRow = tableHeaderRow + 1;
     const itemsEndRow = this.buildItemsSection(sheet, dataStartRow, data.items, data.currency);

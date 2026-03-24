@@ -190,15 +190,69 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Create history entry
-    await db.quoteHistory.create({
-      data: {
-        quoteId: id,
-        userId: user.id,
-        action: 'UPDATE',
-        changes: body,
-      },
-    });
+    // Build structured diff for history: { field: { from, to } }
+    const trackableFields = [
+      'refNo', 'currency', 'subject', 'description', 'language',
+      'projectId', 'discountPct', 'exchangeRate', 'validityDays',
+      'protectionPct', 'protectionMap', 'notes',
+    ] as const;
+
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+
+    for (const field of trackableFields) {
+      if (body[field] === undefined) continue;
+
+      let oldVal: unknown = (existingQuote as Record<string, unknown>)[field];
+      let newVal: unknown = body[field];
+
+      // Normalize Decimal fields to numbers for comparison
+      if (oldVal !== null && oldVal !== undefined && typeof oldVal === 'object' && 'toNumber' in (oldVal as object)) {
+        oldVal = Number(oldVal);
+      }
+      if (typeof newVal === 'number' && typeof oldVal === 'number') {
+        // Compare with tolerance for floating point
+        if (Math.abs(oldVal - newVal) < 0.0001) continue;
+      } else if (
+        typeof oldVal === 'object' && typeof newVal === 'object' &&
+        JSON.stringify(oldVal) === JSON.stringify(newVal)
+      ) {
+        continue;
+      } else if (oldVal === newVal) {
+        continue;
+      }
+
+      // Normalize null-ish values
+      if (oldVal === undefined) oldVal = null;
+      if (newVal === undefined) newVal = null;
+
+      changes[field] = { from: oldVal, to: newVal };
+    }
+
+    // Resolve project names if projectId changed
+    if (changes.projectId) {
+      const oldProjectId = changes.projectId.from as string | null;
+      const newProjectId = changes.projectId.to as string | null;
+
+      const [oldProject, newProject] = await Promise.all([
+        oldProjectId ? db.project.findUnique({ where: { id: oldProjectId }, select: { name: true } }) : null,
+        newProjectId ? db.project.findUnique({ where: { id: newProjectId }, select: { name: true } }) : null,
+      ]);
+
+      (changes.projectId as Record<string, unknown>).fromName = oldProject?.name ?? null;
+      (changes.projectId as Record<string, unknown>).toName = newProject?.name ?? null;
+    }
+
+    // Only create history entry if there are actual changes
+    if (Object.keys(changes).length > 0) {
+      await db.quoteHistory.create({
+        data: {
+          quoteId: id,
+          userId: user.id,
+          action: 'UPDATE',
+          changes: JSON.parse(JSON.stringify(changes)),
+        },
+      });
+    }
 
     return NextResponse.json({ quote });
   } catch (error) {

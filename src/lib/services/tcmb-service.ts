@@ -13,9 +13,18 @@ export interface TcmbRate {
   unit: number;
   forexBuying: number;
   forexSelling: number;
+  banknoteBuying: number;
+  banknoteSelling: number;
   crossRateUSD: number | null;   // How many of this currency = 1 USD
   crossRateOther: number | null; // For EUR/GBP: rate against EUR (1 XXX = Y USD)
   date: string;
+}
+
+/** Simplified rate data returned by the /api/exchange-rates/tcmb endpoint */
+export interface TcmbDirectRate {
+  currency: string;
+  forexSelling: number;
+  banknoteSelling: number;
 }
 
 export interface ExchangeRateData {
@@ -53,6 +62,8 @@ export function parseTcmbXml(xml: string): TcmbRate[] {
     const nameMatch = content.match(/<CurrencyName>([^<]+)<\/CurrencyName>/);
     const forexBuyingMatch = content.match(/<ForexBuying>([^<]+)<\/ForexBuying>/);
     const forexSellingMatch = content.match(/<ForexSelling>([^<]+)<\/ForexSelling>/);
+    const banknoteBuyingMatch = content.match(/<BanknoteBuying>([^<]+)<\/BanknoteBuying>/);
+    const banknoteSellingMatch = content.match(/<BanknoteSelling>([^<]+)<\/BanknoteSelling>/);
     const crossRateUSDMatch = content.match(/<CrossRateUSD>([^<]+)<\/CrossRateUSD>/);
     const crossRateOtherMatch = content.match(/<CrossRateOther>([^<]+)<\/CrossRateOther>/);
 
@@ -63,6 +74,8 @@ export function parseTcmbXml(xml: string): TcmbRate[] {
         unit: unitMatch ? parseInt(unitMatch[1], 10) : 1,
         forexBuying: parseFloat(forexBuyingMatch[1]),
         forexSelling: parseFloat(forexSellingMatch[1]),
+        banknoteBuying: banknoteBuyingMatch ? parseFloat(banknoteBuyingMatch[1]) : 0,
+        banknoteSelling: banknoteSellingMatch ? parseFloat(banknoteSellingMatch[1]) : 0,
         crossRateUSD: crossRateUSDMatch ? parseFloat(crossRateUSDMatch[1]) : null,
         crossRateOther: crossRateOtherMatch ? parseFloat(crossRateOtherMatch[1]) : null,
         date,
@@ -220,4 +233,59 @@ export function convertCurrency(
   const rate = getExchangeRate(rates, from, to);
   if (rate === null) return null;
   return amount * rate;
+}
+
+// ── In-memory cache for direct TCMB rates ──────────────────────────────────
+
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+interface TcmbDirectRateCache {
+  rates: TcmbDirectRate[];
+  fetchedAt: string;
+  expiresAt: number;
+}
+
+let directRateCache: TcmbDirectRateCache | null = null;
+
+/**
+ * Fetch ForexSelling and BanknoteSelling rates for EUR, USD, GBP from TCMB.
+ * Results are cached in memory for 1 hour to avoid excessive requests.
+ * Returns null if TCMB is unreachable or data is invalid.
+ */
+export async function fetchTcmbDirectRates(): Promise<{ rates: TcmbDirectRate[]; fetchedAt: string } | null> {
+  // Return cached data if still valid
+  if (directRateCache && Date.now() < directRateCache.expiresAt) {
+    return { rates: directRateCache.rates, fetchedAt: directRateCache.fetchedAt };
+  }
+
+  try {
+    const tcmbRates = await fetchTcmbRates();
+
+    if (tcmbRates.length === 0) {
+      return null;
+    }
+
+    const rates: TcmbDirectRate[] = tcmbRates.map((r) => ({
+      currency: r.currencyCode,
+      forexSelling: r.forexSelling,
+      banknoteSelling: r.banknoteSelling,
+    }));
+
+    const fetchedAt = new Date().toISOString();
+
+    directRateCache = {
+      rates,
+      fetchedAt,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    };
+
+    return { rates, fetchedAt };
+  } catch (error) {
+    console.error('TCMB direct rate fetch error:', error);
+    // If cache exists but expired, return stale data rather than nothing
+    if (directRateCache) {
+      return { rates: directRateCache.rates, fetchedAt: directRateCache.fetchedAt };
+    }
+    return null;
+  }
 }

@@ -60,6 +60,8 @@ export interface QuoteItemForPdf {
   discountPct: number;
   totalPrice: number;
   vatRate: number;
+  /** Optional background color for HEADER items (CSS color value, e.g. '#FF0000') */
+  headerColor?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,12 +197,14 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
   let itemNumber = 0;
   const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
+      // Use item-specific headerColor if provided, otherwise default green
+      const hdrBg = item.headerColor || SECTION_BG;
       return `<tr class="section-hdr" style="height:13pt">
-        <td><p><br></p></td>
-        <td><p class="s1" style="text-align:center;">${escapeHtml(item.description)}</p></td>
-        <td><p><br></p></td>
-        <td><p><br></p></td>
-        <td><p><br></p></td>
+        <td style="background-color:${hdrBg};"><p><br></p></td>
+        <td style="background-color:${hdrBg};"><p class="s1" style="text-align:center;">${escapeHtml(item.description)}</p></td>
+        <td style="background-color:${hdrBg};"><p><br></p></td>
+        <td style="background-color:${hdrBg};"><p><br></p></td>
+        <td style="background-color:${hdrBg};"><p><br></p></td>
       </tr>`;
     }
 
@@ -277,6 +281,10 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 <style>
 @page { size: A4 portrait; margin: 5mm 10mm 15mm 10mm; }
 * { margin:0; padding:0; text-indent:0; }
+/* Font: Arial (client requirement). Sizes 6.5pt/7.2pt are tuned for the
+   dense 5-column table layout. Client mentioned "10 punto" but that refers
+   to the original Word template; at 10pt the table columns overflow on A4.
+   If 10pt is truly needed, column widths and page margins must be revisited. */
 body { font-family: Arial, sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
 
 .s1 { font-family:Arial,sans-serif; font-weight:bold; font-size:6.5pt; color:black; }
@@ -378,7 +386,7 @@ table.main tbody td:nth-child(5) {
 
     <!-- Row 2: Client info box (colspan=3 left + colspan=2 right) -->
     <tr>
-      <td colspan="3" class="info-left" style="border:1.2pt solid black; border-right:1.2pt solid black; vertical-align:top; padding:2pt 4pt 4pt 8pt;">
+      <td colspan="3" class="info-left" style="border:1.2pt solid black; border-right:1.2pt solid black; vertical-align:top; padding:2pt 4pt 4pt 8pt; text-align:center;">
         ${leftContent}
       </td>
       <td colspan="2" class="info-right" style="border:1.2pt solid black; border-left:none; vertical-align:top; padding:0;">

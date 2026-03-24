@@ -93,7 +93,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return { itemType, description };
         }
 
-        // PRODUCT, CUSTOM, SET - include quantity, unit and prices
+        // PRODUCT, CUSTOM, SET - include quantity, unit, prices, katsayı and list price
         return {
           itemType,
           description,
@@ -101,6 +101,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
           totalPrice: Number(item.totalPrice),
+          katsayi: Number(item.katsayi),
+          listPrice: Number(item.listPrice),
         };
       });
 

@@ -359,6 +359,18 @@ export function QuoteItemRow({
 
   // ---- NOTE row ----
   if (item.itemType === 'NOTE') {
+    // Compute dynamic colspan like SUBTOTAL: accounts for column visibility
+    const noteSpanColCount = (() => {
+      let count = 2; // Poz No + Aciklama + Miktar + Para Birimi = base always visible
+      count += 1; // Miktar
+      count += 1; // Para Birimi
+      if (columnVisibility.urun) count += 3; // Marka, Model, Kod
+      if (columnVisibility.fiyat) count += 4; // Katsayi, Liste Fiyati, Birim Fiyat, Toplam Fiyat
+      if (canViewCosts && columnVisibility.maliyet) count += 3; // Maliyet, Kar, Kar%
+      if (columnVisibility.gecmis) count += 8; // 4 prices + 4 deltas
+      return count;
+    })();
+
     return (
       <>
         <tr
@@ -373,7 +385,7 @@ export function QuoteItemRow({
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </td>
           <td
-            colSpan={spanColCount}
+            colSpan={noteSpanColCount}
             className="border border-accent-200 bg-white px-3 py-2 text-sm italic text-accent-600"
           >
             <EditableCell
@@ -409,6 +421,27 @@ export function QuoteItemRow({
 
   // ---- SUBTOTAL row ----
   if (item.itemType === 'SUBTOTAL') {
+    // Compute label span: everything from Poz to Birim Fiyat (before Toplam Fiyat)
+    // Drag(1) + Poz(1) + [Urun x3] + Aciklama(1) + Miktar(1) + [BirimFiyat(1)]
+    const subtotalLabelSpan = (() => {
+      let count = 1; // Poz No
+      if (columnVisibility.urun) count += 3;
+      count += 1; // Aciklama
+      count += 1; // Miktar
+      if (columnVisibility.fiyat) count += 1; // Birim Fiyat
+      return count;
+    })();
+    // Trailing: Katsayi + Liste Fiyati + [Maliyet x3] + PB + [Gecmis x8] + Delete
+    const subtotalTrailingSpan = (() => {
+      let count = 0;
+      if (columnVisibility.fiyat) count += 2; // Katsayi + Liste Fiyati
+      if (canViewCosts && columnVisibility.maliyet) count += 3;
+      count += 1; // PB
+      if (columnVisibility.gecmis) count += 8;
+      count += 1; // Delete
+      return count;
+    })();
+
     return (
       <>
         <tr
@@ -423,26 +456,32 @@ export function QuoteItemRow({
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </td>
           <td
-            colSpan={columnVisibility.fiyat ? totalColCount - 3 : totalColCount - 2}
+            colSpan={subtotalLabelSpan}
             className="border border-accent-200 bg-accent-100 px-3 py-2 text-right font-bold text-accent-800 text-sm"
           >
-            Ara Toplam
+            <EditableCell
+              value={item.description || 'Ara Toplam'}
+              onChange={(v) => onUpdate({ description: String(v) })}
+              className="font-bold text-right"
+            />
           </td>
           {columnVisibility.fiyat && (
             <td className="border border-accent-200 bg-accent-100 px-2 py-2 text-right tabular-nums font-bold text-accent-900 whitespace-nowrap">
               {formatPrice(subtotalValue ?? 0, currency)}
             </td>
           )}
-          <td className="w-10 border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700"
-              title="Sil"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </td>
+          {subtotalTrailingSpan > 0 && (
+            <td colSpan={subtotalTrailingSpan} className="border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
+              <button
+                type="button"
+                onClick={onDelete}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 float-right"
+                title="Sil"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </td>
+          )}
         </tr>
         {contextMenu && (
           <ContextMenuOverlay
@@ -476,6 +515,7 @@ export function QuoteItemRow({
           isDragging && 'opacity-40',
           isLowMargin && canViewCosts && 'bg-red-50',
           isSubRow && 'bg-blue-50/30 text-accent-500',
+          isSetParent && 'bg-indigo-50/60',
         )}
       >
         {/* Drag handle */}
@@ -562,84 +602,36 @@ export function QuoteItemRow({
         </td>
 
         {/* MIKTAR */}
-        <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
-          <EditableCell
-            value={Number(item.quantity)}
-            type="number"
-            onChange={(v) => {
-              const qty = Number(v);
-              const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
-              onUpdate({ quantity: qty, totalPrice: total });
-            }}
-            displayValue={formatNumber(Number(item.quantity), 2)}
-            className="text-right"
-          />
-          <select
-            value={item.unit}
-            onChange={(e) => onUpdate({ unit: e.target.value })}
-            className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none"
-            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
-          >
-            <option value="Adet">Ad.</option>
-            <option value="Metre">m.</option>
-            <option value="Set">Set</option>
-            <option value="Kişi/Gün">Kişi/Gün</option>
-          </select>
+        <td className="border border-accent-200 px-0 py-0 text-right whitespace-nowrap cursor-pointer">
+          <div className="flex flex-col items-end px-2 py-1.5 w-full h-full">
+            <div className="w-full text-right">
+              <EditableCell
+                value={Number(item.quantity)}
+                type="number"
+                onChange={(v) => {
+                  const qty = Number(v);
+                  const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
+                  onUpdate({ quantity: qty, totalPrice: total });
+                }}
+                displayValue={formatNumber(Number(item.quantity), 2)}
+                className="text-right w-full inline-block"
+              />
+            </div>
+            <select
+              value={item.unit}
+              onChange={(e) => onUpdate({ unit: e.target.value })}
+              className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none w-full"
+              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
+            >
+              <option value="Adet">Ad.</option>
+              <option value="Metre">m.</option>
+              <option value="Set">Set</option>
+              <option value="Kişi/Gün">Kişi/Gün</option>
+            </select>
+          </div>
         </td>
 
-        {/* KATSAYI + LISTE FIYATI (visible to all users in fiyat group) */}
-        {columnVisibility.fiyat && (
-          <>
-            <td
-              className={cn(
-                'border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap',
-                isKatsayiOutOfRange && 'bg-amber-50 border-amber-300',
-              )}
-              title={isKatsayiOutOfRange && katsayiRangeLabel ? `Belirlenen aralik disinda! ${katsayiRangeLabel}` : undefined}
-            >
-              <div className="flex items-center justify-end gap-1">
-                {isKatsayiOutOfRange && (
-                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                )}
-                <EditableCell
-                  value={Number(item.katsayi)}
-                  type="number"
-                  readOnly={isSetParent}
-                  onChange={(v) => {
-                    const k = Number(v);
-                    const shouldCalc = isCustom || !item.isManualPrice;
-                    const newUnitPrice = shouldCalc ? Number(item.listPrice) * k : Number(item.unitPrice);
-                    const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
-                    onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
-                  }}
-                  displayValue={formatNumber(Number(item.katsayi), 4)}
-                  className={cn('text-right', isKatsayiOutOfRange && 'text-amber-700 font-medium')}
-                />
-              </div>
-              {isKatsayiOutOfRange && katsayiRangeLabel && (
-                <div className="text-[10px] text-amber-600 mt-0.5 text-right">{katsayiRangeLabel}</div>
-              )}
-            </td>
-            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
-              <EditableCell
-                value={Number(item.listPrice)}
-                type="number"
-                readOnly={isSetParent}
-                onChange={(v) => {
-                  const lp = Number(v);
-                  const shouldCalc = isCustom || !item.isManualPrice;
-                  const newUnitPrice = shouldCalc ? lp * Number(item.katsayi) : Number(item.unitPrice);
-                  const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
-                  onUpdate({ listPrice: lp, unitPrice: newUnitPrice, totalPrice: total });
-                }}
-                displayValue={formatPrice(Number(item.listPrice), currency)}
-                className="text-right"
-              />
-            </td>
-          </>
-        )}
-
-        {/* BIRIM FIYAT */}
+        {/* BIRIM FIYAT (Teklif Satış Fiyatları group) */}
         {columnVisibility.fiyat && (
           <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
             <EditableCell
@@ -657,7 +649,7 @@ export function QuoteItemRow({
           </td>
         )}
 
-        {/* TOPLAM FIYAT */}
+        {/* TOPLAM FIYAT (Teklif Satış Fiyatları group) */}
         {columnVisibility.fiyat && (
           <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
             {discPct > 0 ? (
@@ -673,6 +665,101 @@ export function QuoteItemRow({
               formatPrice(Number(item.totalPrice), currency)
             )}
           </td>
+        )}
+
+        {/* KATSAYI + LISTE FIYATI (Teklif Hazırlama group) */}
+        {columnVisibility.fiyat && (
+          <>
+            <td
+              data-field="katsayi"
+              data-sort-order={item.sortOrder}
+              className={cn(
+                'border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap',
+                isKatsayiOutOfRange && !isSetParent && 'bg-amber-50 border-amber-300',
+              )}
+              title={isKatsayiOutOfRange && !isSetParent && katsayiRangeLabel ? `Belirlenen aralik disinda! ${katsayiRangeLabel}` : undefined}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                const currentOrder = item.sortOrder;
+                // Find all katsayi cells in the table
+                const allKatsayiCells = Array.from(
+                  document.querySelectorAll<HTMLElement>('td[data-field="katsayi"]')
+                );
+                // Sort by sort order
+                allKatsayiCells.sort(
+                  (a, b) => Number(a.dataset.sortOrder) - Number(b.dataset.sortOrder)
+                );
+                const currentIdx = allKatsayiCells.findIndex(
+                  (cell) => Number(cell.dataset.sortOrder) === currentOrder
+                );
+                const targetIdx = e.key === 'ArrowDown' ? currentIdx + 1 : currentIdx - 1;
+                if (targetIdx >= 0 && targetIdx < allKatsayiCells.length) {
+                  e.preventDefault();
+                  const targetCell = allKatsayiCells[targetIdx];
+                  // Click the editable span to activate editing, or focus the input if already editing
+                  const editableSpan = targetCell.querySelector<HTMLElement>('[data-editable="true"]');
+                  if (editableSpan) {
+                    editableSpan.click();
+                    // After click triggers editing, focus the new input on next tick
+                    requestAnimationFrame(() => {
+                      const input = targetCell.querySelector<HTMLInputElement>('input');
+                      if (input) {
+                        input.focus();
+                        input.select();
+                      }
+                    });
+                  }
+                }
+              }}
+            >
+              {isSetParent ? (
+                <span className="text-accent-400 tabular-nums">-</span>
+              ) : (
+                <>
+                  <div className="flex items-center justify-end gap-1">
+                    {isKatsayiOutOfRange && (
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    )}
+                    <EditableCell
+                      value={Number(item.katsayi)}
+                      type="number"
+                      onChange={(v) => {
+                        const k = Number(v);
+                        const shouldCalc = isCustom || !item.isManualPrice;
+                        const newUnitPrice = shouldCalc ? Number(item.listPrice) * k : Number(item.unitPrice);
+                        const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+                        onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
+                      }}
+                      displayValue={formatNumber(Number(item.katsayi), 4)}
+                      className={cn('text-right', isKatsayiOutOfRange && 'text-amber-700 font-medium')}
+                    />
+                  </div>
+                  {isKatsayiOutOfRange && katsayiRangeLabel && (
+                    <div className="text-[10px] text-amber-600 mt-0.5 text-right">{katsayiRangeLabel}</div>
+                  )}
+                </>
+              )}
+            </td>
+            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
+              {isSetParent ? (
+                <span className="text-accent-400 tabular-nums">-</span>
+              ) : (
+                <EditableCell
+                  value={Number(item.listPrice)}
+                  type="number"
+                  onChange={(v) => {
+                    const lp = Number(v);
+                    const shouldCalc = isCustom || !item.isManualPrice;
+                    const newUnitPrice = shouldCalc ? lp * Number(item.katsayi) : Number(item.unitPrice);
+                    const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+                    onUpdate({ listPrice: lp, unitPrice: newUnitPrice, totalPrice: total });
+                  }}
+                  displayValue={formatPrice(Number(item.listPrice), currency)}
+                  className="text-right"
+                />
+              )}
+            </td>
+          </>
         )}
 
         {/* MALIYET / KAR / KAR % */}

@@ -31,7 +31,7 @@ export interface ProductCatalogPanelProps {
   onClose: () => void;
   companyId?: string | null;
   quoteLanguage: string;
-  onAddProduct: (product: ProductForQuote) => void;
+  onAddProduct: (product: ProductForQuote, quantity?: number) => void;
   title?: string;
 }
 
@@ -427,7 +427,7 @@ export function ProductCatalogPanel({
                     product={product}
                     quoteLanguage={quoteLanguage}
                     lastPrice={priceHistory[product.id] || null}
-                    onAdd={() => onAddProduct(product)}
+                    onAdd={(quantity) => onAddProduct(product, quantity)}
                   />
                 ))}
               </div>

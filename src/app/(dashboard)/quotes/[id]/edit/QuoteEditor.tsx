@@ -18,7 +18,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return generateId();
+    return crypto.randomUUID();
   }
   // Fallback for non-secure contexts (HTTP)
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -835,7 +835,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Add product from catalog ───────────────────────────────────────────────
 
   const handleAddProduct = useCallback(
-    async (product: ProductForQuote) => {
+    async (product: ProductForQuote, quantity?: number) => {
       const tempId = generateId();
       const lang = headerFields.language;
       const quoteCurrency = headerFields.currency;
@@ -890,14 +890,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           lang === 'EN'
             ? product.nameEn || product.name
             : product.nameTr || product.name,
-        quantity: 1,
+        quantity: quantity || 1,
         unit: setCreationMode ? 'Set' : product.unit,
         listPrice: setCreationMode ? 0 : convertedListPrice,
         katsayi: defaultKatsayi,
         unitPrice,
         discountPct: 0,
         vatRate: isSubItem ? 0 : 20,
-        totalPrice: unitPrice, // qty=1, discount=0
+        totalPrice: unitPrice * (quantity || 1),
         isManualPrice: product.pricingType === 'PROJECT_BASED',
         costPrice: convertedCostPrice,
         productCurrency: product.currency,
@@ -924,7 +924,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         brand: product.brandName || undefined,
         model: product.model || undefined,
         description: newItem.description,
-        quantity: 1,
+        quantity: quantity || 1,
         unit: newItem.unit,
         listPrice: convertedListPrice,
         katsayi: defaultKatsayi,
@@ -1512,7 +1512,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const canExport = user.role.canExport ? handleExport : undefined;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ fontFamily: 'Tahoma, Calibri, sans-serif' }}>
       {/* Success banner */}
       {successMessage && (
         <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-3">
@@ -1536,6 +1536,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         status={quote.status}
         companyName={quote.company.name}
         companyId={quote.company.id}
+        userFullName={user.fullName}
         projectId={headerFields.projectId}
         projectName={
           headerFields.projectId === quote.project?.id
@@ -1617,6 +1618,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             <div className="p-4">
               <PriceHistory
                 productId={priceHistoryProductId}
+                companyId={quote.company.id}
                 currency={headerFields.currency}
                 onApplyPrice={(unitPrice, katsayi) =>
                   handleApplyPrice(priceHistoryProductId, unitPrice, katsayi)
@@ -1648,7 +1650,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         companyId={quote.company.id}
         quoteLanguage={headerFields.language}
         onAddProduct={handleAddProduct}
-        title={setCreationMode ? 'Set Oluştur - Ürün Seç' : subItemParentId ? 'Alt Kalem Ekle' : undefined}
+        title={setCreationMode ? 'Serbest Kalem Ekle - Ürün Seç' : subItemParentId ? 'Serbest Kalem Ekle' : undefined}
       />
 
       {/* Ek Maliyet Modal */}

@@ -30,7 +30,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { sortOrder: 'asc' },
     });
 
-    return NextResponse.json({ items });
+    return NextResponse.json({
+      items: items.map(item => ({
+        ...item,
+        amount: Number(item.amount),
+      })),
+    });
   } catch (error) {
     console.error('Ek maliyet GET error:', error);
     return NextResponse.json(
@@ -85,7 +90,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return created;
     });
 
-    return NextResponse.json({ items });
+    return NextResponse.json({
+      items: items.map(item => ({
+        ...item,
+        amount: Number(item.amount),
+      })),
+    });
   } catch (error) {
     console.error('Ek maliyet PUT error:', error);
     return NextResponse.json(

@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Badge, Spinner } from '@/components/ui';
+import { FIELD_LABELS, HIDDEN_FIELDS } from '@/lib/history-labels';
 
 interface HistoryEntry {
   id: string;
@@ -154,7 +155,65 @@ export function QuoteHistory({ quoteId }: QuoteHistoryProps) {
       );
     }
 
-    // Generic change display
+    // Human-readable change display for UPDATE actions
+    if (action === 'UPDATE') {
+      return (
+        <div className="text-sm text-primary-600 mt-2 space-y-1">
+          {Object.entries(changes).map(([key, value]) => {
+            // Skip hidden/internal fields
+            if (HIDDEN_FIELDS.includes(key)) return null;
+
+            const label = FIELD_LABELS[key] || key;
+
+            // New format: { from, to } structure
+            if (
+              value !== null &&
+              typeof value === 'object' &&
+              !Array.isArray(value) &&
+              'from' in (value as Record<string, unknown>) &&
+              'to' in (value as Record<string, unknown>)
+            ) {
+              const { from, to } = value as { from: unknown; to: unknown; fromName?: string; toName?: string };
+              const fromName = (value as { fromName?: string }).fromName;
+              const toName = (value as { toName?: string }).toName;
+
+              const formatVal = (v: unknown, name?: string | null): string => {
+                if (name) return name;
+                if (v === null || v === undefined) return '\u2014';
+                if (v === true) return 'Evet';
+                if (v === false) return 'Hay\u0131r';
+                if (typeof v === 'object') return JSON.stringify(v);
+                return String(v);
+              };
+
+              const fromDisplay = formatVal(from, fromName);
+              const toDisplay = formatVal(to, toName);
+
+              return (
+                <div key={key}>
+                  <span className="text-primary-500">{label}:</span>{' '}
+                  <span className="text-primary-400">{fromDisplay}</span>
+                  {' \u2192 '}
+                  <span className="font-medium text-primary-800">{toDisplay}</span>
+                </div>
+              );
+            }
+
+            // Backward compatibility: old format (plain values, no from/to)
+            return (
+              <div key={key}>
+                <span className="text-primary-500">{label}:</span>{' '}
+                <span className="font-medium">
+                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Generic change display for all other actions
     return (
       <div className="text-sm text-primary-600 mt-2 space-y-1">
         {Object.entries(changes).map(([key, value]) => (

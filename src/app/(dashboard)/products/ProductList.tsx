@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Pencil, Trash2, Upload, Settings, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Upload, Download, Settings, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProductForm } from './ProductForm';
 import { ProductImportModal } from '@/components/products/ProductImportModal';
@@ -68,6 +68,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [isCoefficientModalOpen, setIsCoefficientModalOpen] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [isBulkPriceModalOpen, setIsBulkPriceModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -224,6 +225,34 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     });
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/products/export');
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.error || 'Dışarı aktarma başarısız oldu');
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('Content-Disposition');
+      const match = disposition?.match(/filename="(.+)"/);
+      a.download = match?.[1] || 'BTS_Urunler.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Dışarı aktarma sırasında bir hata oluştu');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const selectedProductsForBulk = products.filter(p => selectedProducts.has(p.id)).map(p => ({
     id: p.id,
     code: p.code,
@@ -246,6 +275,16 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
             >
               <Settings className="w-4 h-4" />
               Katsayı Yönetimi
+            </Button>
+          )}
+          {canEditProducts && (
+            <Button
+              variant="secondary"
+              onClick={handleExport}
+              disabled={isExporting}
+            >
+              <Download className="w-4 h-4" />
+              {isExporting ? 'Aktarılıyor...' : "Excel\u0027e Aktar"}
             </Button>
           )}
           {canEditProducts && (

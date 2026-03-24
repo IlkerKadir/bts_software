@@ -71,7 +71,31 @@ export async function GET(request: NextRequest) {
       where.createdAt = { ...(where.createdAt as Prisma.DateTimeFilter || {}), lte: new Date(dateTo + 'T23:59:59.999Z') };
     }
 
-    // All users can see all quotes (cost data is filtered based on role permissions)
+    // Visibility filtering: managers see everything, others see based on project visibility
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!isManager) {
+      // Build visibility conditions
+      const visibilityOR: Prisma.QuoteWhereInput[] = [
+        // Always see own quotes
+        { createdById: user.id },
+        // See quotes in projects with EVERYONE visibility
+        { project: { visibility: 'EVERYONE' } },
+        // See quotes in projects where user has explicit access
+        { project: { visibility: 'SPECIFIC_USERS', visibleTo: { some: { userId: user.id } } } },
+      ];
+
+      // If there's already an OR from search, we need to AND them together
+      if (where.OR) {
+        const searchOR = where.OR;
+        delete where.OR;
+        where.AND = [
+          { OR: searchOR },
+          { OR: visibilityOR },
+        ];
+      } else {
+        where.OR = visibilityOR;
+      }
+    }
 
     // Server-side sorting
     const sortField = searchParams.get('sortField') || 'createdAt';
@@ -226,6 +250,14 @@ export async function POST(request: NextRequest) {
       );
     }
     const data = validation.data;
+
+    // Project is mandatory for new quotes
+    if (!data.projectId) {
+      return NextResponse.json(
+        { error: 'Proje seçimi zorunludur' },
+        { status: 400 }
+      );
+    }
 
     // Get current exchange rate (outside transaction since it's read-only)
     const exchangeRate = await db.exchangeRate.findFirst({

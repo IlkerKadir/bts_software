@@ -71,18 +71,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const allTerms = quote.commercialTerms;
 
     // Map item to PDF format
-    const mapItemForPdf = (item: typeof quote.items[0]) => ({
-      itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL',
-      code: item.code,
-      brand: item.brand,
-      description: item.description,
-      quantity: Number(item.quantity),
-      unit: item.unit,
-      unitPrice: Number(item.unitPrice),
-      discountPct: Number(item.discountPct),
-      totalPrice: Number(item.totalPrice),
-      vatRate: Number(item.vatRate),
-    });
+    const mapItemForPdf = (item: typeof quote.items[0]) => {
+      // Extract headerColor from serviceMeta JSON if present
+      const meta = item.serviceMeta as Record<string, unknown> | null;
+      const headerColor = meta && typeof meta.headerColor === 'string' ? meta.headerColor : undefined;
+
+      return {
+        itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL',
+        code: item.code,
+        brand: item.brand,
+        description: item.description,
+        quantity: Number(item.quantity),
+        unit: item.unit,
+        unitPrice: Number(item.unitPrice),
+        discountPct: Number(item.discountPct),
+        totalPrice: Number(item.totalPrice),
+        vatRate: Number(item.vatRate),
+        headerColor,
+      };
+    };
 
     // All items except sub-items (parentItemId set) go into the PDF
     const mainItems = quote.items.filter(item => !item.parentItemId);

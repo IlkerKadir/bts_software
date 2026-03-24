@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Building2, Users, Pencil, Trash2 } from 'lucide-react';
-import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Search, Building2, Users, Pencil, Trash2, Download, Upload } from 'lucide-react';
+import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { CompanyForm } from './CompanyForm';
 import type { Pagination } from '@/lib/types/pagination';
 
@@ -29,6 +29,10 @@ export function CompanyList() {
   const [deletingCompany, setDeletingCompany] = useState<Company | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchCompanies = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -100,6 +104,84 @@ export function CompanyList() {
     fetchCompanies();
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/companies/export');
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.error || 'Dışarı aktarma başarısız oldu');
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('Content-Disposition');
+      const match = disposition?.match(/filename="(.+)"/);
+      a.download = match?.[1] || 'BTS_Firmalar.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Dışarı aktarma sırasında bir hata oluştu');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setIsImporting(true);
+    setImportMessage(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/companies/import', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setImportMessage({ type: 'error', text: data.error || 'İçeri aktarma başarısız oldu' });
+        return;
+      }
+
+      setImportMessage({
+        type: 'success',
+        text: `${data.total} firma başarıyla içeri aktarıldı (${data.created} yeni, ${data.updated} güncellendi)`,
+      });
+      fetchCompanies();
+    } catch (error) {
+      console.error('Import error:', error);
+      setImportMessage({ type: 'error', text: 'İçeri aktarma sırasında bir hata oluştu' });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      setImportMessage({ type: 'error', text: 'Yalnızca .xlsx dosyaları kabul edilmektedir.' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    handleImportFile(file);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -108,10 +190,35 @@ export function CompanyList() {
           <h1 className="text-2xl font-bold text-primary-900">Firmalar</h1>
           <p className="text-primary-500">Müşteri ve iş ortaklarını yönetin</p>
         </div>
-        <Button onClick={() => setIsFormOpen(true)}>
-          <Plus className="w-4 h-4" />
-          Yeni Firma
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            <Download className="w-4 h-4" />
+            {isExporting ? 'Aktarılıyor...' : "Excel\u0027e Aktar"}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleImportClick}
+            disabled={isImporting}
+          >
+            <Upload className="w-4 h-4" />
+            {isImporting ? 'Yükleniyor...' : "Excel\u0027den Yükle"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <Button onClick={() => setIsFormOpen(true)}>
+            <Plus className="w-4 h-4" />
+            Yeni Firma
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -149,6 +256,33 @@ export function CompanyList() {
             className="text-sm text-red-600 underline ml-4"
           >
             Tekrar dene
+          </button>
+        </div>
+      )}
+
+      {/* Import Message Banner */}
+      {importMessage && (
+        <div
+          className={`rounded-lg px-4 py-3 flex items-center justify-between ${
+            importMessage.type === 'success'
+              ? 'bg-green-50 border border-green-200'
+              : 'bg-red-50 border border-red-200'
+          }`}
+        >
+          <p
+            className={`text-sm font-medium ${
+              importMessage.type === 'success' ? 'text-green-700' : 'text-red-700'
+            }`}
+          >
+            {importMessage.text}
+          </p>
+          <button
+            onClick={() => setImportMessage(null)}
+            className={`text-sm underline ml-4 ${
+              importMessage.type === 'success' ? 'text-green-600' : 'text-red-600'
+            }`}
+          >
+            Kapat
           </button>
         </div>
       )}

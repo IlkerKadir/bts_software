@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   TrendingUp,
   ArrowRight,
+  Download,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Modal, Button, Spinner } from '@/components/ui';
@@ -27,6 +28,14 @@ interface ExchangeRateModalProps {
 
 type RateMatrix = Record<string, Record<string, number>>;
 type ProtectionMap = Record<string, number>; // "EUR/TRY" → 5.0
+
+interface TcmbDirectRate {
+  currency: string;
+  forexSelling: number;
+  banknoteSelling: number;
+}
+
+type TcmbRateType = 'forexSelling' | 'banknoteSelling';
 
 const CURRENCIES = ['EUR', 'USD', 'GBP', 'TRY'] as const;
 
@@ -92,6 +101,12 @@ export function ExchangeRateModal({
   const [baseRate, setBaseRate] = useState(currentRate);
   const [isManualRate, setIsManualRate] = useState(true);
 
+  // TCMB direct rates (Döviz Satış / Efektif Satış)
+  const [tcmbDirectRates, setTcmbDirectRates] = useState<TcmbDirectRate[]>([]);
+  const [tcmbRateType, setTcmbRateType] = useState<TcmbRateType>('forexSelling');
+  const [isFetchingTcmb, setIsFetchingTcmb] = useState(false);
+  const [tcmbFetchedAt, setTcmbFetchedAt] = useState<string | null>(null);
+
   // ── Protection helpers ──────────────────────────────────────────────────
 
   const getProtection = useCallback(
@@ -130,6 +145,9 @@ export function ExchangeRateModal({
       setIsManualRate(true);
       setError(null);
       setSuccessMessage(null);
+      setTcmbDirectRates([]);
+      setTcmbFetchedAt(null);
+      setTcmbRateType('forexSelling');
     }
   }, [isOpen, currentRate, currentProtectionPct, currentProtectionMap, currency]);
 
@@ -194,6 +212,49 @@ export function ExchangeRateModal({
       setError(err instanceof Error ? err.message : 'Bir hata oluştu');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Fetch TCMB direct rates (ForexSelling / BanknoteSelling)
+  const handleFetchTcmbDirect = async () => {
+    setIsFetchingTcmb(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/exchange-rates/tcmb');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'TCMB kur bilgisi alınamadı');
+
+      setTcmbDirectRates(data.rates || []);
+      setTcmbFetchedAt(data.fetchedAt || null);
+
+      // Auto-apply the rate for the currently selected currency
+      const match = (data.rates as TcmbDirectRate[]).find(
+        (r) => r.currency === selectedFrom
+      );
+      if (match) {
+        const rate = tcmbRateType === 'forexSelling' ? match.forexSelling : match.banknoteSelling;
+        if (rate > 0) {
+          setBaseRate(rate);
+          setIsManualRate(false);
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'TCMB kur bilgisi alınamadı');
+    } finally {
+      setIsFetchingTcmb(false);
+    }
+  };
+
+  // When rate type changes, apply the new rate if TCMB data is loaded
+  const handleTcmbRateTypeChange = (type: TcmbRateType) => {
+    setTcmbRateType(type);
+    const match = tcmbDirectRates.find((r) => r.currency === selectedFrom);
+    if (match) {
+      const rate = type === 'forexSelling' ? match.forexSelling : match.banknoteSelling;
+      if (rate > 0) {
+        setBaseRate(rate);
+        setIsManualRate(false);
+      }
     }
   };
 
@@ -296,6 +357,100 @@ export function ExchangeRateModal({
               <RefreshCw className={cn('w-4 h-4', isSyncing && 'animate-spin')} />
               TCMB Güncelle
             </Button>
+          </div>
+
+          {/* ── TCMB Direct Rate Fetch ───────────────────────────── */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-blue-900">
+                TCMB Kur Seçimi
+              </h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleFetchTcmbDirect}
+                disabled={isFetchingTcmb}
+              >
+                <Download className={cn('w-4 h-4', isFetchingTcmb && 'animate-pulse')} />
+                TCMB Kuru Getir
+              </Button>
+            </div>
+
+            {tcmbDirectRates.length > 0 && (
+              <>
+                {/* Rate type selector */}
+                <div className="flex items-center gap-4">
+                  <span className="text-xs font-medium text-blue-700">Kur tipi:</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tcmbRateType"
+                      checked={tcmbRateType === 'forexSelling'}
+                      onChange={() => handleTcmbRateTypeChange('forexSelling')}
+                      className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-blue-800">Döviz Satış</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="tcmbRateType"
+                      checked={tcmbRateType === 'banknoteSelling'}
+                      onChange={() => handleTcmbRateTypeChange('banknoteSelling')}
+                      className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-blue-800">Efektif Satış</span>
+                  </label>
+                </div>
+
+                {/* Rate values */}
+                <div className="grid grid-cols-3 gap-2">
+                  {tcmbDirectRates.map((r) => {
+                    const isActive = r.currency === selectedFrom;
+                    const displayRate =
+                      tcmbRateType === 'forexSelling' ? r.forexSelling : r.banknoteSelling;
+                    return (
+                      <button
+                        key={r.currency}
+                        type="button"
+                        onClick={() => {
+                          if (displayRate > 0) {
+                            setBaseRate(displayRate);
+                            setSelectedFrom(r.currency);
+                            setSelectedTo('TRY');
+                            setIsManualRate(false);
+                          }
+                        }}
+                        className={cn(
+                          'flex flex-col items-center rounded-lg border px-3 py-2 transition-colors cursor-pointer',
+                          isActive
+                            ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-400'
+                            : 'bg-white border-blue-200 hover:bg-blue-50'
+                        )}
+                      >
+                        <span className="text-xs font-medium text-blue-700">
+                          {r.currency}/TRY
+                        </span>
+                        <span className="text-sm font-mono tabular-nums font-semibold text-blue-900">
+                          {displayRate.toLocaleString('tr-TR', {
+                            minimumFractionDigits: 4,
+                            maximumFractionDigits: 4,
+                          })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {tcmbFetchedAt && (
+                  <p className="text-[11px] text-blue-500">
+                    TCMB verisi: {formatDateTime(tcmbFetchedAt)} ·{' '}
+                    {tcmbRateType === 'forexSelling' ? 'Döviz Satış' : 'Efektif Satış'} kuru
+                    seçili
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {/* ── Rate Matrix with per-pair protection ────────────── */}

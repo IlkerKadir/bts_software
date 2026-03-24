@@ -187,8 +187,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Create notifications based on status change
-    try {
-      if (newStatus === 'ONAY_BEKLIYOR') {
+    // Use updatedQuote.createdBy.id (from the included relation) for reliable creator lookup
+    const creatorId = updatedQuote.createdBy.id;
+
+    if (newStatus === 'ONAY_BEKLIYOR') {
+      try {
         // Check for out-of-range katsayi items
         const itemsWithProducts = await db.quoteItem.findMany({
           where: { quoteId, itemType: { in: ['PRODUCT', 'CUSTOM', 'SET'] } },
@@ -237,37 +240,48 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             link: `/quotes/${quoteId}`,
           });
         }
-      } else if (newStatus === 'ONAYLANDI') {
-        // Notify quote creator
+      } catch (notificationError) {
+        console.error('Notification creation error (ONAY_BEKLIYOR):', notificationError);
+      }
+    } else if (newStatus === 'ONAYLANDI') {
+      // Notify quote creator
+      try {
         await createNotification({
-          userId: quote.createdById,
+          userId: creatorId,
           type: 'QUOTE_APPROVED',
           title: 'Teklif Onaylandı',
           message: `${updatedQuote.quoteNumber} numaralı teklif ${user.fullName} tarafından onaylandı`,
           link: `/quotes/${quoteId}`,
         });
-      } else if (newStatus === 'REVIZYON') {
-        // Notify quote creator about revision request
+      } catch (notificationError) {
+        console.error('Notification creation error (ONAYLANDI) for userId:', creatorId, notificationError);
+      }
+    } else if (newStatus === 'REVIZYON') {
+      // Notify quote creator about revision request
+      try {
         await createNotification({
-          userId: quote.createdById,
+          userId: creatorId,
           type: 'QUOTE_REJECTED',
           title: 'Revizyon Gerekli',
           message: `${updatedQuote.quoteNumber} numaralı teklif için revizyon istendi`,
           link: `/quotes/${quoteId}`,
         });
-      } else {
-        // Generic status change notification for the quote creator
+      } catch (notificationError) {
+        console.error('Notification creation error (REVIZYON) for userId:', creatorId, notificationError);
+      }
+    } else {
+      // Generic status change notification for the quote creator
+      try {
         await createNotification({
-          userId: quote.createdById,
+          userId: creatorId,
           type: 'SYSTEM',
           title: `Teklif ${updatedQuote.quoteNumber} durumu değişti`,
           message: `Durum: ${statusLabels[targetStatus]}`,
           link: `/quotes/${quoteId}`,
         });
+      } catch (notificationError) {
+        console.error('Notification creation error (generic) for userId:', creatorId, notificationError);
       }
-    } catch (notificationError) {
-      // Log but don't fail the request if notification creation fails
-      console.error('Notification creation error:', notificationError);
     }
 
     return NextResponse.json({

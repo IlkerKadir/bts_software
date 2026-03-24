@@ -17,10 +17,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id: productId } = await params;
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const companyId = searchParams.get('companyId');
 
     // Get recent quote items for this product
     const quoteItems = await db.quoteItem.findMany({
-      where: { productId },
+      where: {
+        productId,
+        ...(companyId ? { quote: { companyId } } : {}),
+      },
       include: {
         quote: {
           select: {
