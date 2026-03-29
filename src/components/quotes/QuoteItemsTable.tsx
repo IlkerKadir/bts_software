@@ -145,11 +145,12 @@ export function QuoteItemsTable({
     setIsResizing(true);
 
     const handleMouseMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const diff = ev.clientX - resizingRef.current.startX;
-      const newWidth = Math.max(40, resizingRef.current.startWidth + diff);
+      const ref = resizingRef.current;
+      if (!ref) return;
+      const diff = ev.clientX - ref.startX;
+      const newWidth = Math.max(40, ref.startWidth + diff);
       setColumnWidths(prev => {
-        const updated = { ...prev, [resizingRef.current!.colKey]: newWidth };
+        const updated = { ...prev, [ref.colKey]: newWidth };
         localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(updated));
         return updated;
       });
