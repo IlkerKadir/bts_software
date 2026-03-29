@@ -103,6 +103,8 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     subject: '',
     currency: 'EUR',
   });
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
@@ -164,8 +166,30 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     fetchQuotes();
   }, [fetchQuotes]);
 
+  // Fetch projects when company changes in the create modal
+  useEffect(() => {
+    if (!newQuoteData.companyId) {
+      setProjects([]);
+      return;
+    }
+    const fetchProjects = async () => {
+      setIsLoadingProjects(true);
+      try {
+        const res = await fetch(`/api/projects?clientId=${newQuoteData.companyId}&limit=100`);
+        const data = await res.json();
+        setProjects(data.projects || []);
+      } catch (err) {
+        console.error('Error fetching projects:', err);
+        setProjects([]);
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    };
+    fetchProjects();
+  }, [newQuoteData.companyId]);
+
   const handleCreateQuote = async () => {
-    if (!newQuoteData.companyId) return;
+    if (!newQuoteData.companyId || !newQuoteData.projectId) return;
 
     setIsCreating(true);
     setCreateError(null);
@@ -567,7 +591,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
             <Button
               onClick={handleCreateQuote}
               isLoading={isCreating}
-              disabled={!newQuoteData.companyId}
+              disabled={!newQuoteData.companyId || !newQuoteData.projectId}
             >
               Oluştur
             </Button>
@@ -583,11 +607,22 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           <Select
             label="Firma *"
             value={newQuoteData.companyId}
-            onChange={(e) => setNewQuoteData({ ...newQuoteData, companyId: e.target.value })}
+            onChange={(e) => setNewQuoteData({ ...newQuoteData, companyId: e.target.value, projectId: '' })}
             options={[
               { value: '', label: 'Firma Seçin' },
               ...companies.map((c) => ({ value: c.id, label: c.name })),
             ]}
+          />
+
+          <Select
+            label="Proje *"
+            value={newQuoteData.projectId}
+            onChange={(e) => setNewQuoteData({ ...newQuoteData, projectId: e.target.value })}
+            options={[
+              { value: '', label: isLoadingProjects ? 'Yükleniyor...' : newQuoteData.companyId ? 'Proje Seçin' : 'Önce firma seçin' },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            disabled={!newQuoteData.companyId || isLoadingProjects}
           />
 
           <Input
