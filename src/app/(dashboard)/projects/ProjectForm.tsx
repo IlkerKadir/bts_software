@@ -3,15 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Button, Input, Select, Modal } from '@/components/ui';
 
-interface Company {
-  id: string;
-  name: string;
-}
-
 interface ProjectFormData {
   id?: string;
   name: string;
-  clientId: string;
   status: string;
   estimatedStart?: string | null;
   estimatedEnd?: string | null;
@@ -37,39 +31,20 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
   const isEditing = !!initialData?.id;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [companies, setCompanies] = useState<Company[]>([]);
 
   const [formData, setFormData] = useState<ProjectFormData>({
     name: initialData?.name || '',
-    clientId: initialData?.clientId || '',
     status: initialData?.status || 'TEKLIF_ASAMASINDA',
     estimatedStart: initialData?.estimatedStart || '',
     estimatedEnd: initialData?.estimatedEnd || '',
     notes: initialData?.notes || '',
   });
 
-  useEffect(() => {
-    const fetchCompanies = async () => {
-      try {
-        const response = await fetch('/api/companies?limit=100');
-        const data = await response.json();
-        setCompanies(data.companies || []);
-      } catch (err) {
-        console.error('Error fetching companies:', err);
-      }
-    };
-
-    if (isOpen) {
-      fetchCompanies();
-    }
-  }, [isOpen]);
-
   // Reset form when initialData changes
   useEffect(() => {
     if (initialData) {
       setFormData({
         name: initialData.name || '',
-        clientId: initialData.clientId || '',
         status: initialData.status || 'TEKLIF_ASAMASINDA',
         estimatedStart: initialData.estimatedStart ? initialData.estimatedStart.split('T')[0] : '',
         estimatedEnd: initialData.estimatedEnd ? initialData.estimatedEnd.split('T')[0] : '',
@@ -78,7 +53,6 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
     } else {
       setFormData({
         name: '',
-        clientId: '',
         status: 'TEKLIF_ASAMASINDA',
         estimatedStart: '',
         estimatedEnd: '',
@@ -98,7 +72,6 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
 
       const payload = {
         ...formData,
-        clientId: formData.clientId || null,
         estimatedStart: formData.estimatedStart || null,
         estimatedEnd: formData.estimatedEnd || null,
         notes: formData.notes || null,
@@ -160,16 +133,6 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
           onChange={(e) => handleChange('name', e.target.value)}
           placeholder="Proje adı"
           required
-        />
-
-        <Select
-          label="Firma"
-          value={formData.clientId}
-          onChange={(e) => handleChange('clientId', e.target.value)}
-          options={[
-            { value: '', label: 'Firma Seçilmedi' },
-            ...companies.map(c => ({ value: c.id, label: c.name })),
-          ]}
         />
 
         <Select
