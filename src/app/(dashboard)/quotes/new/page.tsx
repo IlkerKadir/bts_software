@@ -13,7 +13,7 @@ interface Company {
 interface Project {
   id: string;
   name: string;
-  client: { id: string; name: string };
+  client?: { id: string; name: string } | null;
 }
 
 export default function NewQuotePage() {
@@ -53,17 +53,12 @@ export default function NewQuotePage() {
     fetchCompanies();
   }, []);
 
-  // Fetch projects filtered by selected company
+  // Fetch all projects (projects are independent of company)
   useEffect(() => {
-    if (!formData.companyId) {
-      setProjects([]);
-      return;
-    }
-
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const response = await fetch(`/api/projects?clientId=${formData.companyId}&limit=100`);
+        const response = await fetch('/api/projects?limit=100');
         const data = await response.json();
         setProjects(data.projects || []);
       } catch (err) {
@@ -74,7 +69,7 @@ export default function NewQuotePage() {
     };
 
     fetchProjects();
-  }, [formData.companyId]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,7 +144,6 @@ export default function NewQuotePage() {
               setFormData({
                 ...formData,
                 companyId: e.target.value,
-                projectId: '', // Reset project when company changes
               });
             }}
             options={[
@@ -166,15 +160,13 @@ export default function NewQuotePage() {
             options={[
               {
                 value: '',
-                label: !formData.companyId
-                  ? 'Once firma secin'
-                  : isLoadingProjects
-                    ? 'Yukleniyor...'
-                    : 'Proje Secin (Opsiyonel)',
+                label: isLoadingProjects
+                  ? 'Yukleniyor...'
+                  : 'Proje Secin (Opsiyonel)',
               },
               ...projects.map((p) => ({ value: p.id, label: p.name })),
             ]}
-            disabled={!formData.companyId}
+            disabled={isLoadingProjects}
           />
 
           {/* Subject */}

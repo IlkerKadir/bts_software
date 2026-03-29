@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const projectSchema = z.object({
   name: z.string().min(1, 'Proje adı gereklidir'),
-  clientId: z.string().min(1, 'Firma seçimi gereklidir'),
+  clientId: z.string().optional().nullable(),
   status: z.enum(['TEKLIF_ASAMASINDA', 'ONAYLANDI', 'DEVAM_EDIYOR', 'TAMAMLANDI', 'IPTAL'], {
     message: 'Geçersiz proje durumu',
   }),

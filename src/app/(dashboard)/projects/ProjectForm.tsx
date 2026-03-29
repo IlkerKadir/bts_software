@@ -98,6 +98,7 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
 
       const payload = {
         ...formData,
+        clientId: formData.clientId || null,
         estimatedStart: formData.estimatedStart || null,
         estimatedEnd: formData.estimatedEnd || null,
         notes: formData.notes || null,
@@ -162,14 +163,13 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
         />
 
         <Select
-          label="Firma *"
+          label="Firma"
           value={formData.clientId}
           onChange={(e) => handleChange('clientId', e.target.value)}
           options={[
-            { value: '', label: 'Firma Seçin' },
+            { value: '', label: 'Firma Seçilmedi' },
             ...companies.map(c => ({ value: c.id, label: c.name })),
           ]}
-          required
         />
 
         <Select

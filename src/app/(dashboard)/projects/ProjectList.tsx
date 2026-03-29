@@ -16,7 +16,7 @@ interface Company {
 interface Project {
   id: string;
   name: string;
-  client: { id: string; name: string };
+  client?: { id: string; name: string } | null;
   status: string;
   estimatedStart?: string | null;
   estimatedEnd?: string | null;
@@ -116,7 +116,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   const handleEdit = (project: Project) => {
     setEditingProject({
       ...project,
-      clientId: project.client.id,
+      clientId: project.client?.id || '',
     } as Project & { clientId: string });
     setIsFormOpen(true);
   };
@@ -237,7 +237,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
                     className="cursor-pointer"
                   >
                     <td className="font-medium text-accent-600 hover:text-accent-700">{project.name}</td>
-                    <td>{project.client.name}</td>
+                    <td>{project.client?.name || '-'}</td>
                     <td>
                       <Badge variant={statusVariants[project.status] || 'default'}>
                         {statusLabels[project.status] || project.status}

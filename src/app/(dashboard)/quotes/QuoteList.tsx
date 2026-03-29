@@ -166,16 +166,13 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     fetchQuotes();
   }, [fetchQuotes]);
 
-  // Fetch projects when company changes in the create modal
+  // Fetch all projects for the create modal (projects are independent of company)
   useEffect(() => {
-    if (!newQuoteData.companyId) {
-      setProjects([]);
-      return;
-    }
+    if (!isNewQuoteModalOpen) return;
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const res = await fetch(`/api/projects?clientId=${newQuoteData.companyId}&limit=100`);
+        const res = await fetch('/api/projects?limit=100');
         const data = await res.json();
         setProjects(data.projects || []);
       } catch (err) {
@@ -186,7 +183,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       }
     };
     fetchProjects();
-  }, [newQuoteData.companyId]);
+  }, [isNewQuoteModalOpen]);
 
   const handleCreateQuote = async () => {
     if (!newQuoteData.companyId || !newQuoteData.projectId) return;
@@ -607,7 +604,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           <Select
             label="Firma *"
             value={newQuoteData.companyId}
-            onChange={(e) => setNewQuoteData({ ...newQuoteData, companyId: e.target.value, projectId: '' })}
+            onChange={(e) => setNewQuoteData({ ...newQuoteData, companyId: e.target.value })}
             options={[
               { value: '', label: 'Firma Seçin' },
               ...companies.map((c) => ({ value: c.id, label: c.name })),
@@ -619,10 +616,10 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
             value={newQuoteData.projectId}
             onChange={(e) => setNewQuoteData({ ...newQuoteData, projectId: e.target.value })}
             options={[
-              { value: '', label: isLoadingProjects ? 'Yükleniyor...' : newQuoteData.companyId ? 'Proje Seçin' : 'Önce firma seçin' },
+              { value: '', label: isLoadingProjects ? 'Yükleniyor...' : 'Proje Seçin' },
               ...projects.map((p) => ({ value: p.id, label: p.name })),
             ]}
-            disabled={!newQuoteData.companyId || isLoadingProjects}
+            disabled={isLoadingProjects}
           />
 
           <Input

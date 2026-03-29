@@ -68,8 +68,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Transform date strings to Date objects if provided
+    // Convert empty string clientId to null
     const updateData = {
       ...validatedData,
+      clientId: validatedData.clientId || null,
       estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
       estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
     };

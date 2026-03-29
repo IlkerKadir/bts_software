@@ -64,7 +64,7 @@ interface ProjectActivity {
 interface Project {
   id: string;
   name: string;
-  client: { id: string; name: string };
+  client?: { id: string; name: string } | null;
   status: string;
   estimatedStart?: string | null;
   estimatedEnd?: string | null;
@@ -251,7 +251,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editForm.name,
-          clientId: project.client.id,
+          clientId: project.client?.id || null,
           status: editForm.status,
           estimatedStart: editForm.estimatedStart || null,
           estimatedEnd: editForm.estimatedEnd || null,
@@ -489,14 +489,18 @@ export default function ProjectDetailPage({ params }: PageProps) {
                 {projectStatusLabels[project.status] || project.status}
               </Badge>
             </div>
-            <p className="text-sm text-primary-500 mt-0.5">
-              <span
-                className="text-accent-600 hover:underline cursor-pointer"
-                onClick={() => router.push(`/companies/${project.client.id}`)}
-              >
-                {project.client.name}
-              </span>
-            </p>
+            {project.client ? (
+              <p className="text-sm text-primary-500 mt-0.5">
+                <span
+                  className="text-accent-600 hover:underline cursor-pointer"
+                  onClick={() => router.push(`/companies/${project.client!.id}`)}
+                >
+                  {project.client.name}
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-primary-400 mt-0.5">Firma atanmamis</p>
+            )}
           </div>
         </div>
 
@@ -535,12 +539,16 @@ export default function ProjectDetailPage({ params }: PageProps) {
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-primary-400 shrink-0" />
                 <span className="text-primary-500">Firma:</span>
-                <span
-                  className="font-medium text-accent-600 hover:underline cursor-pointer"
-                  onClick={() => router.push(`/companies/${project.client.id}`)}
-                >
-                  {project.client.name}
-                </span>
+                {project.client ? (
+                  <span
+                    className="font-medium text-accent-600 hover:underline cursor-pointer"
+                    onClick={() => router.push(`/companies/${project.client!.id}`)}
+                  >
+                    {project.client.name}
+                  </span>
+                ) : (
+                  <span className="font-medium text-primary-400">Firma atanmamis</span>
+                )}
               </div>
 
               <div className="flex items-center gap-2">

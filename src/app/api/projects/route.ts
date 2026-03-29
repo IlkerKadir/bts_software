@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
-        { client: { name: { contains: query.search, mode: 'insensitive' } } },
+        { client: { is: { name: { contains: query.search, mode: 'insensitive' } } } },
       ];
     }
 
@@ -86,8 +86,10 @@ export async function POST(request: NextRequest) {
     const validatedData = projectSchema.parse(body);
 
     // Transform date strings to Date objects if provided
+    // Convert empty string clientId to null
     const createData = {
       ...validatedData,
+      clientId: validatedData.clientId || null,
       estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
       estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
     };
