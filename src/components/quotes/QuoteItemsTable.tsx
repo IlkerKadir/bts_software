@@ -741,7 +741,7 @@ export function QuoteItemsTable({
 
       {/* ---- Table ---- */}
       <div className="overflow-x-auto rounded-lg border border-accent-200 bg-white">
-        <table className={cn("min-w-full text-sm border-separate border-spacing-0", isResizing && "select-none")} style={{ tableLayout: 'fixed' }}>
+        <table className={cn("text-sm border-separate border-spacing-0", isResizing && "select-none")} style={{ tableLayout: 'fixed', minWidth: '100%' }}>
           {/* Column width definitions for table-layout: fixed */}
           <colgroup>
             <col style={{ width: columnWidths.drag }} />
@@ -836,33 +836,33 @@ export function QuoteItemsTable({
               <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.drag }} />
               <th className="px-2 py-2 text-center whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.pozNo }}>
                 Poz No
-                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'pozNo')} />
+                <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'pozNo')} />
               </th>
 
               {columnVisibility.urun && (
                 <>
                   <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.marka }}>
                     Marka
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'marka')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'marka')} />
                   </th>
                   <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.model }}>
                     Model
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'model')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'model')} />
                   </th>
                   <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.kod }}>
                     Kod
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'kod')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'kod')} />
                   </th>
                 </>
               )}
 
               <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.aciklama }}>
                 Açıklama
-                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'aciklama')} />
+                <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'aciklama')} />
               </th>
               <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.miktar }}>
                 Miktar
-                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'miktar')} />
+                <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'miktar')} />
               </th>
 
               {/* Teklif Satış Fiyatları: Birim Fiyat, Toplam Fiyat */}
@@ -870,11 +870,11 @@ export function QuoteItemsTable({
                 <>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.birimFiyat }}>
                     Birim Fiyat
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'birimFiyat')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'birimFiyat')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.toplamFiyat }}>
                     Toplam Fiyat
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'toplamFiyat')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'toplamFiyat')} />
                   </th>
                 </>
               )}
@@ -883,11 +883,11 @@ export function QuoteItemsTable({
                 <>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.katsayi }}>
                     Katsayı
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'katsayi')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'katsayi')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.listeFiyati }}>
                     Liste Fiyatı
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'listeFiyati')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'listeFiyati')} />
                   </th>
                 </>
               )}
@@ -896,57 +896,57 @@ export function QuoteItemsTable({
                 <>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.maliyet }}>
                     Maliyet
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'maliyet')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'maliyet')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.kar }}>
                     Kar
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'kar')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'kar')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.karPct }}>
                     Kar %
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'karPct')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'karPct')} />
                   </th>
                 </>
               )}
 
               <th className="px-1 py-2 text-center whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.pb }}>
                 PB
-                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'pb')} />
+                <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'pb')} />
               </th>
 
               {columnVisibility.gecmis && (
                 <>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.sonTeklif }}>
                     Son Teklif
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'sonTeklif')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'sonTeklif')} />
                   </th>
                   <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta1 }}>
                     Δ%
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta1')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'delta1')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.siparis }}>
                     Sipariş
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'siparis')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'siparis')} />
                   </th>
                   <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta2 }}>
                     Δ%
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta2')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'delta2')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.enYuksek }}>
                     En Yüksek
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'enYuksek')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'enYuksek')} />
                   </th>
                   <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta3 }}>
                     Δ%
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta3')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'delta3')} />
                   </th>
                   <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.enDusuk }}>
                     En Düşük
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'enDusuk')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'enDusuk')} />
                   </th>
                   <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta4 }}>
                     Δ%
-                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta4')} />
+                    <div className="absolute -right-1 top-0 h-full w-3 cursor-col-resize z-10 group/resize" style={{ background: 'transparent' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(96,165,250,0.5)')} onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }} onMouseDown={(e) => handleResizeStart(e, 'delta4')} />
                   </th>
                 </>
               )}
