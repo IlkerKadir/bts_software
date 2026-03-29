@@ -317,7 +317,7 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-40')}
+          className={cn('group', isDragging && 'opacity-70 bg-accent-50')}
         >
           <td className="w-8 border border-accent-200 bg-[#F3F4F6] px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -379,7 +379,7 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-40')}
+          className={cn('group', isDragging && 'opacity-70 bg-accent-50')}
         >
           <td className="w-8 border border-accent-200 bg-white px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -450,7 +450,7 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-40')}
+          className={cn('group', isDragging && 'opacity-70 bg-accent-50')}
         >
           <td className="w-8 border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -512,7 +512,7 @@ export function QuoteItemRow({
         onContextMenu={handleContextMenu}
         className={cn(
           'group text-sm hover:bg-accent-50 transition-colors',
-          isDragging && 'opacity-40',
+          isDragging && 'opacity-70 bg-accent-50',
           isLowMargin && canViewCosts && 'bg-red-50',
           isSubRow && 'bg-blue-50/30 text-accent-500',
           isSetParent && 'bg-indigo-50/60',

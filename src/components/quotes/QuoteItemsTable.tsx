@@ -716,55 +716,55 @@ export function QuoteItemsTable({
             {/* Individual column header row */}
             <tr className="bg-accent-800 text-white text-xs uppercase tracking-wider">
               {/* Drag handle */}
-              <th className="w-8 px-1 py-2" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 32 }} />
-              <th className="px-2 py-2 text-center whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 48 }}>Poz No</th>
+              <th className="w-8 px-1 py-2" />
+              <th className="px-2 py-2 text-center whitespace-nowrap">Poz No</th>
 
               {columnVisibility.urun && (
                 <>
-                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Marka</th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Model</th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Kod</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap">Marka</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap">Model</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap">Kod</th>
                 </>
               )}
 
-              <th className="px-2 py-2 text-left whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 100 }}>Açıklama</th>
-              <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Miktar</th>
+              <th className="px-2 py-2 text-left whitespace-nowrap">Açıklama</th>
+              <th className="px-2 py-2 text-right whitespace-nowrap">Miktar</th>
 
               {/* Teklif Satış Fiyatları: Birim Fiyat, Toplam Fiyat */}
               {columnVisibility.fiyat && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 80 }}>Birim Fiyat</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 80 }}>Toplam Fiyat</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Birim Fiyat</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Toplam Fiyat</th>
                 </>
               )}
               {/* Teklif Hazırlama: Katsayı, Liste Fiyatı */}
               {columnVisibility.fiyat && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Katsayı</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 80 }}>Liste Fiyatı</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Katsayı</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Liste Fiyatı</th>
                 </>
               )}
 
               {canViewCosts && columnVisibility.maliyet && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Maliyet</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 60 }}>Kar</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 50 }}>Kar %</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Maliyet</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Kar</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Kar %</th>
                 </>
               )}
 
-              <th className="px-1 py-2 text-center whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 36 }}>PB</th>
+              <th className="px-1 py-2 text-center whitespace-nowrap">PB</th>
 
               {columnVisibility.gecmis && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Son Teklif</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>Sipariş</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>En Yüksek</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 70 }}>En Düşük</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ resize: 'horizontal', overflow: 'hidden', minWidth: 40 }}>Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Son Teklif</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Sipariş</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">En Yüksek</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">En Düşük</th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
                 </>
               )}
 
