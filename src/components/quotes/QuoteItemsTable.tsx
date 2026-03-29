@@ -50,12 +50,40 @@ export interface QuoteItemsTableProps {
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY = 'bts-quote-column-visibility';
+const COLUMN_WIDTHS_STORAGE_KEY = 'bts-quote-column-widths';
 
 const defaultVisibility: ColumnVisibility = {
   urun: true,
   fiyat: true,
   maliyet: true,
   gecmis: true,
+};
+
+const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+  drag: 32,
+  pozNo: 50,
+  marka: 90,
+  model: 90,
+  kod: 80,
+  aciklama: 250,
+  miktar: 70,
+  birimFiyat: 110,
+  toplamFiyat: 110,
+  katsayi: 80,
+  listeFiyati: 110,
+  maliyet: 90,
+  kar: 70,
+  karPct: 55,
+  pb: 40,
+  sonTeklif: 90,
+  delta1: 45,
+  siparis: 90,
+  delta2: 45,
+  enYuksek: 90,
+  delta3: 45,
+  enDusuk: 90,
+  delta4: 45,
+  delete: 40,
 };
 
 const COLUMN_GROUPS = [
@@ -96,6 +124,47 @@ export function QuoteItemsTable({
 
   // Collapsed parent state for sub-row toggle
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
+
+  // Column resize state
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return DEFAULT_COLUMN_WIDTHS;
+    try {
+      const saved = localStorage.getItem(COLUMN_WIDTHS_STORAGE_KEY);
+      return saved ? { ...DEFAULT_COLUMN_WIDTHS, ...JSON.parse(saved) } : DEFAULT_COLUMN_WIDTHS;
+    } catch {
+      return DEFAULT_COLUMN_WIDTHS;
+    }
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizingRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { colKey, startX: e.clientX, startWidth: columnWidths[colKey] };
+    setIsResizing(true);
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const diff = ev.clientX - resizingRef.current.startX;
+      const newWidth = Math.max(40, resizingRef.current.startWidth + diff);
+      setColumnWidths(prev => {
+        const updated = { ...prev, [resizingRef.current!.colKey]: newWidth };
+        localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    };
+
+    const handleMouseUp = () => {
+      resizingRef.current = null;
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [columnWidths]);
 
   // Editable discount label
   const [discountLabel, setDiscountLabel] = useState('İskonto');
@@ -671,7 +740,54 @@ export function QuoteItemsTable({
 
       {/* ---- Table ---- */}
       <div className="overflow-x-auto rounded-lg border border-accent-200 bg-white">
-        <table className="min-w-full text-sm border-collapse">
+        <table className={cn("min-w-full text-sm border-separate border-spacing-0", isResizing && "select-none")} style={{ tableLayout: 'fixed' }}>
+          {/* Column width definitions for table-layout: fixed */}
+          <colgroup>
+            <col style={{ width: columnWidths.drag }} />
+            <col style={{ width: columnWidths.pozNo }} />
+            {columnVisibility.urun && (
+              <>
+                <col style={{ width: columnWidths.marka }} />
+                <col style={{ width: columnWidths.model }} />
+                <col style={{ width: columnWidths.kod }} />
+              </>
+            )}
+            <col style={{ width: columnWidths.aciklama }} />
+            <col style={{ width: columnWidths.miktar }} />
+            {columnVisibility.fiyat && (
+              <>
+                <col style={{ width: columnWidths.birimFiyat }} />
+                <col style={{ width: columnWidths.toplamFiyat }} />
+              </>
+            )}
+            {columnVisibility.fiyat && (
+              <>
+                <col style={{ width: columnWidths.katsayi }} />
+                <col style={{ width: columnWidths.listeFiyati }} />
+              </>
+            )}
+            {canViewCosts && columnVisibility.maliyet && (
+              <>
+                <col style={{ width: columnWidths.maliyet }} />
+                <col style={{ width: columnWidths.kar }} />
+                <col style={{ width: columnWidths.karPct }} />
+              </>
+            )}
+            <col style={{ width: columnWidths.pb }} />
+            {columnVisibility.gecmis && (
+              <>
+                <col style={{ width: columnWidths.sonTeklif }} />
+                <col style={{ width: columnWidths.delta1 }} />
+                <col style={{ width: columnWidths.siparis }} />
+                <col style={{ width: columnWidths.delta2 }} />
+                <col style={{ width: columnWidths.enYuksek }} />
+                <col style={{ width: columnWidths.delta3 }} />
+                <col style={{ width: columnWidths.enDusuk }} />
+                <col style={{ width: columnWidths.delta4 }} />
+              </>
+            )}
+            <col style={{ width: columnWidths.delete }} />
+          </colgroup>
           {/* ---- Three-row sticky header ---- */}
           <thead className="sticky top-0 z-20">
             {/* Group header row */}
@@ -715,61 +831,127 @@ export function QuoteItemsTable({
 
             {/* Individual column header row */}
             <tr className="bg-accent-800 text-white text-xs uppercase tracking-wider">
-              {/* Drag handle */}
-              <th className="w-8 px-1 py-2" />
-              <th className="px-2 py-2 text-center whitespace-nowrap">Poz No</th>
+              {/* Drag handle — no resize */}
+              <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.drag }} />
+              <th className="px-2 py-2 text-center whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.pozNo }}>
+                Poz No
+                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'pozNo')} />
+              </th>
 
               {columnVisibility.urun && (
                 <>
-                  <th className="px-2 py-2 text-left whitespace-nowrap">Marka</th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap">Model</th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap">Kod</th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.marka }}>
+                    Marka
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'marka')} />
+                  </th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.model }}>
+                    Model
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'model')} />
+                  </th>
+                  <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.kod }}>
+                    Kod
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'kod')} />
+                  </th>
                 </>
               )}
 
-              <th className="px-2 py-2 text-left whitespace-nowrap">Açıklama</th>
-              <th className="px-2 py-2 text-right whitespace-nowrap">Miktar</th>
+              <th className="px-2 py-2 text-left whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.aciklama }}>
+                Açıklama
+                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'aciklama')} />
+              </th>
+              <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.miktar }}>
+                Miktar
+                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'miktar')} />
+              </th>
 
               {/* Teklif Satış Fiyatları: Birim Fiyat, Toplam Fiyat */}
               {columnVisibility.fiyat && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Birim Fiyat</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Toplam Fiyat</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.birimFiyat }}>
+                    Birim Fiyat
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'birimFiyat')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.toplamFiyat }}>
+                    Toplam Fiyat
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'toplamFiyat')} />
+                  </th>
                 </>
               )}
               {/* Teklif Hazırlama: Katsayı, Liste Fiyatı */}
               {columnVisibility.fiyat && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Katsayı</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Liste Fiyatı</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.katsayi }}>
+                    Katsayı
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'katsayi')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.listeFiyati }}>
+                    Liste Fiyatı
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'listeFiyati')} />
+                  </th>
                 </>
               )}
 
               {canViewCosts && columnVisibility.maliyet && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Maliyet</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Kar</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Kar %</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.maliyet }}>
+                    Maliyet
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'maliyet')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.kar }}>
+                    Kar
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'kar')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.karPct }}>
+                    Kar %
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'karPct')} />
+                  </th>
                 </>
               )}
 
-              <th className="px-1 py-2 text-center whitespace-nowrap">PB</th>
+              <th className="px-1 py-2 text-center whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.pb }}>
+                PB
+                <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'pb')} />
+              </th>
 
               {columnVisibility.gecmis && (
                 <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Son Teklif</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">Sipariş</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">En Yüksek</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap">En Düşük</th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap">Δ%</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.sonTeklif }}>
+                    Son Teklif
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'sonTeklif')} />
+                  </th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta1 }}>
+                    Δ%
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta1')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.siparis }}>
+                    Sipariş
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'siparis')} />
+                  </th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta2 }}>
+                    Δ%
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta2')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.enYuksek }}>
+                    En Yüksek
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'enYuksek')} />
+                  </th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta3 }}>
+                    Δ%
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta3')} />
+                  </th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.enDusuk }}>
+                    En Düşük
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'enDusuk')} />
+                  </th>
+                  <th className="px-1 py-2 text-right whitespace-nowrap relative overflow-hidden" style={{ width: columnWidths.delta4 }}>
+                    Δ%
+                    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 z-10 opacity-0 hover:opacity-100 transition-opacity" onMouseDown={(e) => handleResizeStart(e, 'delta4')} />
+                  </th>
                 </>
               )}
 
-              {/* Delete col */}
-              <th className="w-10 px-1 py-2" />
+              {/* Delete col — no resize */}
+              <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.delete }} />
             </tr>
           </thead>
 
