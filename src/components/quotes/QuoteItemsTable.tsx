@@ -136,28 +136,27 @@ export function QuoteItemsTable({
     }
   });
   const [isResizing, setIsResizing] = useState(false);
-  const resizingRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+  const columnWidthsRef = useRef(columnWidths);
+  columnWidthsRef.current = columnWidths;
 
   const handleResizeStart = useCallback((e: React.MouseEvent, colKey: string) => {
     e.preventDefault();
     e.stopPropagation();
-    resizingRef.current = { colKey, startX: e.clientX, startWidth: columnWidths[colKey] };
+    const startX = e.clientX;
+    const startWidth = columnWidthsRef.current[colKey] || DEFAULT_COLUMN_WIDTHS[colKey] || 80;
     setIsResizing(true);
 
     const handleMouseMove = (ev: MouseEvent) => {
-      const ref = resizingRef.current;
-      if (!ref) return;
-      const diff = ev.clientX - ref.startX;
-      const newWidth = Math.max(40, ref.startWidth + diff);
+      const diff = ev.clientX - startX;
+      const newWidth = Math.max(40, startWidth + diff);
       setColumnWidths(prev => {
-        const updated = { ...prev, [ref.colKey]: newWidth };
-        localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(updated));
+        const updated = { ...prev, [colKey]: newWidth };
+        try { localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(updated)); } catch {}
         return updated;
       });
     };
 
     const handleMouseUp = () => {
-      resizingRef.current = null;
       setIsResizing(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -165,7 +164,7 @@ export function QuoteItemsTable({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [columnWidths]);
+  }, []);
 
   // Editable discount label
   const [discountLabel, setDiscountLabel] = useState('İskonto');
