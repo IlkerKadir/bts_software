@@ -61,6 +61,7 @@ export const quoteItemUpdateSchema = quoteItemSchema.extend({
   totalPrice: z.number().optional(),
   parentItemId: z.string().nullish(),
   costPrice: z.number().nullish(),
+  serviceMeta: z.any().nullish(),
 });
 
 export const bulkQuoteItemUpdateSchema = z.object({
@@ -72,6 +73,7 @@ export const languageEnum = z.enum(['TR', 'EN']);
 export const quoteUpdateSchema = z.object({
   companyId: z.string().optional(),
   projectId: z.string().nullable().optional(),
+  quoteNumber: z.string().max(50).optional(),
   refNo: z.string().max(50).nullable().optional(),
   subject: z.string().optional(),
   description: z.string().nullable().optional(),

@@ -45,6 +45,7 @@ export interface QuoteItemData {
   minKatsayi?: number | null;
   maxKatsayi?: number | null;
   subRows?: QuoteItemData[];
+  customPozNo?: string | null;
 }
 
 export interface PriceHistoryStats {
@@ -63,8 +64,9 @@ export interface ColumnVisibility {
 
 export interface QuoteItemRowProps {
   item: QuoteItemData;
-  pozNo: number | null;
+  pozNo: string | null;
   currency: string;
+  overallDiscountPct?: number;
   canViewCosts: boolean;
   canOverrideKatsayi?: boolean;
   isDragging?: boolean;
@@ -124,6 +126,41 @@ interface EditableCellProps {
   onChange: (value: string | number) => void;
   displayValue?: string;
   readOnly?: boolean;
+}
+
+function PozNoInput({ value, onCommit, fallback }: { value: string; onCommit: (val: string) => void; fallback: string }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          const trimmed = draft.trim();
+          onCommit(trimmed);
+          if (!trimmed) setDraft(fallback);
+        }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        className="w-full max-w-[3rem] text-center text-sm bg-transparent border-0 border-b border-blue-400 focus:outline-none px-0 py-0"
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={() => { setDraft(value); setEditing(true); }}
+      className="cursor-text w-full max-w-[3rem] inline-block text-center text-sm hover:bg-accent-100 rounded px-0.5"
+    >
+      {value || fallback}
+    </span>
+  );
 }
 
 function EditableCell({
@@ -244,6 +281,7 @@ export function QuoteItemRow({
   item,
   pozNo,
   currency,
+  overallDiscountPct = 0,
   canViewCosts,
   canOverrideKatsayi,
   isDragging = false,
@@ -465,11 +503,26 @@ export function QuoteItemRow({
               className="font-bold text-right"
             />
           </td>
-          {columnVisibility.fiyat && (
-            <td className="border border-accent-200 bg-accent-100 px-2 py-2 text-right tabular-nums font-bold text-accent-900 whitespace-nowrap">
-              {formatPrice(subtotalValue ?? 0, currency)}
-            </td>
-          )}
+          {columnVisibility.fiyat && (() => {
+            const sv = subtotalValue ?? 0;
+            const afterDisc = overallDiscountPct > 0 ? sv * (1 - overallDiscountPct / 100) : sv;
+            return (
+              <td className="border border-accent-200 bg-accent-100 px-2 py-2 text-right tabular-nums font-bold text-accent-900 whitespace-nowrap">
+                {overallDiscountPct > 0 ? (
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs text-accent-400 line-through font-normal">
+                      {formatPrice(sv, currency)}
+                    </span>
+                    <span className="text-green-700">
+                      {formatPrice(afterDisc, currency)}
+                    </span>
+                  </div>
+                ) : (
+                  formatPrice(sv, currency)
+                )}
+              </td>
+            );
+          })()}
           {subtotalTrailingSpan > 0 && (
             <td colSpan={subtotalTrailingSpan} className="border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
               <button
@@ -525,11 +578,15 @@ export function QuoteItemRow({
           )}
         </td>
 
-        {/* POZ NO - sticky */}
-        <td className="border border-accent-200 px-2 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap">
-          <span className="flex items-center justify-center gap-1">
-            {isSet && <Package className="h-3 w-3 text-accent-500" />}
-            {pozNo ?? '-'}
+        {/* POZ NO - editable */}
+        <td className="border border-accent-200 px-1 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap">
+          <span className="flex items-center justify-center gap-0.5">
+            {isSet && <Package className="h-3 w-3 text-accent-500 shrink-0" />}
+            <PozNoInput
+              value={item.customPozNo ?? pozNo ?? ''}
+              onCommit={(val) => onUpdate({ customPozNo: val || null })}
+              fallback={pozNo ?? ''}
+            />
           </span>
         </td>
 
@@ -650,22 +707,41 @@ export function QuoteItemRow({
         )}
 
         {/* TOPLAM FIYAT (Teklif Satış Fiyatları group) */}
-        {columnVisibility.fiyat && (
-          <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
-            {discPct > 0 ? (
-              <div className="flex flex-col items-end">
-                <span className="text-xs text-accent-400 line-through">
-                  {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
-                </span>
-                <span className="text-green-700">
-                  {formatPrice(Number(item.totalPrice), currency)}
-                </span>
-              </div>
-            ) : (
-              formatPrice(Number(item.totalPrice), currency)
-            )}
-          </td>
-        )}
+        {columnVisibility.fiyat && (() => {
+          const itemTotal = Number(item.totalPrice);
+          const afterOverall = overallDiscountPct > 0 ? itemTotal * (1 - overallDiscountPct / 100) : itemTotal;
+          const showItemDisc = discPct > 0;
+          const showOverallDisc = overallDiscountPct > 0;
+          return (
+            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
+              {(showItemDisc || showOverallDisc) ? (
+                <div className="flex flex-col items-end">
+                  {showItemDisc && (
+                    <span className="text-xs text-accent-400 line-through">
+                      {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
+                    </span>
+                  )}
+                  {showOverallDisc ? (
+                    <>
+                      <span className={showItemDisc ? 'text-xs text-accent-400 line-through' : 'text-xs text-accent-400 line-through'}>
+                        {formatPrice(itemTotal, currency)}
+                      </span>
+                      <span className="text-green-700">
+                        {formatPrice(afterOverall, currency)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-green-700">
+                      {formatPrice(itemTotal, currency)}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                formatPrice(itemTotal, currency)
+              )}
+            </td>
+          );
+        })()}
 
         {/* KATSAYI + LISTE FIYATI (Teklif Hazırlama group) */}
         {columnVisibility.fiyat && (

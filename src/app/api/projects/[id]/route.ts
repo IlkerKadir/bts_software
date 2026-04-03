@@ -20,6 +20,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: { id },
       include: {
         client: { select: { id: true, name: true } },
+        visibleTo: { select: { userId: true } },
         quotes: {
           select: {
             id: true,
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             grandTotal: true,
             currency: true,
             createdAt: true,
+            createdById: true,
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -39,6 +41,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!project) {
       return NextResponse.json({ error: 'Proje bulunamadı' }, { status: 404 });
+    }
+
+    // Visibility check
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!isManager) {
+      const hasOwnQuote = project.quotes.some(q => q.createdById === user.id);
+      const isEveryone = project.visibility === 'EVERYONE';
+      const isSpecific = project.visibility === 'SPECIFIC_USERS' && project.visibleTo.some(a => a.userId === user.id);
+      if (!hasOwnQuote && !isEveryone && !isSpecific) {
+        return NextResponse.json({ error: 'Bu projeyi görüntüleme yetkiniz bulunmamaktadır' }, { status: 403 });
+      }
     }
 
     return NextResponse.json({ project });

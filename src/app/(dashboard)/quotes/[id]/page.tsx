@@ -860,23 +860,13 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   </tr>
                 )}
 
-                {/* KDV */}
-                <tr>
-                  <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
-                    KDV
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-accent-800 whitespace-nowrap">
-                    {formatPrice(summary.vatTotal)}
-                  </td>
-                </tr>
-
                 {/* GENEL TOPLAM */}
                 <tr className="border-t-2 border-accent-400">
                   <td colSpan={5} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
                     GENEL TOPLAM
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-base font-bold text-accent-900 whitespace-nowrap">
-                    {formatPrice(summary.grandTotal)}
+                    {formatPrice(summary.subtotal - summary.discountTotal)}
                   </td>
                 </tr>
 
@@ -885,7 +875,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   <>
                     <tr className="border-t-2 border-accent-300">
                       <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-600">
-                        Toplam Maliyet (KDV Hariç)
+                        Toplam Maliyet
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-accent-700 whitespace-nowrap">
                         {formatPrice(Number(profitSummary.totalCost))}
@@ -893,7 +883,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     </tr>
                     <tr>
                       <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-600">
-                        Toplam Kar (KDV Hariç)
+                        Toplam Kar
                       </td>
                       <td
                         className={cn(
@@ -952,7 +942,20 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     <span className="inline-block text-xs font-medium text-primary-500 bg-primary-50 border border-primary-200 px-2 py-0.5 rounded-full mb-1.5">
                       {TERM_CATEGORY_LABELS[term.category] || term.category}
                     </span>
-                    <p className="text-sm text-primary-800 whitespace-pre-wrap leading-relaxed">{term.value}</p>
+                    {term.category === 'uretici_firmalar' ? (() => {
+                      try {
+                        const parsed = JSON.parse(term.value) as Record<string, string[]>;
+                        return Object.entries(parsed).map(([brand, systems]) => (
+                          <p key={brand} className="text-sm text-primary-800 leading-relaxed">
+                            {systems.length > 0 ? `${brand} - ${systems.join(', ')}` : brand}
+                          </p>
+                        ));
+                      } catch {
+                        return <p className="text-sm text-primary-800 whitespace-pre-wrap leading-relaxed">{term.value}</p>;
+                      }
+                    })() : (
+                      <p className="text-sm text-primary-800 whitespace-pre-wrap leading-relaxed">{term.value}</p>
+                    )}
                   </div>
                 ))}
             </div>

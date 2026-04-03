@@ -1,78 +1,104 @@
 /**
  * Quote number generation and parsing utilities
- * Format: BTS-YYYY-NNNN
- * Example: BTS-2025-0042
+ * Format: {INITIALS}{NNNN}-{SYSTEM}.{REVISION}
+ * Example: SA0051-YAS.2, CC0004-CCTV
  */
-
-const QUOTE_PREFIX = 'BTS';
 
 export interface ParsedQuoteNumber {
-  prefix: string;
-  year: number;
+  initials: string;
   sequence: number;
+  systemCode: string;
+  revision: number;
+}
+
+/** Extract initials from a full name: "Selale Acar" → "SA" */
+export function getInitials(fullName: string): string {
+  return fullName
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('');
 }
 
 /**
- * Generate a quote number for the current year
- * @param sequence - The sequence number for this year (1-based)
- * @returns Quote number in format BTS-YYYY-NNNN
+ * Generate a quote number
+ * @param initials - User initials (e.g. "SA")
+ * @param sequence - The sequence number for this user (1-based)
+ * @param systemCode - System code (e.g. "YAS"), optional at creation
+ * @param revision - Revision number (0 = first version)
  */
-export function generateQuoteNumber(sequence: number): string {
-  const year = new Date().getFullYear();
+export function generateQuoteNumber(
+  initials: string,
+  sequence: number,
+  systemCode?: string,
+  revision?: number,
+): string {
   const seq = String(sequence).padStart(4, '0');
-
-  return `${QUOTE_PREFIX}-${year}-${seq}`;
-}
-
-/**
- * Generate the prefix for the current year
- * Used to query for existing quotes in the same year
- */
-export function getCurrentYearPrefix(): string {
-  const year = new Date().getFullYear();
-  return `${QUOTE_PREFIX}-${year}-`;
+  let result = `${initials}${seq}`;
+  if (systemCode) {
+    result += `-${systemCode}`;
+    if (revision && revision > 0) {
+      result += `.${revision}`;
+    }
+  }
+  return result;
 }
 
 /**
  * Parse a quote number to extract its components
- * @param quoteNumber - Quote number to parse
- * @returns Parsed components or null if invalid format
+ * Supports: SA0051-YAS.2, CC0004-CCTV, SA0051, BTS-2026-0001
  */
 export function parseQuoteNumber(quoteNumber: string): ParsedQuoteNumber | null {
   if (!quoteNumber) return null;
 
-  // Match format: BTS-YYYY-NNNN (where NNNN can be 4+ digits)
-  const match = quoteNumber.match(/^(BTS)-(\d{4})-(\d+)$/);
+  // New format: {INITIALS}{NNNN}-{SYSTEM}.{REV}
+  const newMatch = quoteNumber.match(/^([A-ZÇĞİÖŞÜ]+)(\d+)(?:-([A-Z0-9]+)(?:\.(\d+))?)?$/i);
+  if (newMatch) {
+    return {
+      initials: newMatch[1].toUpperCase(),
+      sequence: parseInt(newMatch[2], 10),
+      systemCode: newMatch[3]?.toUpperCase() || '',
+      revision: newMatch[4] ? parseInt(newMatch[4], 10) : 0,
+    };
+  }
 
-  if (!match) return null;
+  // Legacy format: BTS-YYYY-NNNN
+  const legacyMatch = quoteNumber.match(/^BTS-(\d{4})-(\d+)$/);
+  if (legacyMatch) {
+    return {
+      initials: 'BTS',
+      sequence: parseInt(legacyMatch[2], 10),
+      systemCode: '',
+      revision: 0,
+    };
+  }
 
-  const [, prefix, yearStr, seqStr] = match;
-
-  return {
-    prefix,
-    year: parseInt(yearStr, 10),
-    sequence: parseInt(seqStr, 10),
-  };
+  return null;
 }
 
 /**
- * Get the next sequence number for the current year
- * This is used by the API to determine the next quote number
- * @param lastQuoteNumber - The last quote number created this year, or null
- * @returns The next sequence number (1 if no quotes this year)
+ * Get the prefix for finding the last sequence for a given user's initials
+ */
+export function getInitialsPrefix(initials: string): string {
+  return initials.toUpperCase();
+}
+
+/**
+ * Legacy: get BTS-YYYY- prefix for backward compatibility
+ */
+export function getCurrentYearPrefix(): string {
+  const year = new Date().getFullYear();
+  return `BTS-${year}-`;
+}
+
+/**
+ * Get the next sequence number for a user based on their last quote
  */
 export function getNextSequence(lastQuoteNumber: string | null): number {
   if (!lastQuoteNumber) return 1;
 
   const parsed = parseQuoteNumber(lastQuoteNumber);
   if (!parsed) return 1;
-
-  const currentYear = new Date().getFullYear();
-
-  // If last quote is from a different year, start over
-  if (parsed.year !== currentYear) {
-    return 1;
-  }
 
   return parsed.sequence + 1;
 }

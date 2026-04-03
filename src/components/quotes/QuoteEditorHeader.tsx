@@ -26,6 +26,7 @@ import { Button, Input, Select, Card, Badge } from '@/components/ui';
 import { ExchangeRateModal } from './ExchangeRateModal';
 import { PdfPreviewModal } from './PdfPreviewModal';
 import { RefNoBuilderModal } from './RefNoBuilderModal';
+import { TeklifNoBuilderModal } from './TeklifNoBuilderModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,8 @@ export interface QuoteEditorHeaderProps {
   onExchangeRateChange: (value: number) => void;
   onProtectionPctChange: (value: number) => void;
   onProtectionMapChange: (value: Record<string, number>) => void;
+  tcmbRateType?: 'forexSelling' | 'banknoteSelling';
+  onTcmbRateTypeChange?: (value: 'forexSelling' | 'banknoteSelling') => void;
   onExchangeRateApply?: (newRate: number, newProtectionPct: number, newProtectionMap: Record<string, number>, rateMatrix: Record<string, Record<string, number>>) => void;
   onLanguageChange: (value: string) => void;
   onValidityDaysChange: (value: number) => void;
@@ -84,6 +87,7 @@ export interface QuoteEditorHeaderProps {
   onApprove?: () => void;
   onReject?: () => void;
   onExport?: () => void;
+  onQuoteNumberChange?: (value: string) => void;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -126,6 +130,8 @@ export function QuoteEditorHeader({
   onExchangeRateChange,
   onProtectionPctChange,
   onProtectionMapChange,
+  tcmbRateType,
+  onTcmbRateTypeChange,
   onExchangeRateApply,
   onLanguageChange,
   onValidityDaysChange,
@@ -134,6 +140,7 @@ export function QuoteEditorHeader({
   onApprove,
   onReject,
   onExport,
+  onQuoteNumberChange,
 }: QuoteEditorHeaderProps) {
   // Allow editing for approvers when status is ONAY_BEKLIYOR
   const router = useRouter();
@@ -153,6 +160,9 @@ export function QuoteEditorHeader({
 
   // RefNo builder modal state
   const [showRefNoBuilder, setShowRefNoBuilder] = useState(false);
+
+  // Teklif No builder modal state
+  const [showTeklifNoBuilder, setShowTeklifNoBuilder] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -308,9 +318,14 @@ export function QuoteEditorHeader({
 
         {/* Right: Quote # / Status / Date */}
         <div className="flex items-center gap-4 shrink-0">
-          <span className="text-sm font-bold text-primary-900 tracking-wide">
+          <button
+            type="button"
+            onClick={() => setShowTeklifNoBuilder(true)}
+            className="text-sm font-bold text-primary-900 tracking-wide hover:text-accent-700 hover:underline cursor-pointer transition-colors"
+            title="Teklif No düzenle"
+          >
             {quoteNumber}
-          </span>
+          </button>
 
           <Badge status={status as QuoteStatus} />
 
@@ -584,10 +599,12 @@ export function QuoteEditorHeader({
         currentRate={exchangeRate}
         currentProtectionPct={protectionPct}
         currentProtectionMap={protectionMap}
-        onApply={(newRate, newProtectionPct, newProtectionMap, rateMatrix) => {
+        currentRateType={tcmbRateType}
+        onApply={(newRate, newProtectionPct, newProtectionMap, rateMatrix, rateType) => {
           onExchangeRateChange(newRate);
           onProtectionPctChange(newProtectionPct);
           onProtectionMapChange(newProtectionMap);
+          onTcmbRateTypeChange?.(rateType);
           onExchangeRateApply?.(newRate, newProtectionPct, newProtectionMap, rateMatrix);
         }}
       />
@@ -607,6 +624,15 @@ export function QuoteEditorHeader({
         userFullName={userFullName || ''}
         projectName={currentProjectName !== 'Proje Yok' ? currentProjectName : undefined}
         currentRefNo={refNo}
+      />
+
+      {/* Teklif No Builder Modal */}
+      <TeklifNoBuilderModal
+        isOpen={showTeklifNoBuilder}
+        onClose={() => setShowTeklifNoBuilder(false)}
+        onConfirm={(newNo) => onQuoteNumberChange?.(newNo)}
+        currentQuoteNumber={quoteNumber}
+        userFullName={userFullName}
       />
     </Card>
   );

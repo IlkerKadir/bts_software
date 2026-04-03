@@ -43,6 +43,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Visibility filtering: managers see all projects, others see based on visibility
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!isManager) {
+      const visibilityOR: Prisma.ProjectWhereInput[] = [
+        // Projects with quotes the user created
+        { quotes: { some: { createdById: user.id } } },
+        // Projects visible to everyone
+        { visibility: 'EVERYONE' },
+        // Projects where user has explicit access
+        { visibility: 'SPECIFIC_USERS', visibleTo: { some: { userId: user.id } } },
+      ];
+      if (where.OR) {
+        const searchOR = where.OR;
+        delete where.OR;
+        where.AND = [{ OR: searchOR }, { OR: visibilityOR }];
+      } else {
+        where.OR = visibilityOR;
+      }
+    }
+
     const [projects, total] = await Promise.all([
       db.project.findMany({
         where,
@@ -87,15 +107,15 @@ export async function POST(request: NextRequest) {
 
     // Transform date strings to Date objects if provided
     // Convert empty string clientId to null
-    const createData = {
-      ...validatedData,
-      clientId: validatedData.clientId || null,
-      estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
-      estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
-    };
-
     const project = await db.project.create({
-      data: createData,
+      data: {
+        name: validatedData.name,
+        status: validatedData.status as any,
+        clientId: validatedData.clientId || null,
+        estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
+        estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
+        notes: validatedData.notes || null,
+      },
       include: {
         client: { select: { id: true, name: true } },
       },

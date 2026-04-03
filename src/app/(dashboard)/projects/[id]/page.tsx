@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Edit,
+  Eye,
   Building2,
   FileText,
   Folder,
@@ -25,6 +26,7 @@ import {
   Hourglass,
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Badge, Spinner, Modal, Input, Select } from '@/components/ui';
+import { ProjectVisibility } from '@/components/projects/ProjectVisibility';
 import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { formatCurrency, formatDate, formatFileSize, formatDateTime } from '@/lib/utils/format';
 import { quoteStatusLabels } from '@/lib/validations/quote';
@@ -913,6 +915,26 @@ export default function ProjectDetailPage({ params }: PageProps) {
               </p>
             )}
           </div>
+        </CardBody>
+      </Card>
+
+      {/* ================================================================== */}
+      {/* PROJECT VISIBILITY                                                   */}
+      {/* ================================================================== */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-accent-100">
+              <Eye className="w-5 h-5 text-accent-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-primary-900">Proje Görünürlüğü</h3>
+              <p className="text-xs text-primary-500">Bu projedeki teklifleri kimlerin görebileceğini belirleyin</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <ProjectVisibility projectId={id} />
         </CardBody>
       </Card>
 

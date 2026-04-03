@@ -3,7 +3,8 @@ import { db } from '@/lib/db';
 import { quoteQuerySchema, createQuoteSchema } from '@/lib/validations/quote';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
-import { generateQuoteNumber, getCurrentYearPrefix, getNextSequence } from '@/lib/quote-number';
+import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } from '@/lib/quote-number';
+import { fetchTcmbDirectRates } from '@/lib/services/tcmb-service';
 
 /**
  * Extract the base quote number by splitting on `-R`.
@@ -259,43 +260,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get current exchange rate (outside transaction since it's read-only)
-    const exchangeRate = await db.exchangeRate.findFirst({
-      where: {
-        fromCurrency: data.currency,
-        toCurrency: 'TRY',
-      },
-      orderBy: { fetchedAt: 'desc' },
-    });
-
-    // Determine exchange rate
+    // Determine exchange rate — prefer TCMB direct forexSelling rate
     let resolvedExchangeRate: number;
     if (data.currency === 'TRY') {
       resolvedExchangeRate = 1.0;
-    } else if (exchangeRate?.rate) {
-      resolvedExchangeRate = Number(exchangeRate.rate);
     } else {
-      return NextResponse.json(
-        { error: 'Döviz kuru bulunamadı. Lütfen önce kurları güncelleyin.' },
-        { status: 400 }
-      );
+      // Try TCMB direct rates first (forexSelling = Döviz Satış)
+      let found = false;
+      try {
+        const tcmbData = await fetchTcmbDirectRates();
+        const match = tcmbData?.rates.find((r) => r.currency === data.currency);
+        if (match && match.forexSelling > 0) {
+          resolvedExchangeRate = match.forexSelling;
+          found = true;
+        }
+      } catch { /* fall through to DB lookup */ }
+
+      // Fallback to DB-stored rate
+      if (!found) {
+        const exchangeRate = await db.exchangeRate.findFirst({
+          where: { fromCurrency: data.currency, toCurrency: 'TRY' },
+          orderBy: { fetchedAt: 'desc' },
+        });
+        if (exchangeRate?.rate) {
+          resolvedExchangeRate = Number(exchangeRate.rate);
+        } else {
+          return NextResponse.json(
+            { error: 'Döviz kuru bulunamadı. Lütfen önce kurları güncelleyin.' },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Wrap quote number generation and creation in a transaction to prevent race conditions
     const quote = await db.$transaction(async (tx) => {
-      const prefix = getCurrentYearPrefix();
+      const initials = getInitials(user.fullName);
+      const prefix = getInitialsPrefix(initials);
 
+      // Find the last quote by this user (by initials prefix) to get next sequence
       const lastQuote = await tx.quote.findFirst({
         where: {
           quoteNumber: { startsWith: prefix },
-          // Exclude revision numbers (e.g. BTS-2026-0010-R2) so we find the true last sequence
-          NOT: { quoteNumber: { contains: '-R' } },
         },
         orderBy: { quoteNumber: 'desc' },
       });
 
       const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
-      const quoteNumber = generateQuoteNumber(nextSequence);
+      const quoteNumber = generateQuoteNumber(initials, nextSequence);
 
       return await tx.quote.create({
         data: {

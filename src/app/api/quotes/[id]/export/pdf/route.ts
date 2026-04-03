@@ -75,6 +75,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       // Extract headerColor from serviceMeta JSON if present
       const meta = item.serviceMeta as Record<string, unknown> | null;
       const headerColor = meta && typeof meta.headerColor === 'string' ? meta.headerColor : undefined;
+      const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
 
       return {
         itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL',
@@ -88,6 +89,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         totalPrice: Number(item.totalPrice),
         vatRate: Number(item.vatRate),
         headerColor,
+        customPozNo,
       };
     };
 
@@ -138,6 +140,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         sortOrder: term.sortOrder,
         highlight: term.highlight,
       })),
+      discountPct: Number(quote.discountPct),
+      discountLabel: (() => {
+        const pm = quote.protectionMap as Record<string, unknown> | null;
+        return typeof pm?.__discountLabel === 'string' ? pm.__discountLabel : 'İskonto';
+      })(),
       headerBase64,
       logoBase64,
     };

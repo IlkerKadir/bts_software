@@ -123,7 +123,7 @@ export function ProductSearchCard({
             {formatCurrency(product.listPrice, product.currency)}
           </p>
           <p className="text-[10px] text-primary-400">
-            {product.unit}
+            {product.currency}
           </p>
         </div>
 

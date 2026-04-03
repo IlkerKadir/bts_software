@@ -496,7 +496,7 @@ export class ExcelService {
         // Merge columns A-E (Poz No through Birim Fiyat) for the label
         sheet.mergeCells(currentRow, 1, currentRow, 5);
         const labelCell = sheet.getCell(currentRow, 1);
-        labelCell.value = 'Ara Toplam';
+        labelCell.value = item.description || 'Ara Toplam';
         labelCell.font = { bold: true, size: 8 };
         labelCell.alignment = { horizontal: 'right', vertical: 'middle' };
         labelCell.border = noBorder();
@@ -725,16 +725,27 @@ export class ExcelService {
         valCell.alignment = { wrapText: true, vertical: 'top' };
         currentRow++;
       } else if (key === 'uretici_firmalar') {
-        // uretici_firmalar: each term on its own line
+        // uretici_firmalar: parse JSON brand→systems map, render as "BRAND - SYSTEM1, SYSTEM2" per line
         terms
           .sort((a, b) => a.sortOrder - b.sortOrder)
           .forEach((term) => {
-            sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS);
-            const valCell = sheet.getCell(currentRow, 1);
-            valCell.value = `    ${term.value}`;
-            valCell.font = { size: 8 };
-            valCell.alignment = { wrapText: true, vertical: 'top' };
-            currentRow++;
+            let lines: string[] = [];
+            try {
+              const parsed = JSON.parse(term.value) as Record<string, string[]>;
+              for (const [brand, systems] of Object.entries(parsed)) {
+                lines.push(systems.length > 0 ? `${brand} - ${systems.join(', ')}` : brand);
+              }
+            } catch {
+              lines = [term.value];
+            }
+            for (const line of lines) {
+              sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS);
+              const valCell = sheet.getCell(currentRow, 1);
+              valCell.value = `    ${line}`;
+              valCell.font = { size: 8 };
+              valCell.alignment = { wrapText: true, vertical: 'top' };
+              currentRow++;
+            }
           });
       } else {
         // Single-value categories: each value as a row

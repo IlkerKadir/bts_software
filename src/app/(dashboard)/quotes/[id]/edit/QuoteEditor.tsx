@@ -72,9 +72,11 @@ interface HeaderFields {
   exchangeRate: number;
   protectionPct: number;
   protectionMap: Record<string, number>;
+  tcmbRateType: 'forexSelling' | 'banknoteSelling';
   language: string;
   validityDays: number;
   discountPct: number;
+  discountLabel: string;
   notes: string;
   projectId: string | null;
 }
@@ -158,6 +160,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     minKatsayi: item.product?.minKatsayi != null ? Number(item.product.minKatsayi) : null,
     maxKatsayi: item.product?.maxKatsayi != null ? Number(item.product.maxKatsayi) : null,
     subRows: item.subRows?.map(mapApiItemToLocal) ?? undefined,
+    customPozNo: (item.serviceMeta as Record<string, unknown> | null)?.customPozNo as string | null ?? null,
   };
 }
 
@@ -194,9 +197,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     exchangeRate: 1,
     protectionPct: 0,
     protectionMap: {},
+    tcmbRateType: 'forexSelling',
     language: 'TR',
     validityDays: 30,
     discountPct: 0,
+    discountLabel: 'İskonto',
     notes: '',
     projectId: null,
   });
@@ -220,10 +225,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     setError(null);
 
     try {
-      const [quoteRes, sessionRes, ratesRes] = await Promise.all([
+      const [quoteRes, sessionRes, ratesRes, tcmbRes] = await Promise.all([
         fetch(`/api/quotes/${quoteId}`),
         fetch('/api/auth/me'),
         fetch('/api/exchange-rates?latestOnly=true'),
+        fetch('/api/exchange-rates/tcmb'),
       ]);
 
       if (!quoteRes.ok) {
@@ -236,20 +242,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       const quoteData = await quoteRes.json();
       const sessionData = await sessionRes.json();
 
-      // Build exchange rate matrix (fromCurrency -> toCurrency -> rate)
-      if (ratesRes.ok) {
-        const ratesData = await ratesRes.json();
-        const matrix: Record<string, Record<string, number>> = {};
-        for (const r of ratesData.rates || []) {
-          const from = r.fromCurrency as string;
-          const to = r.toCurrency as string;
-          const rate = Number(r.rate);
-          if (!matrix[from]) matrix[from] = {};
-          matrix[from][to] = rate;
-        }
-        setExchangeRates(matrix);
-      }
-
       const q: QuoteData = quoteData.quote;
       setQuote(q);
 
@@ -261,7 +253,48 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // Set user session
       setUser(sessionData.user);
 
-      // Initialize header fields
+      // Extract persisted meta fields from the protection map JSON
+      const rawMap = (q.protectionMap && typeof q.protectionMap === 'object') ? q.protectionMap as Record<string, unknown> : {};
+      const savedRateType = rawMap.__rateType === 'banknoteSelling' ? 'banknoteSelling' as const : 'forexSelling' as const;
+      const savedDiscountLabel = typeof rawMap.__discountLabel === 'string' ? rawMap.__discountLabel : 'İskonto';
+      const { __rateType: _rt, __discountLabel: _dl, ...cleanMap } = rawMap;
+
+      // Build exchange rate matrix — prefer TCMB direct rates using the persisted rate type
+      let matrixSet = false;
+      if (tcmbRes.ok) {
+        const tcmbData = await tcmbRes.json();
+        const tcmbRates = (tcmbData.rates || []) as Array<{ currency: string; forexSelling: number; banknoteSelling: number }>;
+        if (tcmbRates.length > 0) {
+          const matrix: Record<string, Record<string, number>> = {};
+          const toTry: Record<string, number> = { TRY: 1 };
+          for (const r of tcmbRates) {
+            const val = savedRateType === 'banknoteSelling' ? r.banknoteSelling : r.forexSelling;
+            if (val > 0) toTry[r.currency] = val;
+          }
+          const keys = Object.keys(toTry);
+          for (const from of keys) {
+            matrix[from] = {};
+            for (const to of keys) {
+              if (from !== to) matrix[from][to] = Math.round((toTry[from] / toTry[to]) * 1000000) / 1000000;
+            }
+          }
+          setExchangeRates(matrix);
+          matrixSet = true;
+        }
+      }
+      // Fallback to DB-stored rates if TCMB direct rates unavailable
+      if (!matrixSet && ratesRes.ok) {
+        const ratesData = await ratesRes.json();
+        const matrix: Record<string, Record<string, number>> = {};
+        for (const r of ratesData.rates || []) {
+          const from = r.fromCurrency as string;
+          const to = r.toCurrency as string;
+          const rate = Number(r.rate);
+          if (!matrix[from]) matrix[from] = {};
+          matrix[from][to] = rate;
+        }
+        setExchangeRates(matrix);
+      }
       const hf: HeaderFields = {
         refNo: q.refNo || '',
         subject: q.subject || '',
@@ -269,10 +302,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         currency: q.currency,
         exchangeRate: Number(q.exchangeRate),
         protectionPct: Number(q.protectionPct),
-        protectionMap: (q.protectionMap && typeof q.protectionMap === 'object') ? q.protectionMap as Record<string, number> : {},
+        protectionMap: cleanMap as Record<string, number>,
+        tcmbRateType: savedRateType,
         language: q.language,
         validityDays: q.validityDays,
         discountPct: Number(q.discountPct),
+        discountLabel: savedDiscountLabel,
         notes: q.notes || '',
         projectId: q.project?.id || null,
       };
@@ -308,9 +343,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       fields.exchangeRate !== saved.exchangeRate ||
       fields.protectionPct !== saved.protectionPct ||
       JSON.stringify(fields.protectionMap) !== JSON.stringify(saved.protectionMap) ||
+      fields.tcmbRateType !== saved.tcmbRateType ||
       fields.language !== saved.language ||
       fields.validityDays !== saved.validityDays ||
       fields.discountPct !== saved.discountPct ||
+      fields.discountLabel !== saved.discountLabel ||
       fields.notes !== saved.notes ||
       fields.projectId !== saved.projectId
     );
@@ -386,7 +423,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             currency: headerFields.currency,
             exchangeRate: headerFields.exchangeRate,
             protectionPct: headerFields.protectionPct,
-            protectionMap: headerFields.protectionMap,
+            protectionMap: { ...headerFields.protectionMap, __rateType: headerFields.tcmbRateType, __discountLabel: headerFields.discountLabel },
             language: headerFields.language,
             validityDays: headerFields.validityDays,
             discountPct: headerFields.discountPct,
@@ -430,6 +467,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           isManualPrice: item.isManualPrice || false,
           costPrice: item.costPrice ?? null,
           notes: item.notes || '',
+          serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
         }));
 
         if (bulkItems.length > 0) {
@@ -1124,6 +1162,76 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     }
   }, [quoteId, items.length]);
 
+  // ── Add custom sub-item to a SET ─────────────────────────────────────────
+
+  const handleAddCustomSubItem = useCallback(async (parentId: string) => {
+    const tempId = generateId();
+    // Insert after the last child of the parent SET
+    const parentIdx = items.findIndex((i) => i.id === parentId);
+    let insertIdx = parentIdx + 1;
+    while (insertIdx < items.length && items[insertIdx].parentItemId === parentId) {
+      insertIdx++;
+    }
+
+    const newItem: QuoteItemData = {
+      id: tempId,
+      itemType: 'CUSTOM',
+      sortOrder: insertIdx,
+      description: 'Serbest Kalem',
+      quantity: 1,
+      unit: 'Adet',
+      listPrice: 0,
+      katsayi: 1,
+      unitPrice: 0,
+      discountPct: 0,
+      vatRate: 20,
+      totalPrice: 0,
+      isManualPrice: false,
+      parentItemId: parentId,
+    };
+
+    setItems((prev) => {
+      const copy = [...prev];
+      copy.splice(insertIdx, 0, newItem);
+      return copy;
+    });
+
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: 'CUSTOM',
+          description: 'Serbest Kalem',
+          quantity: 1,
+          unit: 'Adet',
+          listPrice: 0,
+          katsayi: 1,
+          unitPrice: 0,
+          totalPrice: 0,
+          vatRate: 20,
+          discountPct: 0,
+          sortOrder: insertIdx,
+          isManualPrice: false,
+          parentItemId: parentId,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const serverItem = mapApiItemToLocal(data.item);
+        setItems((prev) =>
+          prev.map((item) => {
+            if (item.id !== tempId) return item;
+            return { ...item, ...serverItem, description: item.description };
+          })
+        );
+      }
+    } catch (err) {
+      console.error('Add custom sub-item error:', err);
+    }
+  }, [quoteId, items]);
+
   // ── Add subtotal row ────────────────────────────────────────────────────
 
   const handleAddSubtotal = useCallback(async () => {
@@ -1361,6 +1469,67 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Exchange Rate Apply handler ────────────────────────────────────────────
 
+  /** Recalculate all item prices for a given quote currency using the rate matrix + protection map */
+  const recalcItemPrices = useCallback(
+    (
+      items: QuoteItemData[],
+      quoteCurrency: string,
+      protectionMap: Record<string, number>,
+      rateMatrix: Record<string, Record<string, number>>,
+    ): QuoteItemData[] => {
+      let result = items.map((item) => {
+        // Skip non-priced items, SET parents, manual-priced, and items without product data
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') return item;
+        if (item.itemType === 'SET' && !item.parentItemId) return item;
+        if (item.isManualPrice) return item;
+        if (!item.productCurrency || item.productListPrice == null || item.productListPrice === 0) return item;
+
+        // Same currency → use original product price directly (no conversion)
+        if (item.productCurrency === quoteCurrency) {
+          const newListPrice = item.productListPrice;
+          const newUnitPrice = newListPrice * Number(item.katsayi);
+          const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+          const newCostPrice = item.productCostPrice ?? null;
+          return { ...item, listPrice: newListPrice, unitPrice: newUnitPrice, totalPrice: newTotalPrice, costPrice: newCostPrice };
+        }
+
+        // Different currency → convert using rate matrix + protection
+        const pk = [item.productCurrency, quoteCurrency].sort().join('/');
+        const protectionPct = protectionMap[pk] ?? 0;
+
+        let rate = rateMatrix[item.productCurrency]?.[quoteCurrency];
+        if (!rate) {
+          const reverseRate = rateMatrix[quoteCurrency]?.[item.productCurrency];
+          if (reverseRate && reverseRate !== 0) rate = 1 / reverseRate;
+        }
+        if (!rate) return item;
+
+        const newListPrice = item.productListPrice * rate * (1 + protectionPct / 100);
+        const newUnitPrice = newListPrice * Number(item.katsayi);
+        const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+
+        let newCostPrice = item.costPrice;
+        if (item.productCostPrice != null) {
+          newCostPrice = item.productCostPrice * rate * (1 + protectionPct / 100);
+        }
+
+        return { ...item, listPrice: newListPrice, unitPrice: newUnitPrice, totalPrice: newTotalPrice, costPrice: newCostPrice };
+      });
+
+      // Recalculate SET parents whose children may have changed
+      const affectedParentIds = new Set<string>();
+      for (const item of result) {
+        if (item.parentItemId) affectedParentIds.add(item.parentItemId);
+      }
+      for (const parentId of affectedParentIds) {
+        result = recalculateParentTotals(result, parentId);
+      }
+
+      return result;
+    },
+    []
+  );
+
   const handleExchangeRateApply = useCallback(
     (
       _newRate: number,
@@ -1370,50 +1539,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     ) => {
       const quoteCurrency = headerFields.currency;
 
-      setItems((prev) => {
-        let result = prev.map((item) => {
-          // Skip non-priced items, SET parents, manual-priced items, and items without product data
-          if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') return item;
-          if (item.itemType === 'SET' && !item.parentItemId) return item;
-          if (item.isManualPrice) return item;
-          if (!item.productCurrency || item.productListPrice == null || item.productListPrice === 0) return item;
-          if (item.productCurrency === quoteCurrency) return item;
-
-          // Re-convert from product's original price using fresh rateMatrix + protection
-          const pk = [item.productCurrency, quoteCurrency].sort().join('/');
-          const protectionPct = newProtectionMap[pk] ?? 0;
-
-          let rate = rateMatrix[item.productCurrency]?.[quoteCurrency];
-          if (!rate) {
-            const reverseRate = rateMatrix[quoteCurrency]?.[item.productCurrency];
-            if (reverseRate && reverseRate !== 0) rate = 1 / reverseRate;
-          }
-          if (!rate) return item;
-
-          const newListPrice = item.productListPrice * rate * (1 + protectionPct / 100);
-          const newUnitPrice = newListPrice * Number(item.katsayi);
-          const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
-
-          // Reconvert costPrice if available
-          let newCostPrice = item.costPrice;
-          if (item.productCostPrice != null) {
-            newCostPrice = item.productCostPrice * rate * (1 + protectionPct / 100);
-          }
-
-          return { ...item, listPrice: newListPrice, unitPrice: newUnitPrice, totalPrice: newTotalPrice, costPrice: newCostPrice };
-        });
-
-        // Recalculate SET parents whose children may have changed
-        const affectedParentIds = new Set<string>();
-        for (const item of result) {
-          if (item.parentItemId) affectedParentIds.add(item.parentItemId);
-        }
-        for (const parentId of affectedParentIds) {
-          result = recalculateParentTotals(result, parentId);
-        }
-
-        return result;
-      });
+      setItems((prev) => recalcItemPrices(prev, quoteCurrency, newProtectionMap, rateMatrix));
 
       // Update exchangeRates state so newly added products use fresh rates too
       setExchangeRates(rateMatrix);
@@ -1421,33 +1547,72 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       itemsDirtyRef.current = true;
       setHasChanges(true);
     },
-    [headerFields.currency]
+    [headerFields.currency, recalcItemPrices]
+  );
+
+  // ── Currency Change handler (recalculates all item prices) ────────────────
+
+  const handleCurrencyChange = useCallback(
+    (newCurrency: string) => {
+      const oldCurrency = headerFields.currency;
+      if (newCurrency === oldCurrency) return;
+
+      // Check if exchange rates are available for conversion
+      const hasRates = Object.keys(exchangeRates).length > 0;
+      if (!hasRates) {
+        setError('Döviz kuru bulunamadı — önce Döviz Kuru Yönetimi\'ni açarak TCMB kurlarını güncelleyin.');
+      }
+
+      // Update the header field first
+      updateHeaderField('currency', newCurrency);
+
+      // Recalculate all item prices for the new currency
+      setItems((prev) =>
+        recalcItemPrices(prev, newCurrency, headerFields.protectionMap, exchangeRates)
+      );
+
+      // Update the exchange rate header field to the new currency's TRY rate
+      const tryRate = exchangeRates[newCurrency]?.TRY;
+      if (tryRate) {
+        const protPct = headerFields.protectionMap[[newCurrency, 'TRY'].sort().join('/')] ?? 0;
+        updateHeaderField('exchangeRate', tryRate * (1 + protPct / 100));
+      }
+
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+    },
+    [headerFields.currency, headerFields.protectionMap, exchangeRates, updateHeaderField, recalcItemPrices]
   );
 
   // ── Ek Maliyet Apply handler ──────────────────────────────────────────────
 
+  // Track the last applied ek maliyet per-unit so we can subtract it on revert
+  const ekMaliyetPerUnitRef = useRef(0);
+
   const handleEkMaliyetApply = useCallback((totalAmount: number) => {
     // totalAmount is already in quote currency
-    // Always recalculate from base price (listPrice * katsayi) so edits/deletes are idempotent
-    const taseronItems = items.filter(i => i.brand === 'TAŞERON' && i.parentItemId);
+    const taseronItems = items.filter(i => i.brand === 'TAŞERON');
     const totalQty = taseronItems.reduce((s, i) => s + Number(i.quantity), 0);
 
-    // No TAŞERON items to distribute across — skip silently
     if (taseronItems.length === 0 || totalQty === 0) return;
 
-    const perUnit = totalAmount / totalQty;
+    const oldPerUnit = ekMaliyetPerUnitRef.current;
+    const newPerUnit = totalAmount / totalQty;
+    ekMaliyetPerUnitRef.current = newPerUnit;
 
     itemsDirtyRef.current = true;
     setItems(prev => {
       let result = prev.map(item => {
-        if (item.brand !== 'TAŞERON' || !item.parentItemId) return item;
-        const baseUnitPrice = Number(item.listPrice) * Number(item.katsayi);
-        const newUnitPrice = baseUnitPrice + perUnit;
+        if (item.brand !== 'TAŞERON') return item;
+        // Subtract old ek maliyet, add new one
+        const currentUnitPrice = Number(item.unitPrice);
+        const baseUnitPrice = currentUnitPrice - oldPerUnit;
+        const newUnitPrice = baseUnitPrice + newPerUnit;
         const newTotal = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
         return { ...item, unitPrice: newUnitPrice, totalPrice: newTotal };
       });
-      // Recalculate affected SET parents
-      const affectedParents = new Set(taseronItems.map(i => i.parentItemId!));
+      // Recalculate affected SET parents (only for sub-items)
+      const affectedParents = new Set(taseronItems.filter(i => i.parentItemId).map(i => i.parentItemId!));
       for (const parentId of affectedParents) {
         result = recalculateParentTotals(result, parentId);
       }
@@ -1559,10 +1724,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onRefNoChange={(v) => updateHeaderField('refNo', v)}
         onSystemBrandChange={(v) => updateHeaderField('subject', v)}
         onDescriptionChange={(v) => updateHeaderField('description', v)}
-        onCurrencyChange={(v) => updateHeaderField('currency', v)}
+        onCurrencyChange={handleCurrencyChange}
         onExchangeRateChange={(v) => updateHeaderField('exchangeRate', v)}
         onProtectionPctChange={(v) => updateHeaderField('protectionPct', v)}
         onProtectionMapChange={(v) => updateHeaderField('protectionMap', v)}
+        tcmbRateType={headerFields.tcmbRateType}
+        onTcmbRateTypeChange={(v) => updateHeaderField('tcmbRateType', v)}
         onExchangeRateApply={handleExchangeRateApply}
         onLanguageChange={(v) => updateHeaderField('language', v)}
         onValidityDaysChange={(v) => updateHeaderField('validityDays', v)}
@@ -1571,6 +1738,20 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onApprove={canApprove}
         onReject={canReject}
         onExport={canExport}
+        onQuoteNumberChange={async (newNo) => {
+          try {
+            const res = await fetch(`/api/quotes/${quoteId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ quoteNumber: newNo }),
+            });
+            if (res.ok) {
+              setQuote(prev => prev ? { ...prev, quoteNumber: newNo } : prev);
+            }
+          } catch (err) {
+            console.error('Quote number update error:', err);
+          }
+        }}
       />
 
       {/* Items table */}
@@ -1578,6 +1759,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         items={topLevelItems}
         currency={headerFields.currency}
         discountPct={headerFields.discountPct}
+        discountLabel={headerFields.discountLabel}
+        onDiscountLabelChange={(v) => updateHeaderField('discountLabel', v)}
         canViewCosts={user.role.canViewCosts}
         canOverrideKatsayi={user.role.canOverrideKatsayi}
         priceHistoryBatch={priceHistoryBatch}
@@ -1592,6 +1775,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddCustomItem={handleAddCustomItem}
         onAddSubtotal={handleAddSubtotal}
         onAddSubItem={handleAddSubItem}
+        onAddCustomSubItem={handleAddCustomSubItem}
         onCreateSet={handleCreateSet}
         onOpenEkMaliyet={() => setEkMaliyetOpen(true)}
         onShowPriceHistory={handleShowPriceHistory}

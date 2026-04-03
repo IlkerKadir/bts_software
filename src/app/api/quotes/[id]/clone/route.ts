@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { generateQuoteNumber, getCurrentYearPrefix, getNextSequence } from '@/lib/quote-number';
+import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } from '@/lib/quote-number';
 import { Prisma } from '@prisma/client';
 
 interface RouteParams {
@@ -48,18 +48,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Wrap quote number generation + creation in a transaction to prevent race conditions
     const newQuote = await db.$transaction(async (tx) => {
-      // Generate quote number inside the transaction
-      const prefix = getCurrentYearPrefix();
+      // Generate quote number inside the transaction using user initials
+      const initials = getInitials(user.fullName);
+      const prefix = getInitialsPrefix(initials);
       const lastQuote = await tx.quote.findFirst({
         where: {
           quoteNumber: { startsWith: prefix },
-          NOT: { quoteNumber: { contains: '-R' } },
         },
         orderBy: { quoteNumber: 'desc' },
       });
 
       const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
-      const quoteNumber = generateQuoteNumber(nextSequence);
+      const quoteNumber = generateQuoteNumber(initials, nextSequence);
 
       // Create the cloned quote
       const quote = await tx.quote.create({

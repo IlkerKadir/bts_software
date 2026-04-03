@@ -45,6 +45,8 @@ export interface QuoteDataForPdf {
     sortOrder: number;
     highlight: boolean;
   }[];
+  discountPct?: number;
+  discountLabel?: string;
   headerBase64?: string;
   logoBase64?: string;
 }
@@ -62,6 +64,7 @@ export interface QuoteItemForPdf {
   vatRate: number;
   /** Optional background color for HEADER items (CSS color value, e.g. '#FF0000') */
   headerColor?: string | null;
+  customPozNo?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,13 +177,15 @@ function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): nu
 // ---------------------------------------------------------------------------
 
 export function generateQuoteHtml(data: QuoteDataForPdf): string {
-  const { quote, company, project, items, totals, commercialTerms, notes, headerBase64, logoBase64 } = data;
+  const { quote, company, project, items, totals, commercialTerms, notes, discountPct: pdfDiscountPct, discountLabel: pdfDiscountLabel, headerBase64, logoBase64 } = data;
   const safeTerms = commercialTerms || [];
   const safeNotes = notes || [];
   const currency = quote.currency;
   const lang = quote.language || 'TR';
   const isTR = lang === 'TR';
   const currencyName = CURRENCY_NAMES[currency] || currency;
+  const overallDiscountPct = pdfDiscountPct || 0;
+  const overallDiscountLabel = pdfDiscountLabel || 'İskonto';
 
   const proformaTitle = isTR ? 'PROFORMA FATURA' : 'PROFORMA INVOICE';
   const dateLabel = isTR ? 'Tarih' : 'Date';
@@ -197,14 +202,9 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
   let itemNumber = 0;
   const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
-      // Use item-specific headerColor if provided, otherwise default green
-      const hdrBg = item.headerColor || SECTION_BG;
-      return `<tr class="section-hdr" style="height:13pt">
-        <td style="background-color:${hdrBg};"><p><br></p></td>
-        <td style="background-color:${hdrBg};"><p class="s1" style="text-align:center;">${escapeHtml(item.description)}</p></td>
-        <td style="background-color:${hdrBg};"><p><br></p></td>
-        <td style="background-color:${hdrBg};"><p><br></p></td>
-        <td style="background-color:${hdrBg};"><p><br></p></td>
+      return `<tr style="height:13pt">
+        <td><p><br></p></td>
+        <td colspan="4"><p class="s1" style="padding-left:1pt; color:black;">${escapeHtml(item.description)}</p></td>
       </tr>`;
     }
 
@@ -217,19 +217,43 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 
     if (item.itemType === 'SUBTOTAL') {
       const sectionSum = computeSubtotalSum(items, index);
-      return `<tr style="height:13pt">
-        <td><p><br></p></td>
-        <td><p class="s1" style="text-align:right;padding-right:8pt;">Ara Toplam</p></td>
-        <td><p><br></p></td>
-        <td><p><br></p></td>
-        <td><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
+      const subtotalLabel = escapeHtml(item.description || 'Ara Toplam');
+      let subtotalRows = `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>
+      <tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${subtotalLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
       </tr>`;
+      if (overallDiscountPct > 0) {
+        const discountAmount = sectionSum * (overallDiscountPct / 100);
+        const netAmount = sectionSum - discountAmount;
+        const discLabel = escapeHtml(overallDiscountLabel);
+        const netLabel = escapeHtml((item.description || 'Ara Toplam').replace(/TOPLAMI?/i, 'NET TOPLAMI'));
+        subtotalRows += `
+      <tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${discLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(discountAmount, currency)}</p></td>
+      </tr>
+      <tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${netLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(netAmount, currency)}</p></td>
+      </tr>`;
+      }
+      subtotalRows += `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>`;
+      return subtotalRows;
     }
 
     // PRODUCT, CUSTOM — numbered rows
-    const isOptional = item.quantity === 0;
-    if (!isOptional) itemNumber++;
-    const pozText = isOptional ? 'OPSİYONEL' : `${itemNumber}`;
+    let pozText: string;
+    if (item.customPozNo) {
+      pozText = item.customPozNo;
+      const num = parseInt(item.customPozNo, 10);
+      if (!isNaN(num) && String(num) === item.customPozNo) {
+        itemNumber = num;
+      }
+    } else {
+      itemNumber++;
+      pozText = `${itemNumber}`;
+    }
     const qtyStr = `${item.quantity} ${unitAbbr(item.unit || 'Adet')}`;
 
     return `<tr>
@@ -241,7 +265,8 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     </tr>`;
   }).join('\n');
 
-  // ---------- System total ----------
+  // ---------- System total (skip if subtotals exist) ----------
+  const hasSubtotals = items.some((i) => i.itemType === 'SUBTOTAL');
   const systemTotalLabel = isTR
     ? `SİSTEM GENEL TOPLAMI (${currencyName})`
     : `SYSTEM GRAND TOTAL (${currencyName})`;
@@ -254,11 +279,8 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
   if (company.address) {
     leftContent += `<p class="s2">${escapeHtml(company.address)}</p>`;
   }
-  if (project) {
-    leftContent += `<p class="s1" style="padding-top:6pt;">${escapeHtml(project.name)}</p>`;
-  }
   if (quote.subject) {
-    leftContent += `<p class="s1" style="padding-top:1pt;">${escapeHtml(quote.subject)}</p>`;
+    leftContent += `<p class="s1" style="padding-top:8pt;">${escapeHtml(quote.subject)}</p>`;
   }
   if (data.description) {
     leftContent += `<p class="s1" style="padding-top:1pt;">${escapeHtml(data.description)}</p>`;
@@ -287,12 +309,12 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
    If 10pt is truly needed, column widths and page margins must be revisited. */
 body { font-family: Arial, sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
 
-.s1 { font-family:Arial,sans-serif; font-weight:bold; font-size:6.5pt; color:black; }
-.s2 { font-family:Arial,sans-serif; font-weight:normal; font-size:6.5pt; color:black; }
-.s3 { font-family:Arial,sans-serif; font-weight:bold; font-size:7.2pt; color:black; }
-.s4 { font-family:Arial,sans-serif; font-weight:normal; font-size:7.2pt; color:black; }
+.s1 { font-family:Arial,sans-serif; font-weight:bold; font-size:8pt; color:black; }
+.s2 { font-family:Arial,sans-serif; font-weight:normal; font-size:8pt; color:black; }
+.s3 { font-family:Arial,sans-serif; font-weight:bold; font-size:9pt; color:black; }
+.s4 { font-family:Arial,sans-serif; font-weight:normal; font-size:9pt; color:black; }
 
-p { font-family:Arial,sans-serif; font-weight:normal; font-size:6.5pt; color:black; margin:0; }
+p { font-family:Arial,sans-serif; font-weight:normal; font-size:8pt; color:black; margin:0; }
 
 table.main { width:100%; border-collapse:collapse; }
 thead { display: table-header-group; }
@@ -412,11 +434,11 @@ table.main tbody td:nth-child(5) {
     ${itemRows}
 
     <tr><td colspan="5" style="height:6pt; border:none; padding:0;"></td></tr>
-    <!-- System Total -->
+    ${hasSubtotals ? '' : `<!-- System Total -->
     <tr style="height:12pt">
       <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${systemTotalLabel}</p></td>
       <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(totals.grandTotal, currency)}</p></td>
-    </tr>
+    </tr>`}
 
 ${termsRows}
 
@@ -486,9 +508,18 @@ function buildCommercialTermsRows(
       const joined = values.map((v) => v.content).join(', ');
       rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(joined)}</p></td></tr>\n`;
     } else if (catKey === 'uretici_firmalar') {
-      // uretici_firmalar: each term on its own line
+      // uretici_firmalar: parse JSON brand→systems map, render as "BRAND - SYSTEM1, SYSTEM2" per line
       for (const entry of values) {
-        rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
+        try {
+          const parsed = JSON.parse(entry.content) as Record<string, string[]>;
+          for (const [brand, systems] of Object.entries(parsed)) {
+            const line = systems.length > 0 ? `${brand} - ${systems.join(', ')}` : brand;
+            rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(line)}</p></td></tr>\n`;
+          }
+        } catch {
+          // Not JSON — render as plain text
+          rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
+        }
       }
     } else {
       // All other single-value categories: each value as a paragraph

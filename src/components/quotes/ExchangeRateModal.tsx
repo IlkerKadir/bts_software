@@ -23,7 +23,8 @@ interface ExchangeRateModalProps {
   currentRate: number;
   currentProtectionPct: number;
   currentProtectionMap?: Record<string, number>;
-  onApply: (exchangeRate: number, protectionPct: number, protectionMap: Record<string, number>, rateMatrix: RateMatrix) => void;
+  currentRateType?: TcmbRateType;
+  onApply: (exchangeRate: number, protectionPct: number, protectionMap: Record<string, number>, rateMatrix: RateMatrix, rateType: TcmbRateType) => void;
 }
 
 type RateMatrix = Record<string, Record<string, number>>;
@@ -47,6 +48,24 @@ const CURRENCY_LABELS: Record<string, string> = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Build a full rate matrix from TCMB direct rates using the chosen rate type */
+function buildMatrixFromTcmb(rates: TcmbDirectRate[], rateType: TcmbRateType): RateMatrix {
+  const matrix: RateMatrix = {};
+  const toTry: Record<string, number> = { TRY: 1 };
+  for (const r of rates) {
+    const val = rateType === 'forexSelling' ? r.forexSelling : r.banknoteSelling;
+    if (val > 0) toTry[r.currency] = val;
+  }
+  const keys = Object.keys(toTry);
+  for (const from of keys) {
+    matrix[from] = {};
+    for (const to of keys) {
+      if (from !== to) matrix[from][to] = Math.round((toTry[from] / toTry[to]) * 1000000) / 1000000;
+    }
+  }
+  return matrix;
+}
 
 /** Canonical sorted key for a currency pair */
 function pairKey(a: string, b: string): string {
@@ -80,6 +99,7 @@ export function ExchangeRateModal({
   currentRate,
   currentProtectionPct,
   currentProtectionMap,
+  currentRateType,
   onApply,
 }: ExchangeRateModalProps) {
   // Data state
@@ -147,32 +167,59 @@ export function ExchangeRateModal({
       setSuccessMessage(null);
       setTcmbDirectRates([]);
       setTcmbFetchedAt(null);
-      setTcmbRateType('forexSelling');
+      setTcmbRateType(currentRateType || 'forexSelling');
     }
-  }, [isOpen, currentRate, currentProtectionPct, currentProtectionMap, currency]);
+  }, [isOpen, currentRate, currentProtectionPct, currentProtectionMap, currency, currentRateType]);
 
-  // Fetch rate data on open
+  // Fetch rate data on open — always fetch TCMB direct rates so the matrix
+  // reflects the default "Döviz Satış" rate type from the start.
   useEffect(() => {
     if (!isOpen) return;
 
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch('/api/exchange-rates/sync');
-        if (!res.ok) {
-          setError('Kur verileri yüklenemedi');
-          return;
-        }
-        const data = await res.json();
-        setRateMatrix(data.rateMatrix || {});
-        setLastSyncAt(data.lastSyncAt);
+        const [syncRes, tcmbRes] = await Promise.all([
+          fetch('/api/exchange-rates/sync'),
+          fetch('/api/exchange-rates/tcmb'),
+        ]);
 
-        // Always use TCMB rate as base when available for the quote currency → TRY pair.
-        // The stored exchangeRate may be from a different pair that was previously selected,
-        // so we always start fresh from TCMB to avoid showing a wrong pair's rate.
-        if (data.rateMatrix[currency]?.TRY && currency !== 'TRY') {
-          setBaseRate(data.rateMatrix[currency].TRY);
-          setIsManualRate(false);
+        // Sync data for lastSyncAt and fallback matrix
+        let syncMatrix: RateMatrix = {};
+        if (syncRes.ok) {
+          const syncData = await syncRes.json();
+          syncMatrix = syncData.rateMatrix || {};
+          setLastSyncAt(syncData.lastSyncAt);
+        }
+
+        // TCMB direct rates — build matrix using persisted rate type
+        const activeRateType = currentRateType || 'forexSelling';
+        if (tcmbRes.ok) {
+          const tcmbData = await tcmbRes.json();
+          const rates = (tcmbData.rates || []) as TcmbDirectRate[];
+          if (rates.length > 0) {
+            setTcmbDirectRates(rates);
+            setTcmbFetchedAt(tcmbData.fetchedAt || null);
+            const matrix = buildMatrixFromTcmb(rates, activeRateType);
+            setRateMatrix(matrix);
+            if (matrix[currency]?.TRY && currency !== 'TRY') {
+              setBaseRate(matrix[currency].TRY);
+              setIsManualRate(false);
+            }
+          } else {
+            // Fallback to sync matrix
+            setRateMatrix(syncMatrix);
+            if (syncMatrix[currency]?.TRY && currency !== 'TRY') {
+              setBaseRate(syncMatrix[currency].TRY);
+              setIsManualRate(false);
+            }
+          }
+        } else {
+          setRateMatrix(syncMatrix);
+          if (syncMatrix[currency]?.TRY && currency !== 'TRY') {
+            setBaseRate(syncMatrix[currency].TRY);
+            setIsManualRate(false);
+          }
         }
       } catch {
         setError('Kur verileri yüklenemedi');
@@ -195,17 +242,41 @@ export function ExchangeRateModal({
       if (!res.ok) throw new Error(data.error || 'Senkronizasyon başarısız');
       setSuccessMessage(data.message);
 
-      // Refetch
-      const syncRes = await fetch('/api/exchange-rates/sync');
+      // Refetch — also refresh direct rates so the matrix uses the chosen rate type
+      const [syncRes, tcmbRes] = await Promise.all([
+        fetch('/api/exchange-rates/sync'),
+        fetch('/api/exchange-rates/tcmb'),
+      ]);
       if (syncRes.ok) {
         const syncData = await syncRes.json();
-        setRateMatrix(syncData.rateMatrix || {});
         setLastSyncAt(syncData.lastSyncAt);
 
-        // Update base rate from TCMB if available for selected pair
-        if (syncData.rateMatrix[selectedFrom]?.[selectedTo]) {
-          setBaseRate(syncData.rateMatrix[selectedFrom][selectedTo]);
-          setIsManualRate(false);
+        // If we have direct rates, rebuild matrix with the user's selected rate type
+        if (tcmbRes.ok) {
+          const tcmbData = await tcmbRes.json();
+          const freshRates = (tcmbData.rates || []) as TcmbDirectRate[];
+          if (freshRates.length > 0) {
+            setTcmbDirectRates(freshRates);
+            setTcmbFetchedAt(tcmbData.fetchedAt || null);
+            const newMatrix = buildMatrixFromTcmb(freshRates, tcmbRateType);
+            setRateMatrix(newMatrix);
+            if (newMatrix[selectedFrom]?.[selectedTo]) {
+              setBaseRate(newMatrix[selectedFrom][selectedTo]);
+              setIsManualRate(false);
+            }
+          } else {
+            setRateMatrix(syncData.rateMatrix || {});
+            if (syncData.rateMatrix[selectedFrom]?.[selectedTo]) {
+              setBaseRate(syncData.rateMatrix[selectedFrom][selectedTo]);
+              setIsManualRate(false);
+            }
+          }
+        } else {
+          setRateMatrix(syncData.rateMatrix || {});
+          if (syncData.rateMatrix[selectedFrom]?.[selectedTo]) {
+            setBaseRate(syncData.rateMatrix[selectedFrom][selectedTo]);
+            setIsManualRate(false);
+          }
         }
       }
     } catch (err) {
@@ -224,13 +295,17 @@ export function ExchangeRateModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'TCMB kur bilgisi alınamadı');
 
-      setTcmbDirectRates(data.rates || []);
+      const rates = (data.rates || []) as TcmbDirectRate[];
+      setTcmbDirectRates(rates);
       setTcmbFetchedAt(data.fetchedAt || null);
 
+      // Rebuild the full rate matrix from TCMB direct rates
+      if (rates.length > 0) {
+        setRateMatrix(buildMatrixFromTcmb(rates, tcmbRateType));
+      }
+
       // Auto-apply the rate for the currently selected currency
-      const match = (data.rates as TcmbDirectRate[]).find(
-        (r) => r.currency === selectedFrom
-      );
+      const match = rates.find((r) => r.currency === selectedFrom);
       if (match) {
         const rate = tcmbRateType === 'forexSelling' ? match.forexSelling : match.banknoteSelling;
         if (rate > 0) {
@@ -245,9 +320,15 @@ export function ExchangeRateModal({
     }
   };
 
-  // When rate type changes, apply the new rate if TCMB data is loaded
+  // When rate type changes, rebuild the matrix and apply new rate
   const handleTcmbRateTypeChange = (type: TcmbRateType) => {
     setTcmbRateType(type);
+
+    // Rebuild matrix with the new rate type
+    if (tcmbDirectRates.length > 0) {
+      setRateMatrix(buildMatrixFromTcmb(tcmbDirectRates, type));
+    }
+
     const match = tcmbDirectRates.find((r) => r.currency === selectedFrom);
     if (match) {
       const rate = type === 'forexSelling' ? match.forexSelling : match.banknoteSelling;
@@ -296,7 +377,7 @@ export function ExchangeRateModal({
     for (const [key, val] of Object.entries(protectionMap)) {
       if (val > 0) cleanMap[key] = val;
     }
-    onApply(protectedRate, selectedProtection, cleanMap, rateMatrix);
+    onApply(protectedRate, selectedProtection, cleanMap, rateMatrix, tcmbRateType);
     onClose();
   };
 

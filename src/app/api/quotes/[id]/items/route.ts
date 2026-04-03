@@ -242,6 +242,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             notes: item.notes || null,
             parentItemId: item.parentItemId || null,
             costPrice: item.costPrice ?? undefined,
+            serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
           },
         });
       }

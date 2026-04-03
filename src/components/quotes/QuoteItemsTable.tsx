@@ -26,6 +26,8 @@ export interface QuoteItemsTableProps {
   items: QuoteItemData[];
   currency: string;
   discountPct: number;
+  discountLabel?: string;
+  onDiscountLabelChange?: (value: string) => void;
   canViewCosts: boolean;
   onItemUpdate: (itemId: string, updates: Partial<QuoteItemData>) => void;
   onItemDelete: (itemId: string) => void;
@@ -38,6 +40,7 @@ export interface QuoteItemsTableProps {
   onAddCustomItem?: () => void;
   onAddSubtotal?: () => void;
   onAddSubItem?: (parentId: string) => void;
+  onAddCustomSubItem?: (parentId: string) => void;
   onCreateSet?: () => void;
   onOpenEkMaliyet?: () => void;
   onShowPriceHistory?: (productId: string) => void;
@@ -101,6 +104,8 @@ export function QuoteItemsTable({
   items,
   currency,
   discountPct,
+  discountLabel: discountLabelProp = 'İskonto',
+  onDiscountLabelChange,
   canViewCosts,
   onItemUpdate,
   onItemDelete,
@@ -113,6 +118,7 @@ export function QuoteItemsTable({
   onAddCustomItem,
   onAddSubtotal,
   onAddSubItem,
+  onAddCustomSubItem,
   onCreateSet,
   onOpenEkMaliyet,
   onShowPriceHistory,
@@ -135,23 +141,22 @@ export function QuoteItemsTable({
       return DEFAULT_COLUMN_WIDTHS;
     }
   });
-  const [isResizing, setIsResizing] = useState(false);
+  const isResizingRef = useRef(false);
   const columnWidthsRef = useRef(columnWidths);
   columnWidthsRef.current = columnWidths;
+  const tableRef = useRef<HTMLTableElement>(null);
 
   const handleThMouseDown = useCallback((e: React.MouseEvent<HTMLTableCellElement>, colKey: string) => {
-    const th = e.currentTarget;
-    const rect = th.getBoundingClientRect();
-    const isNearRightEdge = e.clientX >= rect.right - 8;
-
-    if (!isNearRightEdge) return; // Not near edge, let normal click through
+    // Check if near right edge directly (don't rely on cursor style)
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < rect.right - 8) return;
 
     e.preventDefault();
     e.stopPropagation();
 
     const startX = e.clientX;
     const startWidth = columnWidthsRef.current[colKey] || DEFAULT_COLUMN_WIDTHS[colKey] || 80;
-    setIsResizing(true);
+    isResizingRef.current = true;
 
     const onMove = (ev: MouseEvent) => {
       const diff = ev.clientX - startX;
@@ -164,26 +169,27 @@ export function QuoteItemsTable({
     };
 
     const onUp = () => {
-      setIsResizing(false);
+      isResizingRef.current = false;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       document.body.style.cursor = '';
+      document.body.style.userSelect = '';
     };
 
     document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }, []);
 
   const handleThMouseMove = useCallback((e: React.MouseEvent<HTMLTableCellElement>) => {
-    if (isResizing) return;
+    if (isResizingRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const isNearRightEdge = e.clientX >= rect.right - 8;
     e.currentTarget.style.cursor = isNearRightEdge ? 'col-resize' : '';
-  }, [isResizing]);
+  }, []);
 
-  // Editable discount label
-  const [discountLabel, setDiscountLabel] = useState('İskonto');
+  const discountLabel = discountLabelProp;
 
   // Column visibility with localStorage persistence
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(() => {
@@ -203,6 +209,16 @@ export function QuoteItemsTable({
   const toggleGroup = useCallback((key: keyof ColumnVisibility) => {
     setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
+  // Compute total table width from visible columns so table-layout: fixed respects exact widths
+  const tableWidth = useMemo(() => {
+    let w = columnWidths.drag + columnWidths.pozNo + columnWidths.aciklama + columnWidths.miktar + columnWidths.pb + columnWidths.delete;
+    if (columnVisibility.urun) w += columnWidths.marka + columnWidths.model + columnWidths.kod;
+    if (columnVisibility.fiyat) w += columnWidths.birimFiyat + columnWidths.toplamFiyat + columnWidths.katsayi + columnWidths.listeFiyati;
+    if (canViewCosts && columnVisibility.maliyet) w += columnWidths.maliyet + columnWidths.kar + columnWidths.karPct;
+    if (columnVisibility.gecmis) w += columnWidths.sonTeklif + columnWidths.delta1 + columnWidths.siparis + columnWidths.delta2 + columnWidths.enYuksek + columnWidths.delta3 + columnWidths.enDusuk + columnWidths.delta4;
+    return w;
+  }, [columnWidths, columnVisibility, canViewCosts]);
 
   // ── Filter state ──────────────────────────────────────────────────────────
 
@@ -347,13 +363,22 @@ export function QuoteItemsTable({
   // Excludes SUBTOTAL items and child items (parentItemId)
   // Always uses full items array for consistent numbering
   const pozMap = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, string>();
     let counter = 1;
     for (const item of items) {
       if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
         if (!item.parentItemId) {
-          map.set(item.id, counter);
-          counter++;
+          if (item.customPozNo) {
+            map.set(item.id, item.customPozNo);
+            // Only advance counter if the custom value is numeric
+            const num = parseInt(item.customPozNo, 10);
+            if (!isNaN(num) && String(num) === item.customPozNo) {
+              counter = num + 1;
+            }
+          } else {
+            map.set(item.id, String(counter));
+            counter++;
+          }
         }
       }
     }
@@ -495,7 +520,7 @@ export function QuoteItemsTable({
       totalVat += itemAfterOverallDiscount * (Number(item.vatRate) / 100);
     }
 
-    const grandTotal = afterDiscount + totalVat;
+    const grandTotal = afterDiscount;
     const totalProfit = afterDiscount - totalCost;
     const profitMargin = afterDiscount > 0 ? (totalProfit / afterDiscount) * 100 : 0;
 
@@ -587,7 +612,7 @@ export function QuoteItemsTable({
         {onCreateSet && (
           <Button variant="secondary" size="sm" onClick={onCreateSet}>
             <Layers className="h-4 w-4" />
-            Serbest Kalem Ekle
+            Set Ekle
           </Button>
         )}
         {onOpenEkMaliyet && (
@@ -756,7 +781,7 @@ export function QuoteItemsTable({
 
       {/* ---- Table ---- */}
       <div className="overflow-x-auto rounded-lg border border-accent-200 bg-white">
-        <table className={cn("text-sm border-separate border-spacing-0", isResizing && "select-none")} style={{ tableLayout: 'fixed', minWidth: '100%' }}>
+        <table ref={tableRef} className="text-sm border-separate border-spacing-0" style={{ tableLayout: 'fixed', width: tableWidth }}>
           {/* Column width definitions for table-layout: fixed */}
           <colgroup>
             <col style={{ width: columnWidths.drag }} />
@@ -969,6 +994,7 @@ export function QuoteItemsTable({
                     item={item}
                     pozNo={pozMap.get(item.id) ?? null}
                     currency={currency}
+                    overallDiscountPct={discountPct}
                     canViewCosts={canViewCosts}
                     isDragging={!hasActiveFilter && dragIndex === origIdx}
                     columnVisibility={columnVisibility}
@@ -1018,7 +1044,17 @@ export function QuoteItemsTable({
                                     className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
                                   >
                                     <Plus className="h-3 w-3" />
-                                    Serbest Kalem Ekle
+                                    Veritabanından ürün ekle
+                                  </button>
+                                )}
+                                {onAddCustomSubItem && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onAddCustomSubItem(item.id)}
+                                    className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Serbest kalem ekle
                                   </button>
                                 )}
                               </div>
@@ -1046,19 +1082,33 @@ export function QuoteItemsTable({
                         </>
                       );
                     }
-                    // Show "Serbest Kalem Ekle" for SET parents that have no sub-rows yet
-                    if (item.itemType === 'SET' && onAddSubItem) {
+                    // Show add buttons for SET parents that have no sub-rows yet
+                    if (item.itemType === 'SET' && (onAddSubItem || onAddCustomSubItem)) {
                       return (
                         <tr>
                           <td colSpan={totalColCount} className="px-8 py-0.5 bg-accent-50 border-x border-accent-200">
-                            <button
-                              type="button"
-                              onClick={() => onAddSubItem(item.id)}
-                              className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
-                            >
-                              <Plus className="h-3 w-3" />
-                              Serbest Kalem Ekle
-                            </button>
+                            <div className="flex items-center gap-3">
+                              {onAddSubItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => onAddSubItem(item.id)}
+                                  className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Veritabanından ürün ekle
+                                </button>
+                              )}
+                              {onAddCustomSubItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => onAddCustomSubItem(item.id)}
+                                  className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Serbest kalem ekle
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1092,10 +1142,10 @@ export function QuoteItemsTable({
 
           {/* ---- Summary footer ---- */}
           <tfoot className="bg-accent-50 text-sm">
-            {/* Ara Toplam */}
+            {/* Toplam */}
             <tr className="border-t-2 border-accent-300">
               <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-700">
-                Ara Toplam
+                Toplam
               </td>
               <td className="px-2 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
                 {formatPrice(summary.araTotal, currency)}
@@ -1110,7 +1160,7 @@ export function QuoteItemsTable({
                   <input
                     type="text"
                     value={discountLabel}
-                    onChange={(e) => setDiscountLabel(e.target.value)}
+                    onChange={(e) => onDiscountLabelChange?.(e.target.value)}
                     className="w-32 rounded border border-transparent px-1 py-0.5 text-right text-sm font-medium text-accent-700 hover:border-accent-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
                     title="İskonto etiketini düzenle"
                   />
@@ -1135,17 +1185,6 @@ export function QuoteItemsTable({
               {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>
 
-            {/* KDV Toplam */}
-            <tr>
-              <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-700">
-                KDV Toplam
-              </td>
-              <td className="px-2 py-2 text-right tabular-nums text-accent-800 whitespace-nowrap">
-                {formatPrice(summary.totalVat, currency)}
-              </td>
-              {trailingSpan > 0 && <td colSpan={trailingSpan} />}
-            </tr>
-
             {/* GENEL TOPLAM */}
             <tr className="border-t-2 border-accent-400">
               <td colSpan={labelSpan} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
@@ -1157,52 +1196,6 @@ export function QuoteItemsTable({
               {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>
 
-            {/* Cost summary – only for canViewCosts */}
-            {canViewCosts && (
-              <>
-                <tr className="border-t-2 border-accent-300">
-                  <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-600">
-                    Toplam Maliyet
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums text-accent-700 whitespace-nowrap">
-                    {formatPrice(summary.totalCost, currency)}
-                  </td>
-                  {trailingSpan > 0 && <td colSpan={trailingSpan} />}
-                </tr>
-                <tr>
-                  <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-600">
-                    Toplam Kar
-                  </td>
-                  <td
-                    className={cn(
-                      'px-2 py-2 text-right tabular-nums whitespace-nowrap font-medium',
-                      summary.totalProfit < 0
-                        ? 'text-red-600'
-                        : 'text-green-700',
-                    )}
-                  >
-                    {formatPrice(summary.totalProfit, currency)}
-                  </td>
-                  {trailingSpan > 0 && <td colSpan={trailingSpan} />}
-                </tr>
-                <tr>
-                  <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-600">
-                    Kar Marjı %
-                  </td>
-                  <td
-                    className={cn(
-                      'px-2 py-2 text-right tabular-nums whitespace-nowrap font-medium',
-                      summary.profitMargin < 15
-                        ? 'text-red-600'
-                        : 'text-green-700',
-                    )}
-                  >
-                    %{formatNumber(summary.profitMargin, 1)}
-                  </td>
-                  {trailingSpan > 0 && <td colSpan={trailingSpan} />}
-                </tr>
-              </>
-            )}
           </tfoot>
         </table>
       </div>

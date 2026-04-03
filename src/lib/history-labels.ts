@@ -12,6 +12,7 @@ export const FIELD_LABELS: Record<string, string> = {
   protectionMap: 'Koruma Haritası',
   notes: 'Notlar',
   status: 'Durum',
+  itemsUpdated: 'Güncellenen Kalem Sayısı',
 };
 
 // Fields to skip in display (internal/noise)
