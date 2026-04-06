@@ -969,6 +969,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         discountPct: 0,
         vatRate: isSubItem ? 0 : 20,
         sortOrder: newItem.sortOrder,
+        costPrice: convertedCostPrice,
       };
 
       try {

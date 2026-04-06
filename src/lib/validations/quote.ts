@@ -51,6 +51,7 @@ export const quoteItemSchema = z.object({
   discountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').default(0),
   vatRate: z.number().min(0).max(100).default(20),
   notes: z.string().nullish(),
+  costPrice: z.number().nullish(),
 });
 
 export const quoteItemUpdateSchema = quoteItemSchema.extend({

@@ -142,6 +142,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         isManualPrice,
         notes: data.notes || null,
         parentItemId: data.parentItemId || null,
+        costPrice: data.costPrice ?? null,
       },
       include: {
         product: {

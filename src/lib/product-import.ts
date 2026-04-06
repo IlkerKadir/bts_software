@@ -363,6 +363,11 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
  * Generate a preview comparing imported products against existing database products.
  * Categorizes each product as new, price-changed, or unchanged.
  */
+export interface PreviewProduct extends ImportedProduct {
+  status: 'new' | 'price_change' | 'unchanged';
+  oldPrice?: number;
+}
+
 export async function generateImportPreview(
   products: ImportedProduct[],
   existingProducts: Array<{ code: string; listPrice: number; currency: string }>
@@ -373,22 +378,27 @@ export async function generateImportPreview(
   let priceChanges = 0;
   let unchanged = 0;
 
-  for (const product of products) {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const productsWithStatus: PreviewProduct[] = products.map((product) => {
     const existing = existingMap.get(product.code);
     if (!existing) {
       newProducts++;
-    } else if (existing.listPrice !== product.listPrice || existing.currency !== product.currency) {
+      return { ...product, status: 'new' as const };
+    } else if (round2(existing.listPrice) !== round2(product.listPrice) || existing.currency !== product.currency) {
       priceChanges++;
+      return { ...product, status: 'price_change' as const, oldPrice: existing.listPrice };
     } else {
       unchanged++;
+      return { ...product, status: 'unchanged' as const };
     }
-  }
+  });
 
   return {
     totalProducts: products.length,
     newProducts,
     priceChanges,
     unchanged,
-    products,
+    products: productsWithStatus,
   };
 }
