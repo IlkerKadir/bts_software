@@ -35,25 +35,25 @@ export async function GET() {
 
     // Define columns
     const columns: Partial<ExcelJS.Column>[] = [
-      { header: 'Kod', key: 'code', width: 18 },
-      { header: 'Kisa Kod', key: 'shortCode', width: 14 },
-      { header: 'Marka', key: 'brand', width: 16 },
-      { header: 'Kategori', key: 'category', width: 16 },
-      { header: 'Model', key: 'model', width: 20 },
-      { header: 'Isim TR', key: 'nameTr', width: 30 },
-      { header: 'Isim EN', key: 'nameEn', width: 30 },
-      { header: 'Birim', key: 'unit', width: 10 },
-      { header: 'Liste Fiyati', key: 'listPrice', width: 15 },
+      { header: 'MARKA', key: 'brand', width: 16 },
+      { header: 'KATEGORİ', key: 'category', width: 16 },
+      { header: 'MODEL', key: 'model', width: 20 },
+      { header: 'KISA KOD', key: 'shortCode', width: 14 },
+      { header: 'ÜRÜN KODU', key: 'code', width: 18 },
+      { header: 'ÜRÜN ADI', key: 'nameTr', width: 30 },
+      { header: 'İNGİLİZCE AÇIKLAMA', key: 'nameEn', width: 30 },
+      { header: 'BİRİM', key: 'unit', width: 10 },
+      { header: 'LİSTE FİYATI', key: 'listPrice', width: 15 },
     ];
 
     if (canViewCosts) {
-      columns.push({ header: 'Maliyet Fiyati', key: 'costPrice', width: 15 });
+      columns.push({ header: 'MALİYET', key: 'costPrice', width: 15 });
     }
 
     columns.push(
-      { header: 'Para Birimi', key: 'currency', width: 12 },
-      { header: 'Tedarikci', key: 'supplier', width: 20 },
-      { header: 'Aktif', key: 'isActive', width: 8 },
+      { header: 'PARA BİRİMİ', key: 'currency', width: 12 },
+      { header: 'TEDARİKÇİ', key: 'supplier', width: 20 },
+      { header: 'AKTİF', key: 'isActive', width: 8 },
     );
 
     sheet.columns = columns;
@@ -72,18 +72,18 @@ export async function GET() {
     // Add data rows
     for (const product of products) {
       const rowData: Record<string, unknown> = {
-        code: product.code,
-        shortCode: product.shortCode || '',
         brand: product.brand?.name || '',
         category: product.category?.name || '',
         model: product.model || '',
+        shortCode: product.shortCode || '',
+        code: product.code,
         nameTr: product.nameTr || product.name,
         nameEn: product.nameEn || '',
         unit: product.unit,
         listPrice: Number(product.listPrice),
         currency: product.currency,
         supplier: product.supplier || '',
-        isActive: product.isActive ? 'Evet' : 'Hayir',
+        isActive: product.isActive ? 'Evet' : 'Hayır',
       };
 
       if (canViewCosts) {

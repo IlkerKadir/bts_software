@@ -13,6 +13,7 @@ export interface ImportedProduct {
   costPrice: number;
   currency: string;
   supplier: string;
+  isActive?: boolean;
 }
 
 export interface ImportPreview {
@@ -37,6 +38,7 @@ interface ColumnIndices {
   paraBirimi: number;
   tedarikci: number;
   dil: number; // language column (TR / ING / EN)
+  aktif: number;
 }
 
 /**
@@ -141,6 +143,8 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         columns.tedarikci = col;
       } else if (val === 'DIL' || val === 'LANGUAGE' || val === 'LANG' || val === 'LNG') {
         columns.dil = col;
+      } else if (val === 'AKTIF' || val === 'ACTIVE') {
+        columns.aktif = col;
       }
     }
 
@@ -164,6 +168,7 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         paraBirimi: columns.paraBirimi || 0,
         tedarikci: columns.tedarikci || 0,
         dil: columns.dil || 0,
+        aktif: columns.aktif || 0,
       },
     };
   }
@@ -275,6 +280,8 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
     const currencyRaw = getCellString(row, columns.paraBirimi);
     const currency = normalizeCurrency(currencyRaw);
     const supplier = getCellString(row, columns.tedarikci);
+    const aktifRaw = getCellString(row, columns.aktif).toUpperCase();
+    const isActive = aktifRaw === 'HAYIR' || aktifRaw === 'NO' || aktifRaw === 'FALSE' || aktifRaw === '0' ? false : true;
     const language = detectRowLanguage(row, columns.dil);
 
     const existing = products.get(code);
@@ -339,6 +346,7 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
         costPrice,
         currency,
         supplier,
+        isActive,
       };
 
       products.set(code, product);

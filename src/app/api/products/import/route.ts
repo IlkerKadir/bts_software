@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
                 costPrice: product.costPrice > 0 ? product.costPrice : existing.costPrice,
                 currency: product.currency,
                 supplier: product.supplier || existing.supplier,
+                isActive: product.isActive ?? existing.isActive,
               },
             });
             updated++;
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) {
                 costPrice: product.costPrice > 0 ? product.costPrice : null,
                 currency: product.currency,
                 supplier: product.supplier || null,
+                isActive: product.isActive ?? true,
               },
             });
             created++;
