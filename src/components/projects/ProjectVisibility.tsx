@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, Users, Lock, Globe, Check } from 'lucide-react';
+import { Users, Lock, Globe, Check } from 'lucide-react';
 import { Button, Spinner } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
@@ -11,11 +11,6 @@ interface VisibilityUser {
   username: string;
 }
 
-interface VisibilityCreator {
-  id: string;
-  fullName: string;
-  username: string;
-}
 
 interface Props {
   projectId: string;
@@ -40,7 +35,7 @@ export function ProjectVisibility({ projectId }: Props) {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [currentUsers, setCurrentUsers] = useState<VisibilityUser[]>([]);
   const [allUsers, setAllUsers] = useState<{ id: string; fullName: string; username: string }[]>([]);
-  const [createdBy, setCreatedBy] = useState<VisibilityCreator | null>(null);
+  const [createdBy, setCreatedBy] = useState<VisibilityUser | null>(null);
 
   // Check if user is a manager and load visibility data
   useEffect(() => {
