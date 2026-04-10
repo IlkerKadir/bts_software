@@ -11,6 +11,12 @@ interface VisibilityUser {
   username: string;
 }
 
+interface VisibilityCreator {
+  id: string;
+  fullName: string;
+  username: string;
+}
+
 interface Props {
   projectId: string;
 }
@@ -34,6 +40,7 @@ export function ProjectVisibility({ projectId }: Props) {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [currentUsers, setCurrentUsers] = useState<VisibilityUser[]>([]);
   const [allUsers, setAllUsers] = useState<{ id: string; fullName: string; username: string }[]>([]);
+  const [createdBy, setCreatedBy] = useState<VisibilityCreator | null>(null);
 
   // Check if user is a manager and load visibility data
   useEffect(() => {
@@ -61,6 +68,7 @@ export function ProjectVisibility({ projectId }: Props) {
         if (visRes.ok) {
           const visData = await visRes.json();
           setVisibility(visData.visibility);
+          setCreatedBy(visData.createdBy ?? null);
           setCurrentUsers(visData.users || []);
           setSelectedUserIds(new Set((visData.users || []).map((u: VisibilityUser) => u.id)));
         }
@@ -130,6 +138,14 @@ export function ProjectVisibility({ projectId }: Props) {
 
   return (
     <div className="space-y-4">
+      {createdBy && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 border border-primary-200">
+          <span className="text-xs font-medium text-primary-500 uppercase tracking-wider">Oluşturan:</span>
+          <span className="text-sm text-primary-800">{createdBy.fullName}</span>
+          <span className="text-xs text-primary-400">@{createdBy.username}</span>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
           {error}
