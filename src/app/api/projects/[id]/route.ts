@@ -46,10 +46,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Visibility check
     const isManager = user.role.canApprove || user.role.canManageUsers;
     if (!isManager) {
+      const isCreator = project.createdById === user.id;
       const hasOwnQuote = project.quotes.some(q => q.createdById === user.id);
       const isEveryone = project.visibility === 'EVERYONE';
       const isSpecific = project.visibility === 'SPECIFIC_USERS' && project.visibleTo.some(a => a.userId === user.id);
-      if (!hasOwnQuote && !isEveryone && !isSpecific) {
+      if (!isCreator && !hasOwnQuote && !isEveryone && !isSpecific) {
         return NextResponse.json({ error: 'Bu projeyi görüntüleme yetkiniz bulunmamaktadır' }, { status: 403 });
       }
     }
