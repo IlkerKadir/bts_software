@@ -138,6 +138,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               notes: item.notes,
               isManualPrice: item.isManualPrice,
               costPrice: item.costPrice,
+              ekMaliyetDelta: item.ekMaliyetDelta,
               serviceMeta: item.serviceMeta ?? undefined,
             },
           });
@@ -169,6 +170,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               notes: item.notes,
               isManualPrice: item.isManualPrice,
               costPrice: item.costPrice,
+              ekMaliyetDelta: item.ekMaliyetDelta,
               serviceMeta: item.serviceMeta ?? undefined,
               parentItemId: newParentId ?? null,
             },

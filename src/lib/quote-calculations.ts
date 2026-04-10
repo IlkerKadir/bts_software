@@ -13,6 +13,9 @@ export interface QuoteItem {
   vatRate: number;
 }
 
+// Re-export for backwards compatibility — lives in ek-maliyet.ts so client code can import it
+export { getEffectiveCostPrice } from './ek-maliyet';
+
 export interface QuoteTotals {
   subtotal: number;
   discountTotal: number;

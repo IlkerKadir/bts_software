@@ -161,6 +161,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     maxKatsayi: item.product?.maxKatsayi != null ? Number(item.product.maxKatsayi) : null,
     subRows: item.subRows?.map(mapApiItemToLocal) ?? undefined,
     customPozNo: (item.serviceMeta as Record<string, unknown> | null)?.customPozNo as string | null ?? null,
+    ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
   };
 }
 
@@ -466,6 +467,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           vatRate: item.vatRate,
           isManualPrice: item.isManualPrice || false,
           costPrice: item.costPrice ?? null,
+          ekMaliyetDelta: item.ekMaliyetDelta ?? null,
           notes: item.notes || '',
           serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
         }));
@@ -592,8 +594,13 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
               !isSetParentItem &&
               ('listPrice' in updates || 'katsayi' in updates)
             ) {
-              updated.unitPrice = listPrice * katsayi;
+              // Include ek maliyet delta so the distribution is preserved
+              const ekDelta = updated.ekMaliyetDelta != null ? Number(updated.ekMaliyetDelta) : 0;
+              updated.unitPrice = (Number(listPrice) + ekDelta) * Number(katsayi);
             }
+            // For manual-price items (e.g. TAŞERON), if only katsayi changed,
+            // the unit price is user-set — we don't recalculate. The delta is
+            // already baked into the unit price from handleEkMaliyetApply.
 
             updated.totalPrice =
               quantity * updated.unitPrice * (1 - discPct / 100);
@@ -1485,10 +1492,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         if (item.isManualPrice) return item;
         if (!item.productCurrency || item.productListPrice == null || item.productListPrice === 0) return item;
 
+        // Ek maliyet delta is preserved as-is through currency changes.
+        // It was applied in the previous quote currency; user can re-apply to
+        // re-distribute in the new currency if needed.
+        const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+
         // Same currency → use original product price directly (no conversion)
         if (item.productCurrency === quoteCurrency) {
           const newListPrice = item.productListPrice;
-          const newUnitPrice = newListPrice * Number(item.katsayi);
+          const effectiveListPrice = newListPrice + ekDelta;
+          const newUnitPrice = effectiveListPrice * Number(item.katsayi);
           const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
           const newCostPrice = item.productCostPrice ?? null;
           return { ...item, listPrice: newListPrice, unitPrice: newUnitPrice, totalPrice: newTotalPrice, costPrice: newCostPrice };
@@ -1506,7 +1519,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         if (!rate) return item;
 
         const newListPrice = item.productListPrice * rate * (1 + protectionPct / 100);
-        const newUnitPrice = newListPrice * Number(item.katsayi);
+        const effectiveListPrice = newListPrice + ekDelta;
+        const newUnitPrice = effectiveListPrice * Number(item.katsayi);
         const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
 
         let newCostPrice = item.costPrice;
@@ -1587,31 +1601,58 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Ek Maliyet Apply handler ──────────────────────────────────────────────
 
-  // Track the last applied ek maliyet per-unit so we can subtract it on revert
-  const ekMaliyetPerUnitRef = useRef(0);
-
+  /**
+   * Distribute ek maliyet across TAŞERON items.
+   *
+   * Architecture: the distributed per-unit amount is stored separately in each
+   * item's `ekMaliyetDelta` field. The user's original `listPrice` and
+   * `costPrice` are NEVER mutated — they remain as entered. The effective list
+   * price displayed to the user is `listPrice + ekMaliyetDelta`, and the
+   * effective cost price is `(costPrice ?? 0) + ekMaliyetDelta`.
+   *
+   * `unitPrice` and `totalPrice` ARE updated here (and persisted) because the
+   * backend saves them as-is for manual-price items, and they need to reflect
+   * the katsayi markup applied to the effective list price.
+   *
+   * Deletion sets totalAmount to 0 → ekMaliyetDelta becomes null/0 →
+   * unitPrice & totalPrice revert automatically.
+   */
   const handleEkMaliyetApply = useCallback((totalAmount: number) => {
-    // totalAmount is already in quote currency
-    const taseronItems = items.filter(i => i.brand === 'TAŞERON');
-    const totalQty = taseronItems.reduce((s, i) => s + Number(i.quantity), 0);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
 
-    if (taseronItems.length === 0 || totalQty === 0) return;
-
-    const oldPerUnit = ekMaliyetPerUnitRef.current;
-    const newPerUnit = totalAmount / totalQty;
-    ekMaliyetPerUnitRef.current = newPerUnit;
-
-    itemsDirtyRef.current = true;
     setItems(prev => {
+      const taseronItems = prev.filter(i => i.brand === 'TAŞERON');
+      const totalQty = taseronItems.reduce((s, i) => s + Number(i.quantity), 0);
+
+      if (taseronItems.length === 0 || totalQty === 0) return prev;
+
+      const perUnit = totalAmount > 0 && totalQty > 0 ? totalAmount / totalQty : 0;
+
       let result = prev.map(item => {
         if (item.brand !== 'TAŞERON') return item;
-        // Subtract old ek maliyet, add new one
+
+        const newDelta = perUnit > 0 ? round2(perUnit) : null;
+        const deltaVal = newDelta ?? 0;
+        const oldDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+
+        // Compute the base unitPrice WITHOUT any previous ek maliyet delta,
+        // then add the new delta. This preserves manually-set prices and
+        // handles items where listPrice=0 but unitPrice was set directly.
         const currentUnitPrice = Number(item.unitPrice);
-        const baseUnitPrice = currentUnitPrice - oldPerUnit;
-        const newUnitPrice = baseUnitPrice + newPerUnit;
-        const newTotal = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
-        return { ...item, unitPrice: newUnitPrice, totalPrice: newTotal };
+        const baseUnitPrice = currentUnitPrice - (oldDelta * Number(item.katsayi));
+        const newUnitPrice = round2(baseUnitPrice + (deltaVal * Number(item.katsayi)));
+        const newTotal = round2(
+          Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100)
+        );
+
+        return {
+          ...item,
+          ekMaliyetDelta: newDelta,
+          unitPrice: newUnitPrice,
+          totalPrice: newTotal,
+        };
       });
+
       // Recalculate affected SET parents (only for sub-items)
       const affectedParents = new Set(taseronItems.filter(i => i.parentItemId).map(i => i.parentItemId!));
       for (const parentId of affectedParents) {
@@ -1619,8 +1660,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       }
       return result;
     });
+    itemsDirtyRef.current = true;
     setHasChanges(true);
-  }, [items]);
+  }, []);
 
   // ── Render: Loading ────────────────────────────────────────────────────────
 

@@ -288,11 +288,16 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
             ]}
           />
 
-          <Input
+          <Select
             label="Birim"
             value={formData.unit}
             onChange={(e) => handleChange('unit', e.target.value)}
-            placeholder="Adet"
+            options={[
+              { value: 'Adet', label: 'Adet' },
+              { value: 'Metre', label: 'Metre' },
+              { value: 'Set', label: 'Set' },
+              { value: 'Kişi/Gün', label: 'Kişi/Gün' },
+            ]}
           />
         </div>
 

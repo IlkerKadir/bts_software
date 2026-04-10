@@ -378,7 +378,7 @@ export async function generateImportPreview(
   let priceChanges = 0;
   let unchanged = 0;
 
-  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
 
   const productsWithStatus: PreviewProduct[] = products.map((product) => {
     const existing = existingMap.get(product.code);

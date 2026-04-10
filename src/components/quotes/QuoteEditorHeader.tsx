@@ -423,16 +423,18 @@ export function QuoteEditorHeader({
       </div>
 
       {/* ── Row 2: Controls ─────────────────────────────────────────────── */}
-      <div className="px-5 py-3 flex flex-wrap items-end gap-x-5 gap-y-3">
+      <div className="px-5 py-3 flex flex-wrap items-stretch gap-x-5 gap-y-3">
         {/* Currency */}
-        <div className="w-40">
-          <Select
-            label="Döviz"
-            value={currency}
-            onChange={(e) => onCurrencyChange(e.target.value)}
-            options={currencyOptions}
-            disabled={!isEditable}
-          />
+        <div className="w-40 flex flex-col">
+          <span className="text-sm font-medium text-primary-700 mb-1.5">Döviz</span>
+          <div className="mt-auto">
+            <Select
+              value={currency}
+              onChange={(e) => onCurrencyChange(e.target.value)}
+              options={currencyOptions}
+              disabled={!isEditable}
+            />
+          </div>
         </div>
 
         {/* Exchange Rate + Protection – opens modal */}
@@ -443,7 +445,7 @@ export function QuoteEditorHeader({
             onClick={() => isEditable && setShowExchangeRateModal(true)}
             disabled={!isEditable}
             className={cn(
-              'flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm transition-all',
+              'mt-auto flex items-center gap-2 px-3 py-2 border-2 rounded-lg text-sm transition-all',
               isEditable
                 ? 'border-accent-300 bg-accent-50 hover:border-accent-500 hover:bg-accent-100 hover:shadow-sm cursor-pointer'
                 : 'border-primary-200 bg-primary-50 cursor-not-allowed opacity-70'
@@ -471,9 +473,9 @@ export function QuoteEditorHeader({
         </div>
 
         {/* Language Toggle */}
-        <div className="space-y-1.5">
-          <span className="text-sm font-medium text-primary-700">Dil</span>
-          <div className="flex rounded-lg border border-primary-300 overflow-hidden">
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-primary-700 mb-1.5">Dil</span>
+          <div className="mt-auto flex rounded-lg border border-primary-300 overflow-hidden">
             <button
               type="button"
               onClick={() => onLanguageChange('TR')}
@@ -506,20 +508,21 @@ export function QuoteEditorHeader({
         </div>
 
         {/* Validity Days */}
-        <div className="flex items-end gap-1.5">
-          <div className="w-20">
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-primary-700 mb-1.5 whitespace-nowrap">Geçerlilik Süresi</span>
+          <div className="mt-auto flex items-center gap-1.5">
             <Input
-              label="Geçerlilik Süresi"
               type="number"
               min={1}
               max={365}
               value={validityDays}
               onChange={(e) => onValidityDaysChange(parseInt(e.target.value, 10) || 30)}
               disabled={!isEditable}
+              className="w-20"
             />
+            <span className="text-xs text-primary-500 whitespace-nowrap">gün</span>
+            <Clock className="h-4 w-4 text-primary-400 shrink-0" />
           </div>
-          <span className="mb-2.5 text-xs text-primary-500 whitespace-nowrap">gün</span>
-          <Clock className="mb-2.5 h-4 w-4 text-primary-400 shrink-0" />
         </div>
 
       </div>

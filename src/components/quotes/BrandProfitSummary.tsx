@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { QuoteItemData } from './QuoteItemRow';
+import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -151,8 +152,9 @@ export function BrandProfitSummary({
         grouped[brandKey].revenue += itemRevenue;
         grouped[brandKey].count += 1;
 
-        if (item.costPrice != null) {
-          grouped[brandKey].cost += Number(item.costPrice) * qty;
+        const effectiveCost = getEffectiveCostPrice(item);
+        if (effectiveCost != null) {
+          grouped[brandKey].cost += effectiveCost * qty;
         }
       }
 

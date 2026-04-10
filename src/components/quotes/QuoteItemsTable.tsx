@@ -17,6 +17,7 @@ import {
   type ColumnVisibility,
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
+import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -145,6 +146,26 @@ export function QuoteItemsTable({
   const columnWidthsRef = useRef(columnWidths);
   columnWidthsRef.current = columnWidths;
   const tableRef = useRef<HTMLTableElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const stickyHeaderInnerRef = useRef<HTMLDivElement>(null);
+
+  // Sync sticky header horizontal scroll with main table via direct DOM manipulation
+  // (avoids React re-render on every scroll pixel for performance on large quotes)
+  const handleMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const sl = e.currentTarget.scrollLeft;
+    if (stickyHeaderInnerRef.current) {
+      stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
+    }
+  }, []);
+
+  // Re-sync sticky header after column visibility or table width changes
+  // (browser may auto-clamp scrollLeft when table gets narrower)
+  const syncScrollLeft = useCallback(() => {
+    if (mainScrollRef.current && stickyHeaderInnerRef.current) {
+      const sl = mainScrollRef.current.scrollLeft;
+      stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
+    }
+  }, []);
 
   const handleThMouseDown = useCallback((e: React.MouseEvent<HTMLTableCellElement>, colKey: string) => {
     // Check if near right edge directly (don't rely on cursor style)
@@ -219,6 +240,17 @@ export function QuoteItemsTable({
     if (columnVisibility.gecmis) w += columnWidths.sonTeklif + columnWidths.delta1 + columnWidths.siparis + columnWidths.delta2 + columnWidths.enYuksek + columnWidths.delta3 + columnWidths.enDusuk + columnWidths.delta4;
     return w;
   }, [columnWidths, columnVisibility, canViewCosts]);
+
+  // Re-sync sticky header when table width or visibility changes
+  useEffect(() => {
+    syncScrollLeft();
+  }, [tableWidth, columnVisibility, canViewCosts, syncScrollLeft]);
+
+  // Sync on window resize
+  useEffect(() => {
+    window.addEventListener('resize', syncScrollLeft);
+    return () => window.removeEventListener('resize', syncScrollLeft);
+  }, [syncScrollLeft]);
 
   // ── Filter state ──────────────────────────────────────────────────────────
 
@@ -496,12 +528,14 @@ export function QuoteItemsTable({
     }
 
     // Cost calculation – exclude SUBTOTAL and parentItemId items
+    // Use effective cost (base + ek maliyet delta) so totals reflect distributed costs
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
       if (item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
-      if (item.costPrice != null) {
-        totalCost += Number(item.costPrice) * qty;
+      const effectiveCost = getEffectiveCostPrice(item);
+      if (effectiveCost != null) {
+        totalCost += effectiveCost * qty;
       }
     }
 
@@ -580,6 +614,134 @@ export function QuoteItemsTable({
   const filteredProductCount = filteredItems.filter(
     (i) => i.itemType !== 'HEADER' && i.itemType !== 'NOTE'
   ).length;
+
+  // Shared colgroup JSX — used by both sticky header table and main table
+  const colgroupJsx = useMemo(() => (
+    <colgroup>
+      <col style={{ width: columnWidths.drag }} />
+      <col style={{ width: columnWidths.pozNo }} />
+      {columnVisibility.urun && (
+        <>
+          <col style={{ width: columnWidths.marka }} />
+          <col style={{ width: columnWidths.model }} />
+          <col style={{ width: columnWidths.kod }} />
+        </>
+      )}
+      <col style={{ width: columnWidths.aciklama }} />
+      <col style={{ width: columnWidths.miktar }} />
+      {columnVisibility.fiyat && (
+        <>
+          <col style={{ width: columnWidths.birimFiyat }} />
+          <col style={{ width: columnWidths.toplamFiyat }} />
+        </>
+      )}
+      {columnVisibility.fiyat && (
+        <>
+          <col style={{ width: columnWidths.katsayi }} />
+          <col style={{ width: columnWidths.listeFiyati }} />
+        </>
+      )}
+      {canViewCosts && columnVisibility.maliyet && (
+        <>
+          <col style={{ width: columnWidths.maliyet }} />
+          <col style={{ width: columnWidths.kar }} />
+          <col style={{ width: columnWidths.karPct }} />
+        </>
+      )}
+      <col style={{ width: columnWidths.pb }} />
+      {columnVisibility.gecmis && (
+        <>
+          <col style={{ width: columnWidths.sonTeklif }} />
+          <col style={{ width: columnWidths.delta1 }} />
+          <col style={{ width: columnWidths.siparis }} />
+          <col style={{ width: columnWidths.delta2 }} />
+          <col style={{ width: columnWidths.enYuksek }} />
+          <col style={{ width: columnWidths.delta3 }} />
+          <col style={{ width: columnWidths.enDusuk }} />
+          <col style={{ width: columnWidths.delta4 }} />
+        </>
+      )}
+      <col style={{ width: columnWidths.delete }} />
+    </colgroup>
+  ), [columnWidths, columnVisibility, canViewCosts]);
+
+  // Shared thead JSX — rendered in the sticky floating header
+  const theadJsx = useMemo(() => (
+    <thead>
+      {/* Group header row */}
+      <tr className="bg-accent-900 text-white text-[10px] uppercase tracking-wider">
+        <th className="w-8 px-1 py-1" />
+        <th className="px-2 py-1 whitespace-nowrap">Poz</th>
+        {columnVisibility.urun && (
+          <th colSpan={3} className="px-2 py-1 text-center border-l border-accent-700">Ürün Bilgisi</th>
+        )}
+        <th className="px-2 py-1 border-l border-accent-700">Açıklama</th>
+        <th className="px-2 py-1">Miktar</th>
+        {columnVisibility.fiyat && (
+          <th colSpan={2} className="px-2 py-1 text-center border-l border-accent-700">Teklif Satış Fiyatları</th>
+        )}
+        {columnVisibility.fiyat && (
+          <th colSpan={2} className="px-2 py-1 text-center border-l border-accent-700">Teklif Hazırlama</th>
+        )}
+        {canViewCosts && columnVisibility.maliyet && (
+          <th colSpan={3} className="px-2 py-1 text-center border-l border-accent-700">Maliyet Analizi</th>
+        )}
+        <th className="px-1 py-1 border-l border-accent-700">PB</th>
+        {columnVisibility.gecmis && (
+          <th colSpan={8} className="px-2 py-1 text-center border-l border-accent-700">Fiyat Geçmişi</th>
+        )}
+        <th className="w-10 px-1 py-1" />
+      </tr>
+
+      {/* Individual column header row */}
+      <tr className="bg-accent-800 text-white text-xs uppercase tracking-wider">
+        <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.drag }} />
+        <th className="px-2 py-2 text-center whitespace-nowrap" style={{ width: columnWidths.pozNo }} onMouseDown={(e) => handleThMouseDown(e, 'pozNo')} onMouseMove={handleThMouseMove}>Poz No</th>
+        {columnVisibility.urun && (
+          <>
+            <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.marka }} onMouseDown={(e) => handleThMouseDown(e, 'marka')} onMouseMove={handleThMouseMove}>Marka</th>
+            <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.model }} onMouseDown={(e) => handleThMouseDown(e, 'model')} onMouseMove={handleThMouseMove}>Model</th>
+            <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.kod }} onMouseDown={(e) => handleThMouseDown(e, 'kod')} onMouseMove={handleThMouseMove}>Kod</th>
+          </>
+        )}
+        <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.aciklama }} onMouseDown={(e) => handleThMouseDown(e, 'aciklama')} onMouseMove={handleThMouseMove}>Açıklama</th>
+        <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.miktar }} onMouseDown={(e) => handleThMouseDown(e, 'miktar')} onMouseMove={handleThMouseMove}>Miktar</th>
+        {columnVisibility.fiyat && (
+          <>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.birimFiyat }} onMouseDown={(e) => handleThMouseDown(e, 'birimFiyat')} onMouseMove={handleThMouseMove}>Birim Fiyat</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.toplamFiyat }} onMouseDown={(e) => handleThMouseDown(e, 'toplamFiyat')} onMouseMove={handleThMouseMove}>Toplam Fiyat</th>
+          </>
+        )}
+        {columnVisibility.fiyat && (
+          <>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.katsayi }} onMouseDown={(e) => handleThMouseDown(e, 'katsayi')} onMouseMove={handleThMouseMove}>Katsayı</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.listeFiyati }} onMouseDown={(e) => handleThMouseDown(e, 'listeFiyati')} onMouseMove={handleThMouseMove}>Liste Fiyatı</th>
+          </>
+        )}
+        {canViewCosts && columnVisibility.maliyet && (
+          <>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.maliyet }} onMouseDown={(e) => handleThMouseDown(e, 'maliyet')} onMouseMove={handleThMouseMove}>Maliyet</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.kar }} onMouseDown={(e) => handleThMouseDown(e, 'kar')} onMouseMove={handleThMouseMove}>Kar</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.karPct }} onMouseDown={(e) => handleThMouseDown(e, 'karPct')} onMouseMove={handleThMouseMove}>Kar %</th>
+          </>
+        )}
+        <th className="px-1 py-2 text-center whitespace-nowrap" style={{ width: columnWidths.pb }} onMouseDown={(e) => handleThMouseDown(e, 'pb')} onMouseMove={handleThMouseMove}>PB</th>
+        {columnVisibility.gecmis && (
+          <>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.sonTeklif }} onMouseDown={(e) => handleThMouseDown(e, 'sonTeklif')} onMouseMove={handleThMouseMove}>Son Teklif</th>
+            <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta1 }} onMouseDown={(e) => handleThMouseDown(e, 'delta1')} onMouseMove={handleThMouseMove}>Δ%</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.siparis }} onMouseDown={(e) => handleThMouseDown(e, 'siparis')} onMouseMove={handleThMouseMove}>Sipariş</th>
+            <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta2 }} onMouseDown={(e) => handleThMouseDown(e, 'delta2')} onMouseMove={handleThMouseMove}>Δ%</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.enYuksek }} onMouseDown={(e) => handleThMouseDown(e, 'enYuksek')} onMouseMove={handleThMouseMove}>En Yüksek</th>
+            <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta3 }} onMouseDown={(e) => handleThMouseDown(e, 'delta3')} onMouseMove={handleThMouseMove}>Δ%</th>
+            <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.enDusuk }} onMouseDown={(e) => handleThMouseDown(e, 'enDusuk')} onMouseMove={handleThMouseMove}>En Düşük</th>
+            <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta4 }} onMouseDown={(e) => handleThMouseDown(e, 'delta4')} onMouseMove={handleThMouseMove}>Δ%</th>
+          </>
+        )}
+        <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.delete }} />
+      </tr>
+    </thead>
+  ), [columnWidths, columnVisibility, canViewCosts, handleThMouseDown, handleThMouseMove]);
 
   return (
     <div className="space-y-3">
@@ -779,200 +941,40 @@ export function QuoteItemsTable({
         </div>
       )}
 
-      {/* ---- Table ---- */}
-      <div className="overflow-x-auto rounded-lg border border-accent-200 bg-white">
+      {/*
+        ---- Table with sticky floating header ----
+        ARCHITECTURE: The horizontal scroll container (overflow-x-auto) would trap
+        `position: sticky` (browsers force overflow-y: auto when overflow-x is set).
+        Workaround: render the <thead> inside a separate sticky div OUTSIDE the
+        scroll container, and sync its horizontal offset via transform:translateX.
+        The main table has no <thead> — column widths come from the shared colgroup.
+      */}
+      <div>
+        {/* Floating sticky header — visual duplicate of the thead */}
+        <div
+          className="sticky top-0 z-30 overflow-hidden rounded-t-lg border border-b-0 border-accent-200 bg-white"
+          aria-hidden="true"
+        >
+          <div
+            ref={stickyHeaderInnerRef}
+            style={{ width: tableWidth, willChange: 'transform' }}
+          >
+            <table className="text-sm border-separate border-spacing-0" style={{ tableLayout: 'fixed', width: tableWidth }}>
+              {colgroupJsx}
+              {theadJsx}
+            </table>
+          </div>
+        </div>
+
+        {/* Main scrolling table */}
+        <div
+          ref={mainScrollRef}
+          className="rounded-b-lg border border-t-0 border-accent-200 bg-white overflow-x-auto"
+          onScroll={handleMainScroll}
+        >
         <table ref={tableRef} className="text-sm border-separate border-spacing-0" style={{ tableLayout: 'fixed', width: tableWidth }}>
-          {/* Column width definitions for table-layout: fixed */}
-          <colgroup>
-            <col style={{ width: columnWidths.drag }} />
-            <col style={{ width: columnWidths.pozNo }} />
-            {columnVisibility.urun && (
-              <>
-                <col style={{ width: columnWidths.marka }} />
-                <col style={{ width: columnWidths.model }} />
-                <col style={{ width: columnWidths.kod }} />
-              </>
-            )}
-            <col style={{ width: columnWidths.aciklama }} />
-            <col style={{ width: columnWidths.miktar }} />
-            {columnVisibility.fiyat && (
-              <>
-                <col style={{ width: columnWidths.birimFiyat }} />
-                <col style={{ width: columnWidths.toplamFiyat }} />
-              </>
-            )}
-            {columnVisibility.fiyat && (
-              <>
-                <col style={{ width: columnWidths.katsayi }} />
-                <col style={{ width: columnWidths.listeFiyati }} />
-              </>
-            )}
-            {canViewCosts && columnVisibility.maliyet && (
-              <>
-                <col style={{ width: columnWidths.maliyet }} />
-                <col style={{ width: columnWidths.kar }} />
-                <col style={{ width: columnWidths.karPct }} />
-              </>
-            )}
-            <col style={{ width: columnWidths.pb }} />
-            {columnVisibility.gecmis && (
-              <>
-                <col style={{ width: columnWidths.sonTeklif }} />
-                <col style={{ width: columnWidths.delta1 }} />
-                <col style={{ width: columnWidths.siparis }} />
-                <col style={{ width: columnWidths.delta2 }} />
-                <col style={{ width: columnWidths.enYuksek }} />
-                <col style={{ width: columnWidths.delta3 }} />
-                <col style={{ width: columnWidths.enDusuk }} />
-                <col style={{ width: columnWidths.delta4 }} />
-              </>
-            )}
-            <col style={{ width: columnWidths.delete }} />
-          </colgroup>
-          {/* ---- Three-row sticky header ---- */}
-          <thead className="sticky top-0 z-20">
-            {/* Group header row */}
-            <tr className="bg-accent-900 text-white text-[10px] uppercase tracking-wider">
-              {/* Drag */}
-              <th className="w-8 px-1 py-1" />
-              {/* Poz */}
-              <th className="px-2 py-1 whitespace-nowrap">Poz</th>
-              {/* Urun group */}
-              {columnVisibility.urun && (
-                <th colSpan={3} className="px-2 py-1 text-center border-l border-accent-700">Ürün Bilgisi</th>
-              )}
-              {/* Aciklama */}
-              <th className="px-2 py-1 border-l border-accent-700">Açıklama</th>
-              {/* Miktar */}
-              <th className="px-2 py-1">Miktar</th>
-              {/* Fiyat sub-groups */}
-              {columnVisibility.fiyat && (
-                <th colSpan={2} className="px-2 py-1 text-center border-l border-accent-700">
-                  Teklif Satış Fiyatları
-                </th>
-              )}
-              {columnVisibility.fiyat && (
-                <th colSpan={2} className="px-2 py-1 text-center border-l border-accent-700">
-                  Teklif Hazırlama
-                </th>
-              )}
-              {/* Maliyet group */}
-              {canViewCosts && columnVisibility.maliyet && (
-                <th colSpan={3} className="px-2 py-1 text-center border-l border-accent-700">Maliyet Analizi</th>
-              )}
-              {/* Currency */}
-              <th className="px-1 py-1 border-l border-accent-700">PB</th>
-              {/* Gecmis group */}
-              {columnVisibility.gecmis && (
-                <th colSpan={8} className="px-2 py-1 text-center border-l border-accent-700">Fiyat Geçmişi</th>
-              )}
-              {/* Delete */}
-              <th className="w-10 px-1 py-1" />
-            </tr>
-
-            {/* Individual column header row */}
-            <tr className="bg-accent-800 text-white text-xs uppercase tracking-wider">
-              {/* Drag handle — no resize */}
-              <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.drag }} />
-              <th className="px-2 py-2 text-center whitespace-nowrap" style={{ width: columnWidths.pozNo }} onMouseDown={(e) => handleThMouseDown(e, 'pozNo')} onMouseMove={handleThMouseMove}>
-                Poz No
-              </th>
-
-              {columnVisibility.urun && (
-                <>
-                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.marka }} onMouseDown={(e) => handleThMouseDown(e, 'marka')} onMouseMove={handleThMouseMove}>
-                    Marka
-                  </th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.model }} onMouseDown={(e) => handleThMouseDown(e, 'model')} onMouseMove={handleThMouseMove}>
-                    Model
-                  </th>
-                  <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.kod }} onMouseDown={(e) => handleThMouseDown(e, 'kod')} onMouseMove={handleThMouseMove}>
-                    Kod
-                  </th>
-                </>
-              )}
-
-              <th className="px-2 py-2 text-left whitespace-nowrap" style={{ width: columnWidths.aciklama }} onMouseDown={(e) => handleThMouseDown(e, 'aciklama')} onMouseMove={handleThMouseMove}>
-                Açıklama
-              </th>
-              <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.miktar }} onMouseDown={(e) => handleThMouseDown(e, 'miktar')} onMouseMove={handleThMouseMove}>
-                Miktar
-              </th>
-
-              {/* Teklif Satış Fiyatları: Birim Fiyat, Toplam Fiyat */}
-              {columnVisibility.fiyat && (
-                <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.birimFiyat }} onMouseDown={(e) => handleThMouseDown(e, 'birimFiyat')} onMouseMove={handleThMouseMove}>
-                    Birim Fiyat
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.toplamFiyat }} onMouseDown={(e) => handleThMouseDown(e, 'toplamFiyat')} onMouseMove={handleThMouseMove}>
-                    Toplam Fiyat
-                  </th>
-                </>
-              )}
-              {/* Teklif Hazırlama: Katsayı, Liste Fiyatı */}
-              {columnVisibility.fiyat && (
-                <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.katsayi }} onMouseDown={(e) => handleThMouseDown(e, 'katsayi')} onMouseMove={handleThMouseMove}>
-                    Katsayı
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.listeFiyati }} onMouseDown={(e) => handleThMouseDown(e, 'listeFiyati')} onMouseMove={handleThMouseMove}>
-                    Liste Fiyatı
-                  </th>
-                </>
-              )}
-
-              {canViewCosts && columnVisibility.maliyet && (
-                <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.maliyet }} onMouseDown={(e) => handleThMouseDown(e, 'maliyet')} onMouseMove={handleThMouseMove}>
-                    Maliyet
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.kar }} onMouseDown={(e) => handleThMouseDown(e, 'kar')} onMouseMove={handleThMouseMove}>
-                    Kar
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.karPct }} onMouseDown={(e) => handleThMouseDown(e, 'karPct')} onMouseMove={handleThMouseMove}>
-                    Kar %
-                  </th>
-                </>
-              )}
-
-              <th className="px-1 py-2 text-center whitespace-nowrap" style={{ width: columnWidths.pb }} onMouseDown={(e) => handleThMouseDown(e, 'pb')} onMouseMove={handleThMouseMove}>
-                PB
-              </th>
-
-              {columnVisibility.gecmis && (
-                <>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.sonTeklif }} onMouseDown={(e) => handleThMouseDown(e, 'sonTeklif')} onMouseMove={handleThMouseMove}>
-                    Son Teklif
-                  </th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta1 }} onMouseDown={(e) => handleThMouseDown(e, 'delta1')} onMouseMove={handleThMouseMove}>
-                    Δ%
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.siparis }} onMouseDown={(e) => handleThMouseDown(e, 'siparis')} onMouseMove={handleThMouseMove}>
-                    Sipariş
-                  </th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta2 }} onMouseDown={(e) => handleThMouseDown(e, 'delta2')} onMouseMove={handleThMouseMove}>
-                    Δ%
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.enYuksek }} onMouseDown={(e) => handleThMouseDown(e, 'enYuksek')} onMouseMove={handleThMouseMove}>
-                    En Yüksek
-                  </th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta3 }} onMouseDown={(e) => handleThMouseDown(e, 'delta3')} onMouseMove={handleThMouseMove}>
-                    Δ%
-                  </th>
-                  <th className="px-2 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.enDusuk }} onMouseDown={(e) => handleThMouseDown(e, 'enDusuk')} onMouseMove={handleThMouseMove}>
-                    En Düşük
-                  </th>
-                  <th className="px-1 py-2 text-right whitespace-nowrap" style={{ width: columnWidths.delta4 }} onMouseDown={(e) => handleThMouseDown(e, 'delta4')} onMouseMove={handleThMouseMove}>
-                    Δ%
-                  </th>
-                </>
-              )}
-
-              {/* Delete col — no resize */}
-              <th className="px-1 py-2 overflow-hidden" style={{ width: columnWidths.delete }} />
-            </tr>
-          </thead>
+          {colgroupJsx}
+          {/* thead rendered in sticky floating header above */}
 
           <tbody>
             {items.length === 0 && (
@@ -1198,6 +1200,7 @@ export function QuoteItemsTable({
 
           </tfoot>
         </table>
+        </div>
       </div>
     </div>
   );

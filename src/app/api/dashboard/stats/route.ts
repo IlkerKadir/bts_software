@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { getEffectiveCostPrice } from '@/lib/quote-calculations';
 
 export async function GET() {
   try {
@@ -53,6 +54,7 @@ export async function GET() {
             select: {
               totalPrice: true,
               costPrice: true,
+              ekMaliyetDelta: true,
               quantity: true,
             },
           },
@@ -67,8 +69,10 @@ export async function GET() {
         // Revenue = subtotal - discount (pre-VAT, post-discount)
         totalRevenue += Number(quote.subtotal) - Number(quote.discountTotal);
         for (const item of quote.items) {
-          if (item.costPrice) {
-            totalCost += Number(item.costPrice) * Number(item.quantity);
+          // Include ek maliyet delta in effective cost
+          const effectiveCost = getEffectiveCostPrice(item);
+          if (effectiveCost != null) {
+            totalCost += effectiveCost * Number(item.quantity);
           }
         }
       }

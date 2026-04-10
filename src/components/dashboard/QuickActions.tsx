@@ -6,7 +6,6 @@ import { Card, CardBody } from '@/components/ui';
 import {
   FilePlus,
   Search,
-  RefreshCw,
 } from 'lucide-react';
 
 interface QuickAction {
@@ -34,14 +33,6 @@ const actions: QuickAction[] = [
     icon: Search,
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
-  },
-  {
-    label: 'Kur Güncelle',
-    description: 'Döviz kurlarını güncelle',
-    href: '/settings/exchange-rates',
-    icon: RefreshCw,
-    iconBg: 'bg-green-50',
-    iconColor: 'text-green-600',
   },
 ];
 

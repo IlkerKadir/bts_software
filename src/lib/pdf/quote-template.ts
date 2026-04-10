@@ -202,7 +202,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
   let itemNumber = 0;
   const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
-      return `<tr style="height:13pt">
+      return `<tr style="height:13pt; page-break-after:avoid; break-after:avoid;">
         <td><p><br></p></td>
         <td colspan="4"><p class="s1" style="padding-left:1pt; color:black;">${escapeHtml(item.description)}</p></td>
       </tr>`;
@@ -378,6 +378,17 @@ table.main tbody td:nth-child(5) {
   padding: 1pt 2pt;
   vertical-align: top;
 }
+/* Keep section headings together with their first content row — prevents
+   a heading from being stranded at the bottom of a page while content
+   flows to the next page */
+.terms-heading {
+  page-break-after: avoid;
+  break-after: avoid;
+}
+.terms-row {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
 .notes-row td {
   border: none !important;
   padding: 2pt 2pt;
@@ -408,7 +419,7 @@ table.main tbody td:nth-child(5) {
 
     <!-- Row 2: Client info box (colspan=3 left + colspan=2 right) -->
     <tr>
-      <td colspan="3" class="info-left" style="border:1.2pt solid black; border-right:1.2pt solid black; vertical-align:top; padding:2pt 4pt 4pt 8pt; text-align:center;">
+      <td colspan="3" class="info-left" style="border:1.2pt solid black; border-right:1.2pt solid black; vertical-align:top; padding:4pt 4pt 4pt 8pt; text-align:left;">
         ${leftContent}
       </td>
       <td colspan="2" class="info-right" style="border:1.2pt solid black; border-left:none; vertical-align:top; padding:0;">
@@ -477,7 +488,7 @@ function buildCommercialTermsRows(
   const dahilOlmayan = termsByCategory.get('DAHIL_OLMAYAN');
   if (dahilOlmayan && dahilOlmayan.length > 0) {
     const label = CATEGORY_LABELS['DAHIL_OLMAYAN'] || 'Dahil Olmayan Hizmetler:';
-    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:1pt;padding-top:8pt;">${escapeHtml(label)}</p></td></tr>\n`;
+    rows += `    <tr class="terms-row terms-heading"><td colspan="5"><p class="s3" style="padding-left:1pt;padding-top:8pt;">${escapeHtml(label)}</p></td></tr>\n`;
     for (const entry of dahilOlmayan) {
       rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
     }
@@ -492,7 +503,7 @@ function buildCommercialTermsRows(
   const hasAnyCommercialTerms = hasStandardTerms || unknownCats.length > 0;
 
   if (hasAnyCommercialTerms) {
-    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:1pt;padding-top:8pt;">${isTR ? 'TİCARİ ŞARTLAR' : 'COMMERCIAL TERMS'}</p></td></tr>\n`;
+    rows += `    <tr class="terms-row terms-heading"><td colspan="5"><p class="s3" style="padding-left:1pt;padding-top:8pt;">${isTR ? 'TİCARİ ŞARTLAR' : 'COMMERCIAL TERMS'}</p></td></tr>\n`;
   }
 
   // 3) Render each category in defined order
@@ -501,7 +512,7 @@ function buildCommercialTermsRows(
     if (!values || values.length === 0) continue;
 
     const label = CATEGORY_LABELS[catKey] || catKey.toUpperCase();
-    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:40pt;">${escapeHtml(label)}</p></td></tr>\n`;
+    rows += `    <tr class="terms-row terms-heading"><td colspan="5"><p class="s3" style="padding-left:40pt;">${escapeHtml(label)}</p></td></tr>\n`;
 
     if (catKey === 'onaylar') {
       // onaylar: ALL terms comma-joined on a single line
@@ -532,7 +543,7 @@ function buildCommercialTermsRows(
   // 4) Any terms with categories not in the predefined list
   for (const catKey of unknownCats) {
     const values = termsByCategory.get(catKey)!;
-    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:40pt;">${escapeHtml(catKey)}</p></td></tr>\n`;
+    rows += `    <tr class="terms-row terms-heading"><td colspan="5"><p class="s3" style="padding-left:40pt;">${escapeHtml(catKey)}</p></td></tr>\n`;
     for (const entry of values) {
       rows += `    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:40pt;line-height:110%;">${escapeHtml(entry.content)}</p></td></tr>\n`;
     }
@@ -567,7 +578,7 @@ function buildCommercialTermsRows(
     const sorted = [...allNotes].sort((a, b) => a.sortOrder - b.sortOrder);
     const title = isTR ? 'NOTLAR' : 'NOTES';
 
-    rows += `    <tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:40pt;padding-top:6pt;">${title}</p></td></tr>\n`;
+    rows += `    <tr class="terms-row terms-heading"><td colspan="5"><p class="s3" style="padding-left:40pt;padding-top:6pt;">${title}</p></td></tr>\n`;
 
     sorted.forEach((note, i) => {
       const hlClass = note.highlight ? ' highlight-yellow' : '';

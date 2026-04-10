@@ -33,6 +33,7 @@ export interface ApiQuoteItem {
   notes?: string | null;
   isManualPrice?: boolean;
   costPrice?: number | string | null;
+  ekMaliyetDelta?: number | string | null;
   serviceMeta?: unknown;
   subRows?: ApiQuoteItem[];
   product?: { model?: string | null; currency?: string | null; listPrice?: number | string | null; costPrice?: number | string | null; minKatsayi?: number | string | null; maxKatsayi?: number | string | null; [key: string]: unknown };
@@ -72,4 +73,5 @@ export interface CreateItemPayload {
   unitPrice?: number;
   totalPrice?: number;
   costPrice?: number | null;
+  ekMaliyetDelta?: number | null;
 }

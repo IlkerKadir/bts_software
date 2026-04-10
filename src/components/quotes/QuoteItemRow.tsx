@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatPrice, formatNumber } from '@/lib/utils/format';
+import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +47,9 @@ export interface QuoteItemData {
   maxKatsayi?: number | null;
   subRows?: QuoteItemData[];
   customPozNo?: string | null;
+  /** Per-unit ek maliyet distributed amount. Adds to listPrice and costPrice
+   *  for display/calculation, but the underlying fields remain untouched. */
+  ekMaliyetDelta?: number | null;
 }
 
 export interface PriceHistoryStats {
@@ -319,14 +323,21 @@ export function QuoteItemRow({
     setContextMenu({ x, y });
   };
 
+  // Ek maliyet delta — adds to listPrice and costPrice for display only.
+  // Underlying DB fields are never mutated.
+  const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+
+  // Effective (displayed) prices include the ek maliyet delta
+  const effectiveListPriceNum = Number(item.listPrice) + ekDelta;
+  const effectiveCostPriceNum = getEffectiveCostPrice(item);
+
   // Margin helpers
   const unitPriceNum = Number(item.unitPrice) || 0;
   const discPct = Number(item.discountPct) || 0;
   const effectiveUnitPrice = unitPriceNum * (1 - discPct / 100);
-  const costPriceNum = item.costPrice != null ? Number(item.costPrice) : null;
   const margin =
-    costPriceNum != null && costPriceNum > 0 && effectiveUnitPrice > 0
-      ? ((effectiveUnitPrice - costPriceNum) / effectiveUnitPrice) * 100
+    effectiveCostPriceNum != null && effectiveCostPriceNum > 0 && effectiveUnitPrice > 0
+      ? ((effectiveUnitPrice - effectiveCostPriceNum) / effectiveUnitPrice) * 100
       : null;
   const isLowMargin = margin !== null && margin < 15;
 
@@ -802,7 +813,8 @@ export function QuoteItemRow({
                       onChange={(v) => {
                         const k = Number(v);
                         const shouldCalc = isCustom || !item.isManualPrice;
-                        const newUnitPrice = shouldCalc ? Number(item.listPrice) * k : Number(item.unitPrice);
+                        // Include ek maliyet delta in effective list price
+                        const newUnitPrice = shouldCalc ? effectiveListPriceNum * k : Number(item.unitPrice);
                         const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
                         onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
                       }}
@@ -826,11 +838,13 @@ export function QuoteItemRow({
                   onChange={(v) => {
                     const lp = Number(v);
                     const shouldCalc = isCustom || !item.isManualPrice;
-                    const newUnitPrice = shouldCalc ? lp * Number(item.katsayi) : Number(item.unitPrice);
+                    // unitPrice calculation uses the effective list price (base + ek maliyet delta)
+                    const effectiveLp = lp + ekDelta;
+                    const newUnitPrice = shouldCalc ? effectiveLp * Number(item.katsayi) : Number(item.unitPrice);
                     const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
                     onUpdate({ listPrice: lp, unitPrice: newUnitPrice, totalPrice: total });
                   }}
-                  displayValue={formatPrice(Number(item.listPrice), currency)}
+                  displayValue={formatPrice(effectiveListPriceNum, currency)}
                   className="text-right"
                 />
               )}
@@ -842,12 +856,12 @@ export function QuoteItemRow({
         {canViewCosts && columnVisibility.maliyet && (
           <>
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap text-accent-700">
-              {item.costPrice != null ? formatPrice(Number(item.costPrice), currency) : '-'}
+              {effectiveCostPriceNum != null ? formatPrice(effectiveCostPriceNum, currency) : '-'}
             </td>
             <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
               <span className={cn(isLowMargin && 'text-red-600 font-medium')}>
-                {item.costPrice != null
-                  ? formatPrice(effectiveUnitPrice - Number(item.costPrice), currency)
+                {effectiveCostPriceNum != null
+                  ? formatPrice(effectiveUnitPrice - effectiveCostPriceNum, currency)
                   : '-'}
               </span>
             </td>

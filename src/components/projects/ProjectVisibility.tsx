@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Lock, Globe, Check } from 'lucide-react';
-import { Button, Spinner } from '@/components/ui';
+import { Eye, Users, Lock, Globe, Check } from 'lucide-react';
+import { Button, Card, CardHeader, CardBody, Spinner } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 interface VisibilityUser {
@@ -120,18 +120,28 @@ export function ProjectVisibility({ projectId }: Props) {
     });
   }, []);
 
-  // Non-managers don't see this section
-  if (!isManager && !isLoading) return null;
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-6">
-        <Spinner size="sm" />
-      </div>
-    );
-  }
+  // Non-managers don't see this section at all
+  if (!isManager) return null;
 
   return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-accent-100">
+            <Eye className="w-5 h-5 text-accent-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-primary-900">Proje Görünürlüğü</h3>
+            <p className="text-xs text-primary-500">Bu projedeki teklifleri kimlerin görebileceğini belirleyin</p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardBody>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Spinner size="sm" />
+          </div>
+        ) : (
     <div className="space-y-4">
       {createdBy && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 border border-primary-200">
@@ -227,5 +237,8 @@ export function ProjectVisibility({ projectId }: Props) {
         </Button>
       </div>
     </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }

@@ -94,13 +94,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (user.role.canViewCosts) {
       const { calculateQuoteProfitSummary } = await import('@/lib/quote-calculations');
       const raw = calculateQuoteProfitSummary(
-        quote.items.map(item => ({
-          totalPrice: Number(item.totalPrice),
-          costPrice: item.costPrice ? Number(item.costPrice) : null,
-          quantity: Number(item.quantity),
-          itemType: item.itemType,
-          parentItemId: item.parentItemId,
-        })),
+        quote.items.map(item => {
+          // Include ek maliyet delta in effective cost price for profit calc
+          const baseCost = item.costPrice != null ? Number(item.costPrice) : null;
+          const delta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+          const effectiveCost = delta > 0 ? (baseCost ?? 0) + delta : baseCost;
+          return {
+            totalPrice: Number(item.totalPrice),
+            costPrice: effectiveCost,
+            quantity: Number(item.quantity),
+            itemType: item.itemType,
+            parentItemId: item.parentItemId,
+          };
+        }),
         Number(quote.discountPct) || 0
       );
       profitSummary = {

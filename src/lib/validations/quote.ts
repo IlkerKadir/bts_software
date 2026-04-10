@@ -52,6 +52,7 @@ export const quoteItemSchema = z.object({
   vatRate: z.number().min(0).max(100).default(20),
   notes: z.string().nullish(),
   costPrice: z.number().nullish(),
+  ekMaliyetDelta: z.number().nullish(),
 });
 
 export const quoteItemUpdateSchema = quoteItemSchema.extend({

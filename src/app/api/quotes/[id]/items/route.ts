@@ -143,6 +143,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         notes: data.notes || null,
         parentItemId: data.parentItemId || null,
         costPrice: data.costPrice ?? null,
+        ekMaliyetDelta: data.ekMaliyetDelta ?? null,
       },
       include: {
         product: {
@@ -214,10 +215,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
         // For non-priced items (HEADER, NOTE, SUBTOTAL), zero out prices
         // For manual price / SET parent items, use provided unitPrice; otherwise calculate
+        // Include ekMaliyetDelta in the effective list price for unitPrice computation
+        const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+        const effectiveListPrice = listPrice + ekDelta;
         const unitPrice = isNonPriced ? 0
           : (isManualPrice || isSetParent) && item.unitPrice != null
             ? item.unitPrice
-            : calculateUnitPrice(listPrice, katsayi);
+            : calculateUnitPrice(effectiveListPrice, katsayi);
         const totalPrice = isNonPriced ? 0
           : (isManualPrice || isSetParent) && item.totalPrice != null
             ? item.totalPrice
@@ -243,6 +247,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             notes: item.notes || null,
             parentItemId: item.parentItemId || null,
             costPrice: item.costPrice ?? undefined,
+            ekMaliyetDelta: item.ekMaliyetDelta !== undefined ? item.ekMaliyetDelta : undefined,
             serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
           },
         });

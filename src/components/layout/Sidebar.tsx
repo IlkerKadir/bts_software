@@ -13,7 +13,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Coins,
   Shield,
   Clock,
   FileImage,
@@ -34,7 +33,6 @@ const menuItems = [
 const adminItems = [
   { href: '/users', label: 'Kullanıcılar', icon: Users },
   { href: '/settings/roles', label: 'Roller', icon: Shield },
-  { href: '/settings/exchange-rates', label: 'Döviz Kurları', icon: Coins },
   { href: '/settings/templates', label: 'Şablonlar', icon: FileImage },
   { href: '/settings', label: 'Ayarlar', icon: Settings },
 ];

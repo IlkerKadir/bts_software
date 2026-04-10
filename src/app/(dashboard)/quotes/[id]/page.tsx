@@ -75,6 +75,7 @@ interface QuoteItem {
   notes?: string | null;
   isManualPrice?: boolean;
   costPrice?: number | null;
+  ekMaliyetDelta?: number | null;
   product?: {
     minKatsayi?: number | string | null;
     maxKatsayi?: number | string | null;
@@ -175,6 +176,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [approvalCheck, setApprovalCheck] = useState<ApprovalCheckResult | null>(null);
   const [documents, setDocuments] = useState<QuoteDocument[]>([]);
+  const [ekMaliyetItems, setEkMaliyetItems] = useState<{ title: string; amount: number }[]>([]);
 
   // Fetch user session for permissions
   useEffect(() => {
@@ -225,6 +227,13 @@ export default function QuoteDetailPage({ params }: PageProps) {
       if (docsResponse.ok) {
         const docsData = await docsResponse.json();
         setDocuments(docsData.documents || []);
+      }
+
+      // Fetch ek maliyet entries
+      const ekRes = await fetch(`/api/quotes/${id}/ek-maliyet`);
+      if (ekRes.ok) {
+        const ekData = await ekRes.json();
+        setEkMaliyetItems((ekData.items || []).map((i: any) => ({ title: i.title, amount: Number(i.amount) })));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bir hata oluştu');
@@ -688,6 +697,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
             notes: item.notes,
             isManualPrice: item.isManualPrice,
             costPrice: item.costPrice != null ? Number(item.costPrice) : null,
+            ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
           }))}
           discountPct={Number(quote.discountPct) || 0}
           currency={quote.currency}
@@ -914,6 +924,45 @@ export default function QuoteDetailPage({ params }: PageProps) {
           </table>
         </div>
       </Card>
+
+      {/* ================================================================== */}
+      {/* EK MALİYET                                                          */}
+      {/* ================================================================== */}
+      {ekMaliyetItems.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-primary-100 rounded-lg flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-primary-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-primary-900">Ek Maliyet</h3>
+                <p className="text-xs text-primary-500">
+                  TAŞERON kalemlerine dağıtılan ek maliyetler
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-2">
+              {ekMaliyetItems.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between py-2 border-b border-primary-100 last:border-0">
+                  <span className="text-sm text-primary-800">{item.title}</span>
+                  <span className="text-sm font-semibold tabular-nums text-primary-900">
+                    {item.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-2 border-t border-primary-300">
+                <span className="text-sm font-semibold text-primary-900">Toplam</span>
+                <span className="text-sm font-bold tabular-nums text-primary-900">
+                  {ekMaliyetItems.reduce((s, i) => s + i.amount, 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                </span>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* ================================================================== */}
       {/* COMMERCIAL TERMS                                                    */}
