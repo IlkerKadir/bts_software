@@ -47,7 +47,9 @@ export async function GET(request: NextRequest) {
     const isManager = user.role.canApprove || user.role.canManageUsers;
     if (!isManager) {
       const visibilityOR: Prisma.ProjectWhereInput[] = [
-        // Projects with quotes the user created
+        // Projects the user created
+        { createdById: user.id },
+        // Projects with quotes the user created (legacy pre-createdById projects)
         { quotes: { some: { createdById: user.id } } },
         // Projects visible to everyone
         { visibility: 'EVERYONE' },
@@ -112,6 +114,7 @@ export async function POST(request: NextRequest) {
         name: validatedData.name,
         status: validatedData.status as any,
         clientId: validatedData.clientId || null,
+        createdById: user.id,
         estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
         estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
         notes: validatedData.notes || null,
