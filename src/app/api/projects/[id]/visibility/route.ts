@@ -39,6 +39,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         visibility: true,
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            username: true,
+          },
+        },
         visibleTo: {
           include: {
             user: {
@@ -61,6 +68,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       projectId: project.id,
       projectName: project.name,
       visibility: project.visibility,
+      createdBy: project.createdBy ?? null,
       users: project.visibleTo.map((access) => ({
         id: access.user.id,
         fullName: access.user.fullName,
@@ -171,6 +179,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         visibility: true,
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            username: true,
+          },
+        },
         visibleTo: {
           include: {
             user: {
@@ -189,6 +204,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       projectId: updatedProject!.id,
       projectName: updatedProject!.name,
       visibility: updatedProject!.visibility,
+      createdBy: updatedProject!.createdBy ?? null,
       users: updatedProject!.visibleTo.map((access) => ({
         id: access.user.id,
         fullName: access.user.fullName,
