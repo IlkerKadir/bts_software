@@ -78,7 +78,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
 
       return {
-        itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL',
+        itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL',
         code: item.code,
         brand: item.brand,
         description: item.description,
@@ -90,6 +90,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         vatRate: Number(item.vatRate),
         headerColor,
         customPozNo,
+        priceLabel: item.priceLabel,
       };
     };
 

@@ -23,7 +23,7 @@ export interface QuoteItemData {
   id: string;
   productId?: string | null;
   parentItemId?: string | null;
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   sortOrder: number;
   code?: string | null;
   brand?: string | null;
@@ -38,6 +38,7 @@ export interface QuoteItemData {
   vatRate: number;
   totalPrice: number;
   notes?: string | null;
+  priceLabel?: string | null;
   isManualPrice?: boolean;
   costPrice?: number | null;
   productCurrency?: string | null;
@@ -79,6 +80,7 @@ export interface QuoteItemRowProps {
   priceHistory?: PriceHistoryStats;
   totalColCount: number;
   subtotalValue?: number;
+  grandTotalValue?: number;
   onUpdate: (updates: Partial<QuoteItemData>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -87,6 +89,12 @@ export interface QuoteItemRowProps {
   onDrop: (e: React.DragEvent) => void;
   onShowPriceHistory?: () => void;
   onInsertHeaderAbove?: () => void;
+  /** Admin-managed catalog of price label options (fetched once at the
+   *  table level and passed down). */
+  priceLabelOptions?: ReadonlyArray<{ id: string; label: string }>;
+  /** Admin-managed list of unit options. Falls back to the legacy four
+   *  (Adet / Metre / Set / Kişi/Gün) when omitted. */
+  unitOptions?: ReadonlyArray<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +302,7 @@ export function QuoteItemRow({
   priceHistory,
   totalColCount,
   subtotalValue,
+  grandTotalValue,
   onUpdate,
   onDelete,
   onDuplicate,
@@ -302,7 +311,18 @@ export function QuoteItemRow({
   onDrop,
   onShowPriceHistory,
   onInsertHeaderAbove,
+  priceLabelOptions,
+  unitOptions,
 }: QuoteItemRowProps) {
+  // Fallback list if the admin catalog hasn't loaded yet.
+  const DEFAULT_UNITS = ['Adet', 'Metre', 'Set', 'Kişi/Gün'] as const;
+  const effectiveUnits = unitOptions && unitOptions.length > 0 ? unitOptions : DEFAULT_UNITS;
+  // If the item was saved with a unit that's no longer in the catalog
+  // (admin removed it), keep it visible in the dropdown so old quotes
+  // don't lose their stored value when edited.
+  const unitList = effectiveUnits.includes(item.unit)
+    ? effectiveUnits
+    : [item.unit, ...effectiveUnits];
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -561,6 +581,81 @@ export function QuoteItemRow({
     );
   }
 
+  // ---- GRAND_TOTAL row ----
+  if (item.itemType === 'GRAND_TOTAL') {
+    // Reuse the SUBTOTAL column-span math since the table layout is the same.
+    const labelSpan = (() => {
+      let count = 1; // Poz No
+      if (columnVisibility.urun) count += 3;
+      count += 1; // Aciklama
+      count += 1; // Miktar
+      if (columnVisibility.fiyat) count += 1; // Birim Fiyat
+      return count;
+    })();
+    const trailingSpan = (() => {
+      let count = 0;
+      if (columnVisibility.fiyat) count += 2; // Katsayi + Liste Fiyati
+      if (canViewCosts && columnVisibility.maliyet) count += 3;
+      count += 1; // PB
+      if (columnVisibility.gecmis) count += 8;
+      count += 1; // Delete
+      return count;
+    })();
+    return (
+      <>
+        <tr
+          draggable
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          onContextMenu={handleContextMenu}
+          className={cn('group', isDragging && 'opacity-70 bg-primary-50')}
+        >
+          <td className="w-8 border border-primary-300 bg-primary-100 px-1 py-1.5 text-center">
+            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-primary-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </td>
+          <td
+            colSpan={labelSpan}
+            className="border border-primary-300 bg-primary-100 px-3 py-2 text-right font-bold text-primary-900 text-sm uppercase"
+          >
+            <EditableCell
+              value={item.description || 'GENEL TOPLAM'}
+              onChange={(v) => onUpdate({ description: String(v) })}
+              className="font-bold text-right"
+            />
+          </td>
+          {columnVisibility.fiyat && (
+            <td className="border border-primary-300 bg-primary-100 px-2 py-2 text-right tabular-nums font-bold text-primary-900 whitespace-nowrap">
+              {formatPrice(grandTotalValue ?? 0, currency)}
+            </td>
+          )}
+          {trailingSpan > 0 && (
+            <td colSpan={trailingSpan} className="border border-primary-300 bg-primary-100 px-1 py-1.5 text-center">
+              <button
+                type="button"
+                onClick={onDelete}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 float-right"
+                title="Sil"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </td>
+          )}
+        </tr>
+        {contextMenu && (
+          <ContextMenuOverlay
+            x={contextMenu.x}
+            y={contextMenu.y}
+            menuRef={menuRef}
+            onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
+            onDelete={() => { onDelete(); setContextMenu(null); }}
+            onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+          />
+        )}
+      </>
+    );
+  }
+
   // ---- PRODUCT / CUSTOM / SET rows ----
   const isCustom = item.itemType === 'CUSTOM';
   const isSet = item.itemType === 'SET';
@@ -669,90 +764,108 @@ export function QuoteItemRow({
           </div>
         </td>
 
-        {/* MIKTAR */}
-        <td className="border border-accent-200 px-0 py-0 text-right whitespace-nowrap cursor-pointer">
-          <div className="flex flex-col items-end px-2 py-1.5 w-full h-full">
-            <div className="w-full text-right">
-              <EditableCell
-                value={Number(item.quantity)}
-                type="number"
-                onChange={(v) => {
-                  const qty = Number(v);
-                  const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
-                  onUpdate({ quantity: qty, totalPrice: total });
-                }}
-                displayValue={formatNumber(Number(item.quantity), 2)}
-                className="text-right w-full inline-block"
-              />
-            </div>
-            <select
-              value={item.unit}
-              onChange={(e) => onUpdate({ unit: e.target.value })}
-              className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none w-full"
-              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
-            >
-              <option value="Adet">Ad.</option>
-              <option value="Metre">m.</option>
-              <option value="Set">Set</option>
-              <option value="Kişi/Gün">Kişi/Gün</option>
-            </select>
-          </div>
-        </td>
-
-        {/* BIRIM FIYAT (Teklif Satış Fiyatları group) */}
-        {columnVisibility.fiyat && (
-          <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
-            <EditableCell
-              value={Number(item.unitPrice)}
-              type="number"
-              readOnly={isSetParent || !item.isManualPrice}
-              onChange={(v) => {
-                const up = Number(v);
-                const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
-                onUpdate({ unitPrice: up, totalPrice: total });
-              }}
-              displayValue={formatPrice(Number(item.unitPrice), currency)}
-              className="text-right"
-            />
+        {/* MIKTAR / BIRIM FIYAT / TOPLAM FIYAT. When priceLabel is set,
+            these three columns collapse into a merged cell showing the
+            label text. Changing / clearing the label is done via the
+            right-click context menu, not an inline control — inline
+            selects auto-size to the longest option and overlap other
+            cells. */}
+        {item.priceLabel ? (
+          <td
+            colSpan={columnVisibility.fiyat ? 3 : 1}
+            className="border border-accent-200 bg-accent-50 px-2 py-1.5 text-center whitespace-nowrap"
+          >
+            <span className="text-xs font-semibold text-accent-800 uppercase">
+              {item.priceLabel}
+            </span>
           </td>
-        )}
-
-        {/* TOPLAM FIYAT (Teklif Satış Fiyatları group) */}
-        {columnVisibility.fiyat && (() => {
-          const itemTotal = Number(item.totalPrice);
-          const afterOverall = overallDiscountPct > 0 ? itemTotal * (1 - overallDiscountPct / 100) : itemTotal;
-          const showItemDisc = discPct > 0;
-          const showOverallDisc = overallDiscountPct > 0;
-          return (
-            <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
-              {(showItemDisc || showOverallDisc) ? (
-                <div className="flex flex-col items-end">
-                  {showItemDisc && (
-                    <span className="text-xs text-accent-400 line-through">
-                      {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
-                    </span>
-                  )}
-                  {showOverallDisc ? (
-                    <>
-                      <span className={showItemDisc ? 'text-xs text-accent-400 line-through' : 'text-xs text-accent-400 line-through'}>
-                        {formatPrice(itemTotal, currency)}
-                      </span>
-                      <span className="text-green-700">
-                        {formatPrice(afterOverall, currency)}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-green-700">
-                      {formatPrice(itemTotal, currency)}
-                    </span>
-                  )}
+        ) : (
+          <>
+            {/* MIKTAR */}
+            <td className="border border-accent-200 px-0 py-0 text-right whitespace-nowrap cursor-pointer">
+              <div className="flex flex-col items-end px-2 py-1.5 w-full h-full">
+                <div className="w-full text-right">
+                  <EditableCell
+                    value={Number(item.quantity)}
+                    type="number"
+                    onChange={(v) => {
+                      const qty = Number(v);
+                      const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
+                      onUpdate({ quantity: qty, totalPrice: total });
+                    }}
+                    displayValue={formatNumber(Number(item.quantity), 2)}
+                    className="text-right w-full inline-block"
+                  />
                 </div>
-              ) : (
-                formatPrice(itemTotal, currency)
-              )}
+                <select
+                  value={item.unit}
+                  onChange={(e) => onUpdate({ unit: e.target.value })}
+                  className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none w-full"
+                  style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
+                >
+                  {unitList.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </div>
             </td>
-          );
-        })()}
+
+            {/* BIRIM FIYAT (Teklif Satış Fiyatları group) */}
+            {columnVisibility.fiyat && (
+              <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">
+                <EditableCell
+                  value={Number(item.unitPrice)}
+                  type="number"
+                  readOnly={isSetParent || !item.isManualPrice}
+                  onChange={(v) => {
+                    const up = Number(v);
+                    const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
+                    onUpdate({ unitPrice: up, totalPrice: total });
+                  }}
+                  displayValue={formatPrice(Number(item.unitPrice), currency)}
+                  className="text-right"
+                />
+              </td>
+            )}
+
+            {/* TOPLAM FIYAT (Teklif Satış Fiyatları group) */}
+            {columnVisibility.fiyat && (() => {
+              const itemTotal = Number(item.totalPrice);
+              const afterOverall = overallDiscountPct > 0 ? itemTotal * (1 - overallDiscountPct / 100) : itemTotal;
+              const showItemDisc = discPct > 0;
+              const showOverallDisc = overallDiscountPct > 0;
+              return (
+                <td className="border border-accent-200 px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium text-accent-900">
+                  {(showItemDisc || showOverallDisc) ? (
+                    <div className="flex flex-col items-end">
+                      {showItemDisc && (
+                        <span className="text-xs text-accent-400 line-through">
+                          {formatPrice(Number(item.quantity) * unitPriceNum, currency)}
+                        </span>
+                      )}
+                      {showOverallDisc ? (
+                        <>
+                          <span className={showItemDisc ? 'text-xs text-accent-400 line-through' : 'text-xs text-accent-400 line-through'}>
+                            {formatPrice(itemTotal, currency)}
+                          </span>
+                          <span className="text-green-700">
+                            {formatPrice(afterOverall, currency)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-green-700">
+                          {formatPrice(itemTotal, currency)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    formatPrice(itemTotal, currency)
+                  )}
+                </td>
+              );
+            })()}
+          </>
+        )}
 
         {/* KATSAYI + LISTE FIYATI (Teklif Hazırlama group) */}
         {columnVisibility.fiyat && (
@@ -949,6 +1062,9 @@ export function QuoteItemRow({
           onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
           onDelete={() => { onDelete(); setContextMenu(null); }}
           onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+          onSetPriceLabel={(label) => { onUpdate({ priceLabel: label }); setContextMenu(null); }}
+          currentPriceLabel={item.priceLabel ?? null}
+          priceLabelOptions={priceLabelOptions}
         />
       )}
     </>
@@ -966,6 +1082,11 @@ interface ContextMenuOverlayProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onInsertHeaderAbove?: () => void;
+  onSetPriceLabel?: (label: string | null) => void;
+  currentPriceLabel?: string | null;
+  /** Admin-managed catalog of price label options. When omitted the
+   *  "Fiyat yerine" section of the menu is hidden. */
+  priceLabelOptions?: ReadonlyArray<{ id: string; label: string }>;
 }
 
 function ContextMenuOverlay({
@@ -975,11 +1096,14 @@ function ContextMenuOverlay({
   onDuplicate,
   onDelete,
   onInsertHeaderAbove,
+  onSetPriceLabel,
+  currentPriceLabel,
+  priceLabelOptions,
 }: ContextMenuOverlayProps) {
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[180px] rounded-lg border border-accent-200 bg-white py-1 shadow-lg"
+      className="fixed z-50 min-w-[220px] rounded-lg border border-accent-200 bg-white py-1 shadow-lg"
       style={{ top: y, left: x }}
     >
       <button
@@ -997,6 +1121,47 @@ function ContextMenuOverlay({
         >
           <Plus className="h-3.5 w-3.5" /> Üstüne Başlık Ekle
         </button>
+      )}
+      {onSetPriceLabel && (currentPriceLabel || (priceLabelOptions && priceLabelOptions.length > 0)) && (
+        <>
+          <div className="my-1 border-t border-accent-200" />
+          <div className="px-3 py-0.5 text-[10px] uppercase tracking-wide text-accent-400">
+            Fiyat yerine
+          </div>
+          {/* If the item already has a label that's no longer in the
+              catalog (admin deleted/deactivated it), still show it as a
+              disabled "current" row so the user knows what's set. */}
+          {currentPriceLabel && !priceLabelOptions?.some(o => o.label === currentPriceLabel) && (
+            <div className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-accent-500 bg-accent-50 font-semibold">
+              {currentPriceLabel}
+            </div>
+          )}
+          {priceLabelOptions?.map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-1.5 text-xs text-accent-700 hover:bg-accent-100 transition-colors',
+                currentPriceLabel === opt.label && 'bg-accent-50 font-semibold',
+              )}
+              onClick={() => onSetPriceLabel(opt.label)}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {/* Always render the "clear" button when a label is set, even
+              if the catalog is empty — otherwise the user has no way to
+              revert to numeric pricing. */}
+          {currentPriceLabel && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-accent-500 hover:bg-accent-100 transition-colors"
+              onClick={() => onSetPriceLabel(null)}
+            >
+              ← Fiyat girişine dön
+            </button>
+          )}
+        </>
       )}
       <div className="my-1 border-t border-accent-200" />
       <button

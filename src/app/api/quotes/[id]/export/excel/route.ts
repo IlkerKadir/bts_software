@@ -89,7 +89,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const itemType = item.itemType as QuoteItemForExcel['itemType'];
         const description = getItemDescription(item, quote.language);
 
-        if (itemType === 'HEADER' || itemType === 'NOTE' || itemType === 'SUBTOTAL') {
+        if (itemType === 'HEADER' || itemType === 'NOTE' || itemType === 'SUBTOTAL' || itemType === 'GRAND_TOTAL') {
           return { itemType, description };
         }
 
@@ -103,6 +103,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           totalPrice: Number(item.totalPrice),
           katsayi: Number(item.katsayi),
           listPrice: Number(item.listPrice),
+          priceLabel: item.priceLabel,
         };
       });
 

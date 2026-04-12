@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!user.role.canManageUsers) {
+    if (!user.role.canManageSettings && !user.role.canManageUsers) {
       return NextResponse.json(
         { error: 'Bu işlem için yetkiniz bulunmuyor' },
         { status: 403 }
@@ -104,7 +104,7 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!user.role.canManageUsers) {
+    if (!user.role.canManageSettings && !user.role.canManageUsers) {
       return NextResponse.json(
         { error: 'Bu işlem için yetkiniz bulunmuyor' },
         { status: 403 }

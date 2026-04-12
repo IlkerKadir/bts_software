@@ -105,6 +105,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             quantity: Number(item.quantity),
             itemType: item.itemType,
             parentItemId: item.parentItemId,
+            priceLabel: item.priceLabel,
           };
         }),
         Number(quote.discountPct) || 0

@@ -10,6 +10,7 @@ interface RoleFormData {
   canApprove: boolean;
   canExport: boolean;
   canManageUsers: boolean;
+  canManageSettings: boolean;
   canEditProducts: boolean;
   canDelete: boolean;
 }
@@ -26,6 +27,7 @@ const PERMISSIONS = [
   { key: 'canApprove', label: 'Teklif Onaylama', description: 'Onay gerektiren teklifleri onaylayabilir' },
   { key: 'canExport', label: 'Dışa Aktarma', description: 'PDF ve Excel olarak dışa aktarabilir' },
   { key: 'canManageUsers', label: 'Kullanıcı Yönetimi', description: 'Kullanıcı ve rol yönetimi yapabilir' },
+  { key: 'canManageSettings', label: 'Ayar Yönetimi', description: 'Ticari şart şablonları, fiyat etiketleri ve diğer ayarları düzenleyebilir' },
   { key: 'canEditProducts', label: 'Ürün Düzenleme', description: 'Ürün bilgilerini düzenleyebilir' },
   { key: 'canDelete', label: 'Silme', description: 'Kayıtları silebilir' },
 ] as const;
@@ -41,6 +43,7 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
     canApprove: false,
     canExport: true,
     canManageUsers: false,
+    canManageSettings: false,
     canEditProducts: false,
     canDelete: false,
   });
@@ -54,6 +57,7 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
         canApprove: initialData?.canApprove ?? false,
         canExport: initialData?.canExport ?? true,
         canManageUsers: initialData?.canManageUsers ?? false,
+        canManageSettings: initialData?.canManageSettings ?? false,
         canEditProducts: initialData?.canEditProducts ?? false,
         canDelete: initialData?.canDelete ?? false,
       });

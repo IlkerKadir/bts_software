@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button, Input, Select, Modal } from '@/components/ui';
+import { useSettings } from '@/components/settings/SettingsProvider';
 
 interface Brand {
   id: string;
@@ -43,6 +44,9 @@ interface ProductFormProps {
 
 export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCosts = false }: ProductFormProps) {
   const isEditing = !!initialData?.id;
+  const { quoteDefaults } = useSettings();
+  const firstUnit = quoteDefaults.units[0] ?? 'Adet';
+  const firstCurrency = quoteDefaults.currencies[0]?.code ?? 'EUR';
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -57,10 +61,10 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     name: data?.name || '',
     nameEn: data?.nameEn || '',
     nameTr: data?.nameTr || '',
-    unit: data?.unit || 'Adet',
+    unit: data?.unit || firstUnit,
     listPrice: data?.listPrice || 0,
     costPrice: data?.costPrice || undefined,
-    currency: data?.currency || 'EUR',
+    currency: data?.currency || firstCurrency,
     supplier: data?.supplier || '',
     minKatsayi: data?.minKatsayi ?? undefined,
     maxKatsayi: data?.maxKatsayi ?? undefined,
@@ -74,6 +78,22 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     setFormData(buildFormData(initialData));
     setError('');
   }, [initialData]);
+
+  // Splice a legacy value that's no longer in the admin catalog into the list
+  // so editing an old product doesn't silently "lose" its current unit/currency.
+  const unitOptions = useMemo(() => {
+    const list = quoteDefaults.units.slice();
+    if (formData.unit && !list.includes(formData.unit)) list.unshift(formData.unit);
+    return list.map((u) => ({ value: u, label: u }));
+  }, [quoteDefaults.units, formData.unit]);
+
+  const currencyOptions = useMemo(() => {
+    const list = quoteDefaults.currencies.map((c) => c.code);
+    if (formData.currency && !list.includes(formData.currency as typeof list[number])) {
+      list.unshift(formData.currency as typeof list[number]);
+    }
+    return list.map((c) => ({ value: c, label: c }));
+  }, [quoteDefaults.currencies, formData.currency]);
 
   const [lookupWarning, setLookupWarning] = useState('');
 
@@ -280,24 +300,14 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
             label="Para Birimi *"
             value={formData.currency}
             onChange={(e) => handleChange('currency', e.target.value)}
-            options={[
-              { value: 'EUR', label: 'EUR' },
-              { value: 'USD', label: 'USD' },
-              { value: 'GBP', label: 'GBP' },
-              { value: 'TRY', label: 'TRY' },
-            ]}
+            options={currencyOptions}
           />
 
           <Select
             label="Birim"
             value={formData.unit}
             onChange={(e) => handleChange('unit', e.target.value)}
-            options={[
-              { value: 'Adet', label: 'Adet' },
-              { value: 'Metre', label: 'Metre' },
-              { value: 'Set', label: 'Set' },
-              { value: 'Kişi/Gün', label: 'Kişi/Gün' },
-            ]}
+            options={unitOptions}
           />
         </div>
 

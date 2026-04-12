@@ -52,7 +52,7 @@ export interface QuoteDataForPdf {
 }
 
 export interface QuoteItemForPdf {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   code?: string | null;
   brand?: string | null;
   description: string;
@@ -65,6 +65,9 @@ export interface QuoteItemForPdf {
   /** Optional background color for HEADER items (CSS color value, e.g. '#FF0000') */
   headerColor?: string | null;
   customPozNo?: string | null;
+  /** When set, the row's MIKTAR/BIRIM/TOPLAM columns collapse into one
+   *  merged cell with this literal label. */
+  priceLabel?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +168,8 @@ function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): nu
   for (let i = subtotalIndex - 1; i >= 0; i--) {
     const item = items[i];
     if (item.itemType === 'SUBTOTAL') break;
+    // Price-labeled items (e.g. "TARAFINIZCA SAĞLANACAKTIR") contribute 0.
+    if (item.priceLabel) continue;
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
       sum += item.totalPrice;
     }
@@ -215,6 +220,14 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       </tr>`;
     }
 
+    if (item.itemType === 'GRAND_TOTAL') {
+      const grandTotalLabel = escapeHtml(item.description || 'GENEL TOPLAM');
+      return `<tr style="height:14pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${grandTotalLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(totals.grandTotal, currency)}</p></td>
+      </tr>`;
+    }
+
     if (item.itemType === 'SUBTOTAL') {
       const sectionSum = computeSubtotalSum(items, index);
       const subtotalLabel = escapeHtml(item.description || 'Ara Toplam');
@@ -238,7 +251,12 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
         <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(netAmount, currency)}</p></td>
       </tr>`;
       }
-      subtotalRows += `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>`;
+      // Omit the trailing 4pt spacer if the next row is a GRAND_TOTAL,
+      // so the grand total sits flush against the subtotal card.
+      const nextIsGrandTotal = items[index + 1]?.itemType === 'GRAND_TOTAL';
+      if (!nextIsGrandTotal) {
+        subtotalRows += `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>`;
+      }
       return subtotalRows;
     }
 
@@ -254,6 +272,17 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       itemNumber++;
       pozText = `${itemNumber}`;
     }
+
+    // When the item has a priceLabel, collapse MIKTAR + BIRIM FIYAT +
+    // TOPLAM FIYAT into a single merged cell showing the label text.
+    if (item.priceLabel) {
+      return `<tr>
+      <td><p class="s1" style="text-align:center;">${pozText}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
+      <td colspan="3"><p class="s1" style="text-align:center;padding:0 4pt;">${escapeHtml(item.priceLabel)}</p></td>
+    </tr>`;
+    }
+
     const qtyStr = `${item.quantity} ${unitAbbr(item.unit || 'Adet')}`;
 
     return `<tr>
@@ -264,12 +293,6 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>
     </tr>`;
   }).join('\n');
-
-  // ---------- System total (skip if subtotals exist) ----------
-  const hasSubtotals = items.some((i) => i.itemType === 'SUBTOTAL');
-  const systemTotalLabel = isTR
-    ? `SİSTEM GENEL TOPLAMI (${currencyName})`
-    : `SYSTEM GRAND TOTAL (${currencyName})`;
 
   // ---------- Commercial terms + NOTLAR (inside main table) ----------
   const termsRows = buildCommercialTermsRows(safeTerms, safeNotes, isTR);
@@ -445,11 +468,6 @@ table.main tbody td:nth-child(5) {
     ${itemRows}
 
     <tr><td colspan="5" style="height:6pt; border:none; padding:0;"></td></tr>
-    ${hasSubtotals ? '' : `<!-- System Total -->
-    <tr style="height:12pt">
-      <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${systemTotalLabel}</p></td>
-      <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(totals.grandTotal, currency)}</p></td>
-    </tr>`}
 
 ${termsRows}
 

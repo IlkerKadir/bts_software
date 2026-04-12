@@ -188,11 +188,32 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       expect(html).toContain('3.847,50');
     });
 
-    it('renders system total label with currency name and 1.2pt borders', () => {
+    it('does NOT auto-append a grand total row', () => {
+      // The old "SİSTEM GENEL TOPLAMI" auto-append was removed — users now
+      // explicitly add a GRAND_TOTAL item when they want a total.
       const html = generateQuoteHtml(mockQuoteData);
+      expect(html).not.toContain('SİSTEM GENEL TOPLAMI');
+      expect(html).not.toContain('SYSTEM GRAND TOTAL');
+    });
 
-      expect(html).toContain('SİSTEM GENEL TOPLAMI (EURO)');
-      expect(html).toContain('4.617,00');
+    it('renders a GRAND_TOTAL item as a sys-total-label card', () => {
+      const dataWithTotal: QuoteDataForPdf = {
+        ...mockQuoteData,
+        items: [
+          ...mockQuoteData.items,
+          {
+            itemType: 'GRAND_TOTAL',
+            description: 'GENEL TOPLAM',
+            quantity: 0,
+            unitPrice: 0,
+            discountPct: 0,
+            totalPrice: 0,
+            vatRate: 0,
+          },
+        ],
+      };
+      const html = generateQuoteHtml(dataWithTotal);
+      expect(html).toContain('GENEL TOPLAM');
       expect(html).toContain('sys-total-label');
       expect(html).toContain('sys-total-val');
     });
@@ -217,7 +238,6 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       const html = generateQuoteHtml(dataWithSet);
 
       expect(html).toContain('Montaj Set');
-      expect(html).toContain('SİSTEM GENEL TOPLAMI (EURO)');
     });
 
     it('renders commercial terms inside main table (no separate terms-tbl)', () => {
@@ -326,7 +346,6 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       const html = generateQuoteHtml(dataWithTry);
 
       expect(html).toContain('\u20BA');
-      expect(html).toContain('SİSTEM GENEL TOPLAMI (TRY)');
     });
 
     it('handles missing optional fields gracefully', () => {

@@ -116,6 +116,7 @@ export async function PUT(
         ...(validatedData.canApprove !== undefined && { canApprove: validatedData.canApprove }),
         ...(validatedData.canExport !== undefined && { canExport: validatedData.canExport }),
         ...(validatedData.canManageUsers !== undefined && { canManageUsers: validatedData.canManageUsers }),
+        ...(validatedData.canManageSettings !== undefined && { canManageSettings: validatedData.canManageSettings }),
         ...(validatedData.canEditProducts !== undefined && { canEditProducts: validatedData.canEditProducts }),
         ...(validatedData.canDelete !== undefined && { canDelete: validatedData.canDelete }),
       },

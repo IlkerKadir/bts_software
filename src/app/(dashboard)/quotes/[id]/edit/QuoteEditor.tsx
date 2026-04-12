@@ -13,6 +13,7 @@ import type { ProductForQuote } from '@/components/quotes/ProductSearchCard';
 import type { ApiQuoteItem, CommercialTerm, CreateItemPayload } from '@/lib/types/quote';
 import { PriceHistory } from './PriceHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useSettings } from '@/components/settings/SettingsProvider';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -152,6 +153,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     vatRate: Number(item.vatRate),
     totalPrice: Number(item.totalPrice),
     notes: item.notes ?? null,
+    priceLabel: item.priceLabel ?? null,
     isManualPrice: item.isManualPrice ?? false,
     costPrice: item.costPrice != null ? Number(item.costPrice) : null,
     productCurrency: item.product?.currency ?? null,
@@ -173,6 +175,8 @@ interface QuoteEditorProps {
 
 export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const router = useRouter();
+  const { quoteDefaults } = useSettings();
+  const defaultVatRate = quoteDefaults.defaultVatRate;
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -469,6 +473,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           costPrice: item.costPrice ?? null,
           ekMaliyetDelta: item.ekMaliyetDelta ?? null,
           notes: item.notes || '',
+          priceLabel: item.priceLabel ?? null,
           serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
         }));
 
@@ -941,7 +946,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         katsayi: defaultKatsayi,
         unitPrice,
         discountPct: 0,
-        vatRate: isSubItem ? 0 : 20,
+        vatRate: isSubItem ? 0 : defaultVatRate,
         totalPrice: unitPrice * (quantity || 1),
         isManualPrice: product.pricingType === 'PROJECT_BASED',
         costPrice: convertedCostPrice,
@@ -974,7 +979,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         listPrice: convertedListPrice,
         katsayi: defaultKatsayi,
         discountPct: 0,
-        vatRate: isSubItem ? 0 : 20,
+        vatRate: isSubItem ? 0 : defaultVatRate,
         sortOrder: newItem.sortOrder,
         costPrice: convertedCostPrice,
       };
@@ -1003,7 +1008,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         console.error('Add product error:', err);
       }
     },
-    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items.length, subItemParentId, setCreationMode]
+    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items.length, subItemParentId, setCreationMode, defaultVatRate]
   );
 
   // ── Add header row ─────────────────────────────────────────────────────────
@@ -1128,7 +1133,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       katsayi: 1,
       unitPrice: 0,
       discountPct: 0,
-      vatRate: 20,
+      vatRate: defaultVatRate,
       totalPrice: 0,
       isManualPrice: false,
     };
@@ -1148,7 +1153,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           katsayi: 1,
           unitPrice: 0,
           totalPrice: 0,
-          vatRate: 20,
+          vatRate: defaultVatRate,
           discountPct: 0,
           sortOrder: newItem.sortOrder,
           isManualPrice: false,
@@ -1168,7 +1173,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     } catch (err) {
       console.error('Add custom item error:', err);
     }
-  }, [quoteId, items.length]);
+  }, [quoteId, items.length, defaultVatRate]);
 
   // ── Add custom sub-item to a SET ─────────────────────────────────────────
 
@@ -1192,7 +1197,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       katsayi: 1,
       unitPrice: 0,
       discountPct: 0,
-      vatRate: 20,
+      vatRate: defaultVatRate,
       totalPrice: 0,
       isManualPrice: false,
       parentItemId: parentId,
@@ -1217,7 +1222,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           katsayi: 1,
           unitPrice: 0,
           totalPrice: 0,
-          vatRate: 20,
+          vatRate: defaultVatRate,
           discountPct: 0,
           sortOrder: insertIdx,
           isManualPrice: false,
@@ -1238,7 +1243,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     } catch (err) {
       console.error('Add custom sub-item error:', err);
     }
-  }, [quoteId, items]);
+  }, [quoteId, items, defaultVatRate]);
 
   // ── Add subtotal row ────────────────────────────────────────────────────
 
@@ -1292,6 +1297,65 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add subtotal error:', err);
     }
   }, [quoteId, items.length]);
+
+  // ── Add grand total row ────────────────────────────────────────────────
+  // A single "GENEL TOPLAM" item appended at the end of the quote. Renders
+  // in both the editor and the PDF/Excel exports as a total header that
+  // displays the quote's persisted grandTotal. There can be only one per
+  // quote — calling this when one already exists does nothing.
+
+  const handleAddGrandTotal = useCallback(async () => {
+    if (items.some((i) => i.itemType === 'GRAND_TOTAL')) return;
+    const tempId = generateId();
+    const sortOrder = items.length + 1;
+    const newItem: QuoteItemData = {
+      id: tempId,
+      itemType: 'GRAND_TOTAL',
+      sortOrder,
+      description: 'GENEL TOPLAM',
+      quantity: 0,
+      unit: 'Adet',
+      listPrice: 0,
+      katsayi: 1,
+      unitPrice: 0,
+      discountPct: 0,
+      vatRate: 0,
+      totalPrice: 0,
+    };
+
+    setItems((prev) => [...prev, newItem]);
+
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: 'GRAND_TOTAL',
+          description: 'GENEL TOPLAM',
+          quantity: 0,
+          unit: 'Adet',
+          listPrice: 0,
+          katsayi: 1,
+          discountPct: 0,
+          vatRate: 0,
+          sortOrder,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const serverItem = mapApiItemToLocal(data.item);
+        setItems((prev) =>
+          prev.map((item) => {
+            if (item.id !== tempId) return item;
+            return { ...item, ...serverItem, description: item.description };
+          })
+        );
+      }
+    } catch (err) {
+      console.error('Add grand total error:', err);
+    }
+  }, [quoteId, items]);
 
   // ── Add sub-item to a parent ──────────────────────────────────────────
 
@@ -1487,7 +1551,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     ): QuoteItemData[] => {
       let result = items.map((item) => {
         // Skip non-priced items, SET parents, manual-priced, and items without product data
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') return item;
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') return item;
         if (item.itemType === 'SET' && !item.parentItemId) return item;
         if (item.isManualPrice) return item;
         if (!item.productCurrency || item.productListPrice == null || item.productListPrice === 0) return item;
@@ -1817,6 +1881,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddNote={handleAddNote}
         onAddCustomItem={handleAddCustomItem}
         onAddSubtotal={handleAddSubtotal}
+        onAddGrandTotal={handleAddGrandTotal}
         onAddSubItem={handleAddSubItem}
         onAddCustomSubItem={handleAddCustomSubItem}
         onCreateSet={handleCreateSet}

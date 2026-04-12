@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Shield,
   Clock,
-  FileImage,
   ClipboardCheck,
   Bell,
 } from 'lucide-react';
@@ -33,7 +32,6 @@ const menuItems = [
 const adminItems = [
   { href: '/users', label: 'Kullanıcılar', icon: Users },
   { href: '/settings/roles', label: 'Roller', icon: Shield },
-  { href: '/settings/templates', label: 'Şablonlar', icon: FileImage },
   { href: '/settings', label: 'Ayarlar', icon: Settings },
 ];
 

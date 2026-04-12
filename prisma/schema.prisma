@@ -16,6 +16,11 @@ model Role {
   canApprove         Boolean  @default(false)
   canExport          Boolean  @default(true)
   canManageUsers     Boolean  @default(false)
+  /// Separate admin capability for configuration: commercial term
+  /// templates, price label options, quote defaults, etc. Kept distinct
+  /// from `canManageUsers` so a config curator can exist without full
+  /// user/role admin rights.
+  canManageSettings  Boolean  @default(false)
   canEditProducts    Boolean  @default(false)
   canDelete          Boolean  @default(false)
   canOverrideKatsayi Boolean  @default(false)
@@ -252,6 +257,10 @@ model Quote {
   approvedAt      DateTime?
   notes           String?
   language        String                @default("TR")
+  /** Cosmetic PDF override — stores user-edited HTML from the WYSIWYG PDF editor.
+   *  Does NOT mutate the structured quote data. Null if no override set. */
+  pdfOverrideHtml String?               @db.Text
+  pdfOverrideAt   DateTime?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   items              QuoteItem[]
@@ -276,6 +285,7 @@ enum QuoteItemType {
   CUSTOM
   SET
   SUBTOTAL
+  GRAND_TOTAL
 }
 
 model QuoteItem {
@@ -299,6 +309,12 @@ model QuoteItem {
   vatRate       Decimal       @default(20) @db.Decimal(5, 2)
   totalPrice    Decimal       @default(0) @db.Decimal(12, 2)
   notes         String?
+  /**
+   * When set, the row's price column is replaced by this literal label
+   * (e.g. "TARAFINIZCA SAĞLANACAKTIR", "FİYATA DAHİLDİR"). The item's
+   * unitPrice / totalPrice are treated as 0 in all quote sum calcs.
+   */
+  priceLabel    String?
   isManualPrice Boolean       @default(false)
   costPrice     Decimal?      @db.Decimal(12, 2)
   /** Per-unit ek maliyet distributed amount. Stored separately from listPrice/costPrice
@@ -313,6 +329,21 @@ model QuoteItem {
   updatedAt     DateTime      @updatedAt
 
   @@index([quoteId])
+}
+
+/**
+ * Admin-managed catalog of fiyat etiketi (price label) options shown in
+ * the quote editor's right-click menu. A row stores the literal text
+ * that ends up in `QuoteItem.priceLabel`; deleting a row does not
+ * cascade — historical quotes keep rendering the exact label text.
+ */
+model PriceLabelOption {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model QuoteDocument {

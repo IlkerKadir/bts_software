@@ -105,7 +105,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { listPrice, katsayi, quantity, discountPct, vatRate } = data;
     const isManualPrice = body.isManualPrice === true;
     const isSubtotal = data.itemType === 'SUBTOTAL';
-    const isNonPriced = data.itemType === 'HEADER' || data.itemType === 'NOTE' || isSubtotal;
+    const isGrandTotal = data.itemType === 'GRAND_TOTAL';
+    const isNonPriced = data.itemType === 'HEADER' || data.itemType === 'NOTE' || isSubtotal || isGrandTotal;
     // SET parents have unitPrice = childrenTotal — starts at 0 until children are added
     const isSetParent = data.itemType === 'SET' && !data.parentItemId;
 
@@ -141,6 +142,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         totalPrice,
         isManualPrice,
         notes: data.notes || null,
+        priceLabel: data.priceLabel || null,
         parentItemId: data.parentItemId || null,
         costPrice: data.costPrice ?? null,
         ekMaliyetDelta: data.ekMaliyetDelta ?? null,
@@ -245,6 +247,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             totalPrice,
             isManualPrice,
             notes: item.notes || null,
+            priceLabel: item.priceLabel || null,
             parentItemId: item.parentItemId || null,
             costPrice: item.costPrice ?? undefined,
             ekMaliyetDelta: item.ekMaliyetDelta !== undefined ? item.ekMaliyetDelta : undefined,

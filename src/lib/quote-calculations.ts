@@ -6,11 +6,14 @@
 import { db } from './db';
 
 export interface QuoteItem {
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   quantity: number;
   unitPrice: number;
   discountPct: number;
   vatRate: number;
+  /** When set, the row's price is replaced by a literal label and the
+   *  item contributes 0 to the quote totals. */
+  priceLabel?: string | null;
 }
 
 // Re-export for backwards compatibility — lives in ek-maliyet.ts so client code can import it
@@ -69,8 +72,13 @@ export function calculateQuoteTotals(
   items: QuoteItem[],
   overallDiscountPct: number
 ): QuoteTotals {
-  // Filter only priced items (PRODUCT, CUSTOM, and SET)
-  const productItems = items.filter((item) => item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET');
+  // Filter only priced items (PRODUCT, CUSTOM, and SET). Items with a
+  // price label (e.g. "TARAFINIZCA SAĞLANACAKTIR") are excluded because
+  // their price is displayed as text instead of a number.
+  const productItems = items.filter((item) =>
+    (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET')
+    && !item.priceLabel
+  );
 
   if (productItems.length === 0) {
     return {
@@ -94,27 +102,17 @@ export function calculateQuoteTotals(
   const discountTotal = subtotal * (overallDiscountPct / 100);
   const netAfterDiscount = subtotal - discountTotal;
 
-  // Calculate VAT based on each item's VAT rate (applied to discounted amounts)
-  let vatTotal = 0;
-
-  for (const item of productItems) {
-    const itemTotal = calculateItemTotal({
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discountPct: item.discountPct,
-    });
-    // Proportional share of overall discount (subtotal already equals sum of item totals)
-    const itemShare = subtotal > 0 ? itemTotal / subtotal : 0;
-    const itemAfterOverallDiscount = itemTotal - (discountTotal * itemShare);
-    vatTotal += itemAfterOverallDiscount * (item.vatRate / 100);
-  }
-
-  const grandTotal = netAfterDiscount + vatTotal;
+  // VAT is intentionally NOT added to quote totals. Prices shown in
+  // the proforma and Excel export are VAT-exclusive; the client handles
+  // VAT outside the quote. The `vatTotal` field is kept at zero purely
+  // to preserve the Prisma schema shape without requiring a migration.
+  const vatTotal = 0;
+  const grandTotal = netAfterDiscount;
 
   return {
     subtotal: Math.round(subtotal * 100) / 100,
     discountTotal: Math.round(discountTotal * 100) / 100,
-    vatTotal: Math.round(vatTotal * 100) / 100,
+    vatTotal,
     grandTotal: Math.round(grandTotal * 100) / 100,
   };
 }
@@ -160,6 +158,7 @@ export function calculateQuoteProfitSummary(
     quantity: number;
     itemType: string;
     parentItemId?: string | null;
+    priceLabel?: string | null;
   }>,
   overallDiscountPct: number = 0
 ): QuoteProfitSummary {
@@ -168,6 +167,10 @@ export function calculateQuoteProfitSummary(
 
   for (const item of items) {
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
+      // Price-labeled rows (e.g. "TARAFINIZCA SAĞLANACAKTIR") contribute
+      // 0 to both revenue and cost — the label replaces the price and
+      // the client does not charge for them.
+      if (item.priceLabel) continue;
       // Revenue: only top-level items (SET parent totalPrice includes children)
       if (!item.parentItemId) {
         itemRevenue += item.totalPrice;
@@ -216,6 +219,7 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
       totalPrice: Number(item.totalPrice),
       listPrice: Number(item.listPrice),
       katsayi: Number(item.katsayi),
+      priceLabel: item.priceLabel,
     }));
 
   const totals = calculateQuoteTotals(quoteItems, Number(quote?.discountPct || 0));
@@ -227,6 +231,11 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
       discountTotal: totals.discountTotal,
       vatTotal: totals.vatTotal,
       grandTotal: totals.grandTotal,
+      // Invalidate any cosmetic PDF override — structured data changed so the
+      // override would show stale prices. User must re-edit the PDF to get a
+      // version that matches the new totals.
+      pdfOverrideHtml: null,
+      pdfOverrideAt: null,
     },
   });
 

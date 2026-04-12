@@ -157,52 +157,45 @@ describe('Quote Calculations', () => {
       expect(result.discountTotal).toBe(100);
     });
 
-    it('calculates VAT on discounted amount', () => {
+    it('always reports vatTotal as 0 (VAT is not computed in quote totals)', () => {
       const items: QuoteItem[] = [
         { itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
       ];
       const result = calculateQuoteTotals(items, 10);
-      // After discount: 900, VAT 20%: 180
-      expect(result.vatTotal).toBe(180);
+      expect(result.vatTotal).toBe(0);
     });
 
-    it('calculates grand total correctly', () => {
+    it('calculates grand total as net-after-discount (no VAT added)', () => {
       const items: QuoteItem[] = [
         { itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
       ];
       const result = calculateQuoteTotals(items, 10);
-      // Subtotal: 1000, Discount: 100, Net: 900, VAT: 180, Grand: 1080
-      expect(result.grandTotal).toBe(1080);
+      // Subtotal: 1000, Discount: 100, Grand = Net: 900
+      expect(result.grandTotal).toBe(900);
     });
 
-    it('handles items with different VAT rates', () => {
+    it('ignores individual item VAT rates in the grand total', () => {
       const items: QuoteItem[] = [
         { itemType: 'PRODUCT', quantity: 1, unitPrice: 100, discountPct: 0, vatRate: 20 },
         { itemType: 'PRODUCT', quantity: 1, unitPrice: 100, discountPct: 0, vatRate: 10 },
       ];
       const result = calculateQuoteTotals(items, 0);
-      // Item 1: 100 + 20 VAT = 120
-      // Item 2: 100 + 10 VAT = 110
-      // Total VAT: 30, Grand Total: 230
-      expect(result.vatTotal).toBe(30);
-      expect(result.grandTotal).toBe(230);
+      // Two items at 100 each => subtotal 200, grand total 200 (no VAT)
+      expect(result.vatTotal).toBe(0);
+      expect(result.grandTotal).toBe(200);
     });
 
-    it('applies item-level discounts before overall discount', () => {
+    it('applies item-level discounts before overall discount (no VAT)', () => {
       const items: QuoteItem[] = [
         { itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 10, vatRate: 20 },
       ];
       const result = calculateQuoteTotals(items, 5);
       // Item total after 10% item discount: 900
-      // Subtotal: 900
-      // Overall 5% discount: 45
-      // Net: 855
-      // VAT 20%: 171
-      // Grand: 1026
+      // Subtotal: 900, Overall 5% discount: 45, Net/Grand: 855
       expect(result.subtotal).toBe(900);
       expect(result.discountTotal).toBe(45);
-      expect(result.vatTotal).toBe(171);
-      expect(result.grandTotal).toBe(1026);
+      expect(result.vatTotal).toBe(0);
+      expect(result.grandTotal).toBe(855);
     });
 
     it('returns zeros for empty items array', () => {
@@ -213,7 +206,7 @@ describe('Quote Calculations', () => {
       expect(result.grandTotal).toBe(0);
     });
 
-    it('includes SET items in subtotal, VAT, and grandTotal', () => {
+    it('includes SET items in subtotal and grandTotal (no VAT)', () => {
       const items: QuoteItem[] = [
         { itemType: 'PRODUCT', quantity: 2, unitPrice: 100, discountPct: 0, vatRate: 20 },
         { itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 0, vatRate: 20 },
@@ -221,13 +214,11 @@ describe('Quote Calculations', () => {
       const result = calculateQuoteTotals(items, 0);
       // PRODUCT: 2*100 = 200, SET: 1*500 = 500 => subtotal = 700
       expect(result.subtotal).toBe(700);
-      // VAT 20% of 700 = 140
-      expect(result.vatTotal).toBe(140);
-      // Grand: 700 + 140 = 840
-      expect(result.grandTotal).toBe(840);
+      expect(result.vatTotal).toBe(0);
+      expect(result.grandTotal).toBe(700);
     });
 
-    it('applies overall discount to SET items along with other items', () => {
+    it('applies overall discount to SET items along with other items (no VAT)', () => {
       const items: QuoteItem[] = [
         { itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 20 },
         { itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 10, vatRate: 20 },
@@ -237,19 +228,19 @@ describe('Quote Calculations', () => {
       expect(result.subtotal).toBe(1450);
       // Overall 10% discount: 145
       expect(result.discountTotal).toBe(145);
-      // Net: 1305, VAT 20%: 261, Grand: 1566
-      expect(result.vatTotal).toBe(261);
-      expect(result.grandTotal).toBe(1566);
+      // Net/Grand: 1305 (VAT skipped)
+      expect(result.vatTotal).toBe(0);
+      expect(result.grandTotal).toBe(1305);
     });
 
-    it('calculates correctly when only SET items are present', () => {
+    it('calculates correctly when only SET items are present (no VAT)', () => {
       const items: QuoteItem[] = [
         { itemType: 'SET', quantity: 1, unitPrice: 2000, discountPct: 0, vatRate: 20 },
       ];
       const result = calculateQuoteTotals(items, 0);
       expect(result.subtotal).toBe(2000);
-      expect(result.vatTotal).toBe(400);
-      expect(result.grandTotal).toBe(2400);
+      expect(result.vatTotal).toBe(0);
+      expect(result.grandTotal).toBe(2000);
     });
   });
 

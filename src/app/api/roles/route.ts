@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
         canApprove: validatedData.canApprove ?? false,
         canExport: validatedData.canExport ?? true,
         canManageUsers: validatedData.canManageUsers ?? false,
+        canManageSettings: validatedData.canManageSettings ?? false,
         canEditProducts: validatedData.canEditProducts ?? false,
         canDelete: validatedData.canDelete ?? false,
       },

@@ -13,7 +13,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!user.role.canManageUsers) {
+    if (!user.role.canManageSettings && !user.role.canManageUsers) {
       return NextResponse.json(
         { error: 'Bu islem icin yetkiniz yok' },
         { status: 403 }
@@ -74,7 +74,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!user.role.canManageUsers) {
+    if (!user.role.canManageSettings && !user.role.canManageUsers) {
       return NextResponse.json(
         { error: 'Bu islem icin yetkiniz yok' },
         { status: 403 }

@@ -106,8 +106,17 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
       } else if (val.includes('URUN ADI') || val.includes('URUN_ADI') || val === 'URUNADI' || val === 'ACIKLAMA') {
         columns.urunAdi = col;
       } else if (
-        val.includes('BIRIM') ||
-        val === 'UNIT'
+        // Currency column MUST be checked before BIRIM — "PARA BIRIMI"
+        // contains "BIRIM" and would otherwise be misassigned.
+        val.includes('PARA BIRIMI') ||
+        val.includes('PARA_BIRIMI') ||
+        val === 'PARABIRIMI' ||
+        val === 'DOVIZ' ||
+        val.includes('CURRENCY')
+      ) {
+        columns.paraBirimi = col;
+      } else if (
+        val === 'BIRIM' || val === 'UNIT'
       ) {
         columns.birim = col;
       } else if (
@@ -127,14 +136,6 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         if (!columns.listeFiyati || val.includes('LISTE')) {
           columns.listeFiyati = col;
         }
-      } else if (
-        val.includes('PARA BIRIMI') ||
-        val.includes('PARA_BIRIMI') ||
-        val === 'PARABIRIMI' ||
-        val === 'DOVIZ' ||
-        val.includes('CURRENCY')
-      ) {
-        columns.paraBirimi = col;
       } else if (
         val.includes('TEDARIKCI') ||
         val.includes('SUPPLIER') ||

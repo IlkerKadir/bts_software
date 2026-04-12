@@ -13,6 +13,7 @@ interface Role {
   canApprove: boolean;
   canExport: boolean;
   canManageUsers: boolean;
+  canManageSettings: boolean;
   canEditProducts: boolean;
   canDelete: boolean;
   userCount: number;

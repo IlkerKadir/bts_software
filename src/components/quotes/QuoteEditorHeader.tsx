@@ -20,6 +20,7 @@ import {
   CheckCircle,
   XCircle,
   Wrench,
+  Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Input, Select, Card, Badge } from '@/components/ui';
@@ -532,6 +533,16 @@ export function QuoteEditorHeader({
         <Button variant="ghost" size="sm" onClick={() => setShowPdfPreview(true)} title="Ön İzleme">
           <Eye className="h-4 w-4" />
           Ön İzleme
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push(`/quotes/${quoteId}/preview`)}
+          title="PDF'i düzenle ve indir (kozmetik düzenleme)"
+        >
+          <Pencil className="h-4 w-4" />
+          Düzenle & İndir
         </Button>
 
         {onExport && (

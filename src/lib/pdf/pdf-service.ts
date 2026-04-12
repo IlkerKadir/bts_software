@@ -9,6 +9,8 @@ export interface PdfOptions {
     right?: string;
   };
   landscape?: boolean;
+  /** Disable JavaScript execution in Puppeteer. Use when rendering user-controlled HTML. */
+  disableJs?: boolean;
 }
 
 const IDLE_TIMEOUT_MS = 60_000; // 60 seconds
@@ -43,6 +45,9 @@ export class PdfService {
     const page = await browser.newPage();
 
     try {
+      if (options.disableJs) {
+        await page.setJavaScriptEnabled(false);
+      }
       await page.setContent(html, { waitUntil: 'networkidle0' });
 
       const pdfOptions: PDFOptions = {

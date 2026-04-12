@@ -5,7 +5,7 @@
 /**
  * Possible quote item types matching the Prisma enum / QuoteItemData union.
  */
-export type QuoteItemType = 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL';
+export type QuoteItemType = 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
 
 /**
  * Shape of a raw quote item as returned by the API (before local mapping).
@@ -31,6 +31,7 @@ export interface ApiQuoteItem {
   vatRate: number | string;
   totalPrice: number | string;
   notes?: string | null;
+  priceLabel?: string | null;
   isManualPrice?: boolean;
   costPrice?: number | string | null;
   ekMaliyetDelta?: number | string | null;

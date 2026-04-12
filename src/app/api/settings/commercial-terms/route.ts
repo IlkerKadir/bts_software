@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
         value: true,
         isDefault: true,
         sortOrder: true,
+        highlight: true,
       },
     });
 
@@ -44,7 +45,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!user.role.canManageUsers) {
+    // Accept either canManageSettings (new admin surface) or the legacy
+    // canManageUsers flag during the transition window — both allow
+    // creating new commercial term templates.
+    if (!user.role.canManageSettings && !user.role.canManageUsers) {
       return NextResponse.json(
         { error: 'Bu islem icin yetkiniz yok' },
         { status: 403 }

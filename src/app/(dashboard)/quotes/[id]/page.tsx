@@ -59,8 +59,9 @@ interface QuoteDocument {
 interface QuoteItem {
   id: string;
   parentItemId?: string | null;
-  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET';
+  itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   sortOrder: number;
+  priceLabel?: string | null;
   code?: string | null;
   brand?: string | null;
   description: string;
@@ -281,6 +282,26 @@ export default function QuoteDetailPage({ params }: PageProps) {
     return map;
   }, [quote]);
 
+  // Precompute the section sum ending at each SUBTOTAL row. Price-labeled
+  // items contribute 0, matching the PDF export logic.
+  const subtotalSumMap = useMemo(() => {
+    if (!quote) return new Map<string, number>();
+    const map = new Map<string, number>();
+    let running = 0;
+    for (const item of quote.items) {
+      if (item.itemType === 'SUBTOTAL') {
+        map.set(item.id, running);
+        running = 0;
+        continue;
+      }
+      if (item.priceLabel) continue;
+      if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
+        running += Number(item.totalPrice);
+      }
+    }
+    return map;
+  }, [quote]);
+
   // Summary calculations
   const summary = useMemo(() => {
     if (!quote) return null;
@@ -292,6 +313,17 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
     return { subtotal, discountPct, discountTotal, vatTotal, grandTotal };
   }, [quote]);
+
+  // Skip the default tfoot summary when the user has placed inline
+  // SUBTOTAL / GRAND_TOTAL rows, otherwise we'd duplicate the totals.
+  const hasInlineSubtotal = useMemo(
+    () => !!quote?.items.some(i => i.itemType === 'SUBTOTAL'),
+    [quote],
+  );
+  const hasInlineGrandTotal = useMemo(
+    () => !!quote?.items.some(i => i.itemType === 'GRAND_TOTAL'),
+    [quote],
+  );
 
   // ---------------------------------------------------------------------------
   // Export Handlers
@@ -761,6 +793,35 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   );
                 }
 
+                // SUBTOTAL row — inline section total band
+                if (item.itemType === 'SUBTOTAL') {
+                  const sectionSum = subtotalSumMap.get(item.id) ?? 0;
+                  return (
+                    <tr key={item.id} className="bg-accent-50 border-t-2 border-accent-300">
+                      <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
+                        {item.description || 'Ara Toplam'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
+                        {formatPrice(sectionSum)}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                // GRAND_TOTAL row — inline grand total band
+                if (item.itemType === 'GRAND_TOTAL') {
+                  return (
+                    <tr key={item.id} className="bg-primary-50 border-t-2 border-primary-300">
+                      <td colSpan={5} className="px-3 py-2.5 text-right text-sm font-bold text-primary-900">
+                        {item.description || 'GENEL TOPLAM'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-bold text-primary-900 whitespace-nowrap">
+                        {formatPrice(summary?.grandTotal ?? 0)}
+                      </td>
+                    </tr>
+                  );
+                }
+
                 // PRODUCT / CUSTOM rows
                 const pozNo = pozMap.get(item.id);
 
@@ -848,18 +909,21 @@ export default function QuoteDetailPage({ params }: PageProps) {
             {/* Summary footer */}
             {summary && (
               <tfoot className="bg-accent-50 text-sm">
-                {/* Ara Toplam */}
-                <tr className="border-t-2 border-accent-300">
-                  <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
-                    Ara Toplam
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
-                    {formatPrice(summary.subtotal)}
-                  </td>
-                </tr>
+                {/* Ara Toplam / İskonto / Genel Toplam — only when the quote
+                    doesn't already carry inline SUBTOTAL/GRAND_TOTAL rows,
+                    so we don't render duplicates. */}
+                {!hasInlineSubtotal && (
+                  <tr className="border-t-2 border-accent-300">
+                    <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
+                      Ara Toplam
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
+                      {formatPrice(summary.subtotal)}
+                    </td>
+                  </tr>
+                )}
 
-                {/* İskonto */}
-                {summary.discountPct > 0 && (
+                {!hasInlineSubtotal && summary.discountPct > 0 && (
                   <tr>
                     <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
                       İskonto ({summary.discountPct}%)
@@ -870,15 +934,16 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   </tr>
                 )}
 
-                {/* GENEL TOPLAM */}
-                <tr className="border-t-2 border-accent-400">
-                  <td colSpan={5} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
-                    GENEL TOPLAM
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-base font-bold text-accent-900 whitespace-nowrap">
-                    {formatPrice(summary.subtotal - summary.discountTotal)}
-                  </td>
-                </tr>
+                {!hasInlineGrandTotal && (
+                  <tr className="border-t-2 border-accent-400">
+                    <td colSpan={5} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
+                      GENEL TOPLAM
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-base font-bold text-accent-900 whitespace-nowrap">
+                      {formatPrice(summary.subtotal - summary.discountTotal)}
+                    </td>
+                  </tr>
+                )}
 
                 {/* Cost / Profit summary (only for canViewCosts users) */}
                 {permissions.canViewCosts && profitSummary && (

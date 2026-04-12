@@ -8,6 +8,7 @@ export const createRoleSchema = z.object({
   canApprove: z.boolean().optional().default(false),
   canExport: z.boolean().optional().default(true),
   canManageUsers: z.boolean().optional().default(false),
+  canManageSettings: z.boolean().optional().default(false),
   canEditProducts: z.boolean().optional().default(false),
   canDelete: z.boolean().optional().default(false),
 });
@@ -23,6 +24,7 @@ export const updateRoleSchema = z.object({
   canApprove: z.boolean().optional(),
   canExport: z.boolean().optional(),
   canManageUsers: z.boolean().optional(),
+  canManageSettings: z.boolean().optional(),
   canEditProducts: z.boolean().optional(),
   canDelete: z.boolean().optional(),
 });

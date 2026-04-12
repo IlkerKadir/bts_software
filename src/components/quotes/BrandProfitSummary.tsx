@@ -136,7 +136,8 @@ export function BrandProfitSummary({
       const grouped: Record<string, { revenue: number; cost: number; count: number }> = {};
 
       for (const item of filteredItems) {
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+        if (item.priceLabel) continue;
         if (item.parentItemId) continue;
 
         const brandKey = item.brand || 'Diger';
@@ -193,7 +194,8 @@ export function BrandProfitSummary({
       > = {};
 
       for (const item of filteredItems) {
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+        if (item.priceLabel) continue;
         if (item.parentItemId) continue;
 
         const brandKey = item.brand || 'Diger';
@@ -242,7 +244,8 @@ export function BrandProfitSummary({
       let totalWeightedK = 0;
       let totalWeightSum = 0;
       for (const item of filteredItems) {
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+        if (item.priceLabel) continue;
         if (item.parentItemId) continue;
         const qty = Number(item.quantity) || 0;
         const up = Number(item.unitPrice) || 0;

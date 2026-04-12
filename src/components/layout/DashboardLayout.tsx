@@ -4,6 +4,8 @@ import { ReactNode, useState, useCallback } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { cn } from '@/lib/cn';
+import { SettingsProvider } from '@/components/settings/SettingsProvider';
+import type { AppSettings } from '@/lib/settings/types';
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed';
 
@@ -26,9 +28,10 @@ interface DashboardLayoutProps {
       canApprove?: boolean;
     };
   };
+  settings: AppSettings;
 }
 
-export function DashboardLayout({ children, user }: DashboardLayoutProps) {
+export function DashboardLayout({ children, user, settings }: DashboardLayoutProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialCollapsed);
 
   const handleToggleCollapse = useCallback(() => {
@@ -44,27 +47,29 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-primary-50">
-      <Sidebar
-        userRole={user.role}
-        userName={user.fullName}
-        userRoleName={user.role.name}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={handleToggleCollapse}
-      />
+    <SettingsProvider initial={settings}>
+      <div className="min-h-screen bg-primary-50">
+        <Sidebar
+          userRole={user.role}
+          userName={user.fullName}
+          userRoleName={user.role.name}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={handleToggleCollapse}
+        />
 
-      <div
-        className={cn(
-          'transition-all duration-300',
-          isSidebarCollapsed ? 'pl-16' : 'pl-60'
-        )}
-      >
-        <Header user={user} />
+        <div
+          className={cn(
+            'transition-all duration-300',
+            isSidebarCollapsed ? 'pl-16' : 'pl-60'
+          )}
+        >
+          <Header user={user} />
 
-        <main className="p-6">
-          {children}
-        </main>
+          <main className="p-6">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </SettingsProvider>
   );
 }

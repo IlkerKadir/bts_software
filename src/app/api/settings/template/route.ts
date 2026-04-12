@@ -84,8 +84,9 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Only users with canManageUsers permission can update settings
-    if (!user.role.canManageUsers) {
+    // Accept either canManageSettings (new admin surface) or the legacy
+    // canManageUsers flag during the transition window.
+    if (!user.role.canManageSettings && !user.role.canManageUsers) {
       return NextResponse.json(
         { error: 'Bu işlem için yetkiniz bulunmuyor' },
         { status: 403 }

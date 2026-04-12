@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { loadAppSettings } from '@/lib/settings/loader';
 
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const user = await getSession();
@@ -9,8 +10,10 @@ export default async function Layout({ children }: { children: React.ReactNode }
     redirect('/login');
   }
 
+  const settings = await loadAppSettings();
+
   return (
-    <DashboardLayout user={user}>
+    <DashboardLayout user={user} settings={settings}>
       {children}
     </DashboardLayout>
   );

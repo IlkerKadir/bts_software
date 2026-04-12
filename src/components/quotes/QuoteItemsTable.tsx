@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   Plus, Type, StickyNote, Wrench, AlertTriangle,
   Package, DollarSign, Calculator, Clock, Layers,
-  Filter, X, Search, ChevronDown,
+  Filter, X, Search, ChevronDown, Sigma,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui';
@@ -18,6 +18,7 @@ import {
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
 import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { useSettings } from '@/components/settings/SettingsProvider';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -40,6 +41,7 @@ export interface QuoteItemsTableProps {
   onAddNote: () => void;
   onAddCustomItem?: () => void;
   onAddSubtotal?: () => void;
+  onAddGrandTotal?: () => void;
   onAddSubItem?: (parentId: string) => void;
   onAddCustomSubItem?: (parentId: string) => void;
   onCreateSet?: () => void;
@@ -118,6 +120,7 @@ export function QuoteItemsTable({
   onAddNote,
   onAddCustomItem,
   onAddSubtotal,
+  onAddGrandTotal,
   onAddSubItem,
   onAddCustomSubItem,
   onCreateSet,
@@ -259,6 +262,13 @@ export function QuoteItemsTable({
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
   const brandDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Admin-managed catalogs come from the dashboard-boundary SettingsProvider,
+  // preloaded on the server so every QuoteItemRow reads synchronously with
+  // no loading flash and no duplicate fetches across 50+ rows.
+  const settings = useSettings();
+  const priceLabelCatalog = settings.priceLabels;
+  const unitCatalog = settings.quoteDefaults.units;
+
   // Close brand dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -306,7 +316,8 @@ export function QuoteItemsTable({
     const passingIds = new Set<string>();
     for (const item of topLevel) {
       // Always include non-filterable row types
-      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+      if (item.priceLabel) continue;
 
       let passes = true;
       // SET items without brand should pass brand filter (they are set lines, not branded products)
@@ -447,7 +458,8 @@ export function QuoteItemsTable({
         sectionSum = 0; // reset for next section
       } else if (
         (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') &&
-        !item.parentItemId
+        !item.parentItemId &&
+        !item.priceLabel
       ) {
         const qty = Number(item.quantity) || 0;
         const up = Number(item.unitPrice) || 0;
@@ -493,7 +505,6 @@ export function QuoteItemsTable({
   const summary = useMemo(() => {
     let araTotal = 0;
     let totalCost = 0;
-    let totalVat = 0;
 
     const hasSubtotals = items.some((item) => item.itemType === 'SUBTOTAL');
 
@@ -510,7 +521,8 @@ export function QuoteItemsTable({
       if (lastSubtotalIdx < items.length - 1) {
         for (let i = lastSubtotalIdx + 1; i < items.length; i++) {
           const item = items[i];
-          if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+          if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+      if (item.priceLabel) continue;
           if (item.parentItemId) continue;
           araTotal += Number(item.quantity) * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
         }
@@ -518,7 +530,8 @@ export function QuoteItemsTable({
     } else {
       // Original logic: sum all priced items
       for (const item of items) {
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+      if (item.priceLabel) continue;
         if (item.parentItemId) continue;
         const qty = Number(item.quantity) || 0;
         const up = Number(item.unitPrice) || 0;
@@ -530,7 +543,8 @@ export function QuoteItemsTable({
     // Cost calculation – exclude SUBTOTAL and parentItemId items
     // Use effective cost (base + ek maliyet delta) so totals reflect distributed costs
     for (const item of items) {
-      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
+      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
+      if (item.priceLabel) continue;
       if (item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
       const effectiveCost = getEffectiveCostPrice(item);
@@ -542,18 +556,7 @@ export function QuoteItemsTable({
     const discountAmount = araTotal * (discountPct / 100);
     const afterDiscount = araTotal - discountAmount;
 
-    // VAT calculation – exclude SUBTOTAL and parentItemId items
-    for (const item of items) {
-      if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL') continue;
-      if (item.parentItemId) continue;
-      const qty = Number(item.quantity) || 0;
-      const up = Number(item.unitPrice) || 0;
-      const disc = Number(item.discountPct) || 0;
-      const itemBeforeVat = qty * up * (1 - disc / 100);
-      const itemAfterOverallDiscount = itemBeforeVat * (1 - discountPct / 100);
-      totalVat += itemAfterOverallDiscount * (Number(item.vatRate) / 100);
-    }
-
+    // VAT is intentionally not computed — quotes are VAT-exclusive.
     const grandTotal = afterDiscount;
     const totalProfit = afterDiscount - totalCost;
     const profitMargin = afterDiscount > 0 ? (totalProfit / afterDiscount) * 100 : 0;
@@ -562,7 +565,6 @@ export function QuoteItemsTable({
       araTotal,
       discountAmount,
       afterDiscount,
-      totalVat,
       grandTotal,
       totalCost,
       totalProfit,
@@ -769,6 +771,18 @@ export function QuoteItemsTable({
           <Button variant="secondary" size="sm" onClick={onAddSubtotal}>
             <Calculator className="h-4 w-4" />
             Ara Toplam
+          </Button>
+        )}
+        {onAddGrandTotal && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onAddGrandTotal}
+            disabled={items.some((i) => i.itemType === 'GRAND_TOTAL')}
+            title="Teklifin sonuna genel toplam satırı ekler"
+          >
+            <Sigma className="h-4 w-4" />
+            Genel Toplam
           </Button>
         )}
         {onCreateSet && (
@@ -1003,6 +1017,7 @@ export function QuoteItemsTable({
                     priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
                     totalColCount={totalColCount}
                     subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id) : undefined}
+                    grandTotalValue={item.itemType === 'GRAND_TOTAL' ? summary.grandTotal : undefined}
                     onUpdate={(updates) => onItemUpdate(item.id, updates)}
                     onDelete={() => onItemDelete(item.id)}
                     onDuplicate={() => onItemDuplicate(item.id)}
@@ -1016,6 +1031,8 @@ export function QuoteItemsTable({
                         : undefined
                     }
                     onInsertHeaderAbove={onAddHeader}
+                    priceLabelOptions={priceLabelCatalog}
+                    unitOptions={unitCatalog}
                   />
                   {/* Render sub-rows for SET parents */}
                   {(() => {
@@ -1079,6 +1096,8 @@ export function QuoteItemsTable({
                               onDragStart={noopDrag}
                               onDragOver={noopDrag}
                               onDrop={noopDrag}
+                              priceLabelOptions={priceLabelCatalog}
+                              unitOptions={unitCatalog}
                             />
                           ))}
                         </>

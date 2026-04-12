@@ -14,7 +14,7 @@ export const quoteStatusEnum = z.enum([
 
 export const currencyEnum = z.enum(['EUR', 'USD', 'GBP', 'TRY']);
 
-export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SET', 'SUBTOTAL']);
+export const quoteItemTypeEnum = z.enum(['PRODUCT', 'HEADER', 'NOTE', 'CUSTOM', 'SET', 'SUBTOTAL', 'GRAND_TOTAL']);
 
 export const quoteQuerySchema = z.object({
   search: z.string().optional(),
@@ -51,6 +51,7 @@ export const quoteItemSchema = z.object({
   discountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').default(0),
   vatRate: z.number().min(0).max(100).default(20),
   notes: z.string().nullish(),
+  priceLabel: z.string().nullish(),
   costPrice: z.number().nullish(),
   ekMaliyetDelta: z.number().nullish(),
 });
