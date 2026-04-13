@@ -38,6 +38,10 @@ model User {
   roleId         String
   role           Role            @relation(fields: [roleId], references: [id])
   isActive       Boolean         @default(true)
+  /// Soft-delete marker. Non-null = admin deleted the user. The row stays
+  /// so foreign keys on quotes / orders / price history keep resolving;
+  /// every listing query filters `deletedAt: null` so the user is invisible.
+  deletedAt      DateTime?
   lastLogin      DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

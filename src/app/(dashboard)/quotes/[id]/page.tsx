@@ -94,6 +94,7 @@ interface Quote {
   id: string;
   quoteNumber: string;
   version: number;
+  parentQuoteId: string | null;
   company: { id: string; name: string; address?: string | null };
   project?: { id: string; name: string } | null;
   subject?: string | null;
@@ -698,7 +699,11 @@ export default function QuoteDetailPage({ params }: PageProps) {
               <div className="flex items-center gap-2">
                 <Globe className="w-3.5 h-3.5 text-primary-400" />
                 <span className="text-primary-500">Versiyon:</span>
-                <span className="font-medium text-primary-800">v{quote.version}</span>
+                <span className="font-medium text-primary-800">
+                  {quote.parentQuoteId === null
+                    ? 'Orijinal'
+                    : `Revizyon ${quote.quoteNumber.split('.').pop()}`}
+                </span>
               </div>
             </div>
           </CardBody>
@@ -1131,7 +1136,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
             </div>
             <div>
               <h3 className="font-semibold text-primary-900">Versiyon Geçmişi</h3>
-              <p className="text-xs text-primary-500">Mevcut versiyon: v{quote.version}</p>
+              <p className="text-xs text-primary-500 font-mono">{quote.quoteNumber}</p>
             </div>
           </div>
         </CardHeader>

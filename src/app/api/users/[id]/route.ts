@@ -28,8 +28,8 @@ export async function GET(
 
     const { id } = await params;
 
-    const targetUser = await db.user.findUnique({
-      where: { id },
+    const targetUser = await db.user.findFirst({
+      where: { id, deletedAt: null },
       select: {
         id: true,
         username: true,
@@ -92,9 +92,9 @@ export async function PUT(
 
     const { id } = await params;
 
-    // Check if user exists
-    const existingUser = await db.user.findUnique({
-      where: { id },
+    // Check if user exists (and isn't soft-deleted)
+    const existingUser = await db.user.findFirst({
+      where: { id, deletedAt: null },
     });
 
     if (!existingUser) {
@@ -233,9 +233,9 @@ export async function DELETE(
       );
     }
 
-    // Check if user exists
-    const existingUser = await db.user.findUnique({
-      where: { id },
+    // Check if user exists (and isn't already soft-deleted)
+    const existingUser = await db.user.findFirst({
+      where: { id, deletedAt: null },
     });
 
     if (!existingUser) {
@@ -245,13 +245,20 @@ export async function DELETE(
       );
     }
 
-    // Soft delete - deactivate user
+    // Soft delete: stamp `deletedAt`, flip `isActive`, and rename the
+    // username so the original frees up for a new user. The row stays
+    // so foreign keys on Quote / Order / PriceHistory keep resolving.
+    const suffix = `_deleted_${Date.now()}`;
     await db.user.update({
       where: { id },
-      data: { isActive: false },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+        username: `${existingUser.username}${suffix}`,
+      },
     });
 
-    return NextResponse.json({ message: 'Kullanıcı devre dışı bırakıldı' });
+    return NextResponse.json({ message: 'Kullanıcı silindi' });
   } catch (error) {
     console.error('User DELETE error:', error);
     return NextResponse.json(

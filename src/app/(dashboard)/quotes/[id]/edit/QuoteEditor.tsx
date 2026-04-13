@@ -410,8 +410,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Save handler ───────────────────────────────────────────────────────────
 
-  const handleSave = useCallback(async () => {
-    if (!quote) return;
+  // Returns true when the quote was persisted cleanly, false when any
+  // step failed. Callers chain on this to block exports (PDF preview,
+  // Excel download) until the DB matches the editor's live state.
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!quote) return false;
     setIsSaving(true);
     setError(null);
 
@@ -506,10 +509,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       itemsDirtyRef.current = false;
       setHasChanges(false);
       setSuccessMessage('Teklif başarıyla kaydedildi');
+      return true;
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Kaydetme sırasında bir hata oluştu'
       );
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -1527,9 +1532,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Export ─────────────────────────────────────────────────────────────────
 
-  const handleExport = useCallback(() => {
+  // Excel export auto-flushes any unsaved editor changes first so the
+  // downloaded file reflects the on-screen state, not the last
+  // persisted version.
+  const handleExport = useCallback(async () => {
+    if (hasChanges) {
+      const ok = await handleSave();
+      if (!ok) return;
+    }
     window.open(`/api/quotes/${quoteId}/export/excel`, '_blank');
-  }, [quoteId]);
+  }, [quoteId, hasChanges, handleSave]);
 
   // ── Create SET handler ─────────────────────────────────────────────────────
 

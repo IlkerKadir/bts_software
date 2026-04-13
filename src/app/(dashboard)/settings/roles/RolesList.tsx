@@ -190,7 +190,7 @@ export function RolesList() {
                   <PermissionBadge enabled={role.canExport} label="Disa Aktarma" />
                   <PermissionBadge enabled={role.canManageUsers} label="Kullanici Yonetimi" />
                   <PermissionBadge enabled={role.canEditProducts} label="Urun Duzenleme" />
-                  <PermissionBadge enabled={role.canDelete} label="Silme" />
+                  <PermissionBadge enabled={role.canDelete} label="Kayit Silme" />
                 </div>
               </div>
             </Card>

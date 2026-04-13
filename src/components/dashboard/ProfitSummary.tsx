@@ -36,7 +36,7 @@ const statConfig = [
   },
   {
     key: 'totalRevenue' as const,
-    label: 'Ürün Geliri',
+    label: 'Bu Ay Gönderilen Tutar',
     icon: Euro,
     iconBg: 'bg-emerald-50',
     iconColor: 'text-emerald-600',

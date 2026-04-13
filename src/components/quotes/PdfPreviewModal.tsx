@@ -8,9 +8,10 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   quoteId: string;
+  quoteNumber: string;
 }
 
-export function PdfPreviewModal({ isOpen, onClose, quoteId }: Props) {
+export function PdfPreviewModal({ isOpen, onClose, quoteId, quoteNumber }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +64,7 @@ export function PdfPreviewModal({ isOpen, onClose, quoteId }: Props) {
         <h2 className="text-sm font-semibold text-primary-900">Teklif Ön İzleme</h2>
         <div className="flex items-center gap-2">
           {pdfUrl && (
-            <a href={pdfUrl} download={`teklif-${quoteId}.pdf`}>
+            <a href={pdfUrl} download={`${quoteNumber}.pdf`}>
               <Button variant="secondary" size="sm">
                 <Download className="h-4 w-4" /> İndir
               </Button>

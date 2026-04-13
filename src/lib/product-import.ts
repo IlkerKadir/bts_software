@@ -178,20 +178,38 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
 }
 
 /**
- * Get string value from a cell, handling different ExcelJS cell types
+ * Get string value from a cell, handling the ExcelJS cell shapes
+ * that break a naive String(cell.value): hyperlink cells
+ * (`{ text, hyperlink }`), rich-text cells (`{ richText: [...] }`),
+ * and formula cells (`{ formula, result }`).
  */
 function getCellString(row: ExcelJS.Row, colIndex: number): string {
   if (colIndex <= 0) return '';
   const cell = row.getCell(colIndex);
-  if (cell.value == null) return '';
-  if (typeof cell.value === 'object' && 'richText' in cell.value) {
-    // Handle rich text
-    return (cell.value as ExcelJS.CellRichTextValue).richText
-      .map((rt) => rt.text)
-      .join('')
-      .trim();
+  const value = cell.value;
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value).trim();
   }
-  return String(cell.value).trim();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    const obj = value as unknown as Record<string, unknown>;
+    if (typeof obj.text === 'string') return obj.text.trim();
+    if (Array.isArray(obj.richText)) {
+      return (obj.richText as { text?: string }[])
+        .map((r) => r.text ?? '')
+        .join('')
+        .trim();
+    }
+    if ('result' in obj) {
+      const result = obj.result;
+      if (result == null) return '';
+      return String(result).trim();
+    }
+    if ('error' in obj) return '';
+  }
+  return String(value).trim();
 }
 
 /**

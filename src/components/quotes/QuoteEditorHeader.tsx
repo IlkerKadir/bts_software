@@ -20,7 +20,6 @@ import {
   CheckCircle,
   XCircle,
   Wrench,
-  Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Input, Select, Card, Badge } from '@/components/ui';
@@ -83,10 +82,14 @@ export interface QuoteEditorHeaderProps {
   onExchangeRateApply?: (newRate: number, newProtectionPct: number, newProtectionMap: Record<string, number>, rateMatrix: Record<string, Record<string, number>>) => void;
   onLanguageChange: (value: string) => void;
   onValidityDaysChange: (value: number) => void;
-  onSave: () => void;
+  /** Persists unsaved edits. Returns true on success, false on failure —
+   *  used by the Ön İzleme and Dışa Aktar buttons to avoid exporting
+   *  stale DB state. */
+  onSave: () => Promise<boolean>;
   onSubmitForApproval?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
+  /** Already auto-saves via the parent's handleExport if `hasChanges`. */
   onExport?: () => void;
   onQuoteNumberChange?: (value: string) => void;
 }
@@ -530,20 +533,27 @@ export function QuoteEditorHeader({
 
       {/* ── Row 3: Actions ──────────────────────────────────────────────── */}
       <div className="px-5 py-2 border-t border-primary-100 flex items-center justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={() => setShowPdfPreview(true)} title="Ön İzleme">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={async () => {
+            // Auto-save any unsaved changes so the preview reflects the
+            // on-screen state, not the last persisted version.
+            if (hasChanges) {
+              const ok = await onSave();
+              if (!ok) return;
+            }
+            setShowPdfPreview(true);
+          }}
+          disabled={isSaving}
+          title="Ön İzleme"
+        >
           <Eye className="h-4 w-4" />
           Ön İzleme
         </Button>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push(`/quotes/${quoteId}/preview`)}
-          title="PDF'i düzenle ve indir (kozmetik düzenleme)"
-        >
-          <Pencil className="h-4 w-4" />
-          Düzenle & İndir
-        </Button>
+        {/* Düzenle & İndir geçici olarak devre dışı — WYSIWYG PDF düzenleyici
+            hazır olduğunda yeniden etkinleştirilecek. */}
 
         {onExport && (
           <Button variant="ghost" size="sm" onClick={onExport} title="Dışa Aktar">
@@ -628,6 +638,7 @@ export function QuoteEditorHeader({
         isOpen={showPdfPreview}
         onClose={() => setShowPdfPreview(false)}
         quoteId={quoteId}
+        quoteNumber={quoteNumber}
       />
 
       {/* RefNo Builder Modal */}

@@ -137,9 +137,14 @@ export function QuoteVersionPanel({
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-primary-900">
-                      v{revision.version}
+                    <span className="font-mono font-medium text-primary-900">
+                      {revision.quoteNumber}
                     </span>
+                    {revision.parentQuoteId === null && (
+                      <Badge variant="info" className="text-xs">
+                        Orijinal
+                      </Badge>
+                    )}
                     {isCurrent && (
                       <Badge variant="info" className="text-xs">
                         <Check className="w-3 h-3 mr-1" />

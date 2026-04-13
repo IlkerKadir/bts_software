@@ -34,6 +34,7 @@ export function UserList() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -79,6 +80,11 @@ export function UserList() {
 
   useEffect(() => {
     fetchRoles();
+    // Fetch current session once so we can hide the "Sil" button on self.
+    fetch('/api/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.user?.id) setCurrentUserId(d.user.id); })
+      .catch(() => { /* silent — Sil button stays hidden */ });
   }, [fetchRoles]);
 
   useEffect(() => {
@@ -310,6 +316,7 @@ export function UserList() {
         onSuccess={handleFormSuccess}
         initialData={editingUser}
         roles={roles}
+        currentUserId={currentUserId}
       />
 
       {/* Toggle Active Confirmation Modal */}

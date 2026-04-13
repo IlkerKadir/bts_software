@@ -29,7 +29,7 @@ const PERMISSIONS = [
   { key: 'canManageUsers', label: 'Kullanıcı Yönetimi', description: 'Kullanıcı ve rol yönetimi yapabilir' },
   { key: 'canManageSettings', label: 'Ayar Yönetimi', description: 'Ticari şart şablonları, fiyat etiketleri ve diğer ayarları düzenleyebilir' },
   { key: 'canEditProducts', label: 'Ürün Düzenleme', description: 'Ürün bilgilerini düzenleyebilir' },
-  { key: 'canDelete', label: 'Silme', description: 'Kayıtları silebilir' },
+  { key: 'canDelete', label: 'Kayıt Silme', description: 'Teklif, sipariş, proje, firma ve ürün kayıtlarını silebilir' },
 ] as const;
 
 export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormProps) {

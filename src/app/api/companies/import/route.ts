@@ -33,8 +33,38 @@ function normalizeCompanyType(raw: string): 'CLIENT' | 'PARTNER' | null {
   return null;
 }
 
+/**
+ * Convert an ExcelJS cell value to a plain string. The tricky cases
+ * are hyperlink cells (`{ text, hyperlink }`, common for emails and
+ * URLs), rich-text cells (`{ richText: [{ text }, ...] }`), and
+ * formula cells (`{ formula, result }`). A naive `String(cell)` on
+ * any of these produces `"[object Object]"`.
+ */
 function cellToString(cell: ExcelJS.CellValue): string {
   if (cell === null || cell === undefined) return '';
+  if (typeof cell === 'string') return cell.trim();
+  if (typeof cell === 'number' || typeof cell === 'boolean') {
+    return String(cell).trim();
+  }
+  if (cell instanceof Date) return cell.toISOString();
+  if (typeof cell === 'object') {
+    const obj = cell as unknown as Record<string, unknown>;
+    // Hyperlink: { text, hyperlink }
+    if (typeof obj.text === 'string') return obj.text.trim();
+    // Rich text: { richText: [{ text, ... }, ...] }
+    if (Array.isArray(obj.richText)) {
+      return (obj.richText as { text?: string }[])
+        .map((r) => r.text ?? '')
+        .join('')
+        .trim();
+    }
+    // Formula: { formula, result } — recurse on the computed result
+    if ('result' in obj) {
+      return cellToString(obj.result as ExcelJS.CellValue);
+    }
+    // Error cell: { error } — treat as empty
+    if ('error' in obj) return '';
+  }
   return String(cell).trim();
 }
 

@@ -185,8 +185,8 @@ export function QuoteCompareModal({
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-lg bg-primary-50 border border-primary-200">
               <div className="text-sm text-primary-500 mb-1">Eski Versiyon</div>
-              <div className="font-semibold text-lg text-primary-900">
-                v{data.oldQuote.version}
+              <div className="font-mono font-semibold text-lg text-primary-900">
+                {data.oldQuote.quoteNumber}
               </div>
               <div className="text-sm text-primary-600">
                 {formatDate(data.oldQuote.createdAt)} - {data.oldQuote.createdBy.fullName}
@@ -198,8 +198,8 @@ export function QuoteCompareModal({
 
             <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
               <div className="text-sm text-blue-600 mb-1">Yeni Versiyon</div>
-              <div className="font-semibold text-lg text-primary-900">
-                v{data.newQuote.version}
+              <div className="font-mono font-semibold text-lg text-primary-900">
+                {data.newQuote.quoteNumber}
               </div>
               <div className="text-sm text-primary-600">
                 {formatDate(data.newQuote.createdAt)} - {data.newQuote.createdBy.fullName}

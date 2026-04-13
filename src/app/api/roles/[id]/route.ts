@@ -161,25 +161,12 @@ export async function DELETE(
     // Check if role exists
     const existingRole = await db.role.findUnique({
       where: { id },
-      include: {
-        _count: {
-          select: { users: true },
-        },
-      },
     });
 
     if (!existingRole) {
       return NextResponse.json(
         { error: 'Rol bulunamadı' },
         { status: 404 }
-      );
-    }
-
-    // Prevent deletion of role with users
-    if (existingRole._count.users > 0) {
-      return NextResponse.json(
-        { error: `Bu rol ${existingRole._count.users} kullanıcıya atanmış durumda. Silmeden önce kullanıcıların rollerini değiştirin.` },
-        { status: 400 }
       );
     }
 
@@ -191,9 +178,43 @@ export async function DELETE(
       );
     }
 
-    await db.role.delete({
-      where: { id },
+    // Count only non-deleted users. Soft-deleted users still carry
+    // `roleId` to satisfy the FK, but they're invisible to admins and
+    // shouldn't block role deletion.
+    const activeUserCount = await db.user.count({
+      where: { roleId: id, deletedAt: null },
     });
+
+    if (activeUserCount > 0) {
+      return NextResponse.json(
+        { error: `Bu rol ${activeUserCount} kullanıcıya atanmış durumda. Silmeden önce kullanıcıların rollerini değiştirin.` },
+        { status: 400 }
+      );
+    }
+
+    // Any soft-deleted users on this role need to be reassigned to
+    // another surviving role before we can delete — otherwise the
+    // default `Restrict` FK on User.role blocks the delete.
+    const fallbackRole = await db.role.findFirst({
+      where: { id: { not: id } },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!fallbackRole) {
+      return NextResponse.json(
+        { error: 'Silinebilecek tek rol bu. Önce başka bir rol oluşturun.' },
+        { status: 400 }
+      );
+    }
+
+    await db.$transaction([
+      db.user.updateMany({
+        where: { roleId: id, deletedAt: { not: null } },
+        data: { roleId: fallbackRole.id },
+      }),
+      db.role.delete({ where: { id } }),
+    ]);
 
     return NextResponse.json({ message: 'Rol silindi' });
   } catch (error) {

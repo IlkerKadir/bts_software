@@ -22,15 +22,19 @@ export async function GET() {
     months.push(d.toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' }));
   }
 
+  // Monthly revenue = ONLY quotes that have actually been won
+  // (status KAZANILDI). Drafts and sent-but-undecided quotes are not
+  // revenue and have been intentionally excluded so the chart matches
+  // its label.
   const monthlyRevenue = months.map((month, idx) => {
     const targetDate = new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1);
     const nextMonth = new Date(now.getFullYear(), now.getMonth() - (10 - idx), 1);
     const monthQuotes = quotes.filter(q => q.createdAt >= targetDate && q.createdAt < nextMonth);
     return {
       month,
-      kazanilan: monthQuotes.filter(q => q.status === 'KAZANILDI').reduce((sum, q) => sum + Number(q.grandTotal), 0),
-      kaybedilen: monthQuotes.filter(q => q.status === 'KAYBEDILDI').reduce((sum, q) => sum + Number(q.grandTotal), 0),
-      bekleyen: monthQuotes.filter(q => !['KAZANILDI', 'KAYBEDILDI', 'IPTAL'].includes(q.status)).reduce((sum, q) => sum + Number(q.grandTotal), 0),
+      kazanilan: monthQuotes
+        .filter(q => q.status === 'KAZANILDI')
+        .reduce((sum, q) => sum + Number(q.grandTotal), 0),
     };
   });
 

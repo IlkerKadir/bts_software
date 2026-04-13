@@ -79,10 +79,6 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
   IPTAL: 'error',
 };
 
-/** Extract base quote number: "BTS-2026-0001-R2" -> "BTS-2026-0001" */
-function getBaseQuoteNumber(quoteNumber: string): string {
-  return quoteNumber.split('-R')[0];
-}
 
 export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) {
   const router = useRouter();
@@ -254,13 +250,13 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     }
   };
 
-  const toggleExpand = (baseNumber: string) => {
+  const toggleExpand = (groupKey: string) => {
     setExpandedQuotes((prev) => {
       const next = new Set(prev);
-      if (next.has(baseNumber)) {
-        next.delete(baseNumber);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
       } else {
-        next.add(baseNumber);
+        next.add(groupKey);
       }
       return next;
     });
@@ -512,15 +508,18 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                 </tr>
               ) : (
                 sortedQuotes.map((quote) => {
-                  const baseNumber = getBaseQuoteNumber(quote.quoteNumber);
+                  // The primary row's id is the stable grouping key —
+                  // uses the root's id for real roots, the revision's
+                  // own id if its root was filtered out.
+                  const groupKey = quote.id;
                   const hasRevisions = quote.revisions && quote.revisions.length > 0;
-                  const isExpanded = expandedQuotes.has(baseNumber);
+                  const isExpanded = expandedQuotes.has(groupKey);
 
                   return (
                     <QuoteGroupRows
                       key={quote.id}
                       quote={quote}
-                      baseNumber={baseNumber}
+                      groupKey={groupKey}
                       hasRevisions={!!hasRevisions}
                       isExpanded={isExpanded}
                       onToggleExpand={toggleExpand}
@@ -698,10 +697,10 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
 
 interface QuoteGroupRowsProps {
   quote: Quote;
-  baseNumber: string;
+  groupKey: string;
   hasRevisions: boolean;
   isExpanded: boolean;
-  onToggleExpand: (baseNumber: string) => void;
+  onToggleExpand: (groupKey: string) => void;
   canViewCosts: boolean;
   selectedQuoteIds: Set<string>;
   onToggleSelection: (id: string) => void;
@@ -713,7 +712,7 @@ interface QuoteGroupRowsProps {
 
 function QuoteGroupRows({
   quote,
-  baseNumber,
+  groupKey,
   hasRevisions,
   isExpanded,
   onToggleExpand,
@@ -750,7 +749,7 @@ function QuoteGroupRows({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleExpand(baseNumber);
+                onToggleExpand(groupKey);
               }}
               className="p-0.5 rounded hover:bg-primary-200 text-primary-500 cursor-pointer flex-shrink-0"
               title={isExpanded ? 'Daralt' : 'Genişlet'}
@@ -765,9 +764,9 @@ function QuoteGroupRows({
             <span className="w-4.5 flex-shrink-0" />
           )}
           <span>{quote.quoteNumber}</span>
-          {quote.version > 1 && (
+          {hasRevisions && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent-100 text-accent-700 leading-none">
-              v{quote.version}
+              {quote.revisions!.length + 1} versiyon
             </span>
           )}
         </div>
@@ -841,12 +840,10 @@ function QuoteGroupRows({
         >
           {/* Checkbox cell — empty for sub-rows */}
           <td />
-          {/* Quote number cell — indented with version label */}
+          {/* Quote number cell — indented, number is self-describing (SA0051-YAS.2) */}
           <td className="pl-8 font-mono text-xs tabular-nums text-primary-500">
             <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary-200 text-primary-600 leading-none">
-                v{rev.version}
-              </span>
+              <span className="text-primary-300">↳</span>
               <span>{rev.quoteNumber}</span>
             </div>
           </td>

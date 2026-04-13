@@ -77,10 +77,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Determine which is the newer version
-    const [oldQuote, newQuote] = quote1.version < quote2.version
-      ? [quote1, quote2]
-      : [quote2, quote1];
+    // Determine which is the newer version. Use `createdAt` as the
+    // primary order — `version` alone is ambiguous because the root's
+    // default version=1 collides with its first revision's version=1.
+    const [oldQuote, newQuote] =
+      quote1.createdAt.getTime() < quote2.createdAt.getTime()
+        ? [quote1, quote2]
+        : [quote2, quote1];
 
     // Compare header fields
     const headerChanges: { field: string; oldValue: unknown; newValue: unknown }[] = [];

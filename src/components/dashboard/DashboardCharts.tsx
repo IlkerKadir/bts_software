@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 
 interface ChartData {
-  monthlyRevenue: { month: string; kazanilan: number; kaybedilen: number; bekleyen: number }[];
+  monthlyRevenue: { month: string; kazanilan: number }[];
   winRate: { month: string; rate: number }[];
   pipeline: { name: string; value: number; color: string }[];
 }
@@ -68,8 +68,7 @@ export function DashboardCharts() {
             <YAxis fontSize={12} tick={{ fill: '#64748B' }} tickFormatter={(v) => `\u20AC${(v/1000).toFixed(0)}k`} />
             <Tooltip formatter={(value) => [`\u20AC${Number(value).toLocaleString('tr-TR')}`, '']} />
             <Legend />
-            <Bar dataKey="kazanilan" name="Kazanilan" fill="#22C55E" radius={[4,4,0,0]} />
-            <Bar dataKey="bekleyen" name="Bekleyen" fill="#F59E0B" radius={[4,4,0,0]} />
+            <Bar dataKey="kazanilan" name="Kazanılan" fill="#22C55E" radius={[4,4,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

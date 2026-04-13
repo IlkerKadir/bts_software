@@ -7,12 +7,14 @@ import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } 
 import { fetchTcmbDirectRates } from '@/lib/services/tcmb-service';
 
 /**
- * Extract the base quote number by splitting on `-R`.
- * e.g. "BTS-2026-0001-R2" -> "BTS-2026-0001"
- *      "BTS-2026-0001"     -> "BTS-2026-0001"
+ * Resolve the "root" id for a quote used in revision grouping. A row
+ * without a `parentQuoteId` is its own root; a revision points back
+ * at its root via `parentQuoteId`. We use ids instead of string
+ * matching on the quote number so the grouping is immune to manual
+ * quote-number edits and format changes.
  */
-function getBaseQuoteNumber(quoteNumber: string): string {
-  return quoteNumber.split('-R')[0];
+function getRootQuoteId(quote: { id: string; parentQuoteId: string | null }): string {
+  return quote.parentQuoteId ?? quote.id;
 }
 
 export async function GET(request: NextRequest) {
@@ -151,7 +153,10 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Grouped revisions mode ---
-    // 1. Fetch ALL quotes matching the filters (we need to group them in JS)
+    // Fetch matching quotes, then group each revision family under its
+    // root (the quote with parentQuoteId === null). This means the
+    // original offer is always the primary row in the list; its
+    // revisions appear nested underneath.
     const allQuotes = await db.quote.findMany({
       where,
       include: {
@@ -159,25 +164,37 @@ export async function GET(request: NextRequest) {
         project: { select: { id: true, name: true } },
         createdBy: { select: { id: true, fullName: true } },
       },
-      orderBy: { version: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
-    // 2. Group by base quote number
+    // Group by root id. Filters may exclude the root itself from the
+    // result set (e.g. "status=APPROVED" when only a revision is
+    // approved), so we still group by parentQuoteId but fall back to
+    // the oldest matching member as the group primary.
     const groupMap = new Map<string, typeof allQuotes>();
     for (const q of allQuotes) {
-      const base = getBaseQuoteNumber(q.quoteNumber);
-      if (!groupMap.has(base)) {
-        groupMap.set(base, []);
+      const rootKey = getRootQuoteId(q);
+      if (!groupMap.has(rootKey)) {
+        groupMap.set(rootKey, []);
       }
-      groupMap.get(base)!.push(q);
+      groupMap.get(rootKey)!.push(q);
     }
 
-    // 3. For each group, the highest version is the primary; rest are revisions
-    //    Each group's members are already sorted by version DESC (from orderBy above).
     const groups = Array.from(groupMap.values()).map((members) => {
-      // Sort within group by version DESC to ensure primary is first
-      members.sort((a, b) => b.version - a.version);
-      const [primary, ...revisions] = members;
+      const root = members.find((m) => m.parentQuoteId === null);
+      const primary =
+        root ??
+        members
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          )[0];
+      // Revisions sort newest-first so the latest revision is at the
+      // top of the expanded block.
+      const revisions = members
+        .filter((m) => m.id !== primary.id)
+        .sort((a, b) => b.version - a.version);
       return { ...primary, revisions };
     });
 

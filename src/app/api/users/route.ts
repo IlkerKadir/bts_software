@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       limit: searchParams.get('limit') || '20',
     });
 
-    const where: Prisma.UserWhereInput = {};
+    const where: Prisma.UserWhereInput = { deletedAt: null };
 
     if (query.search) {
       where.OR = [

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { generateQuoteNumber, parseQuoteNumber } from '@/lib/quote-number';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -8,7 +9,26 @@ interface RouteParams {
 
 /**
  * POST /api/quotes/[id]/revisions
- * Creates a new revision of the quote (copies items + terms, increments version)
+ *
+ * Creates a new revision of the quote.
+ *
+ * Revision model:
+ *   - A "root" is the original quote (parentQuoteId = null).
+ *   - All revisions are direct children of the root, with
+ *     parentQuoteId = root.id. Revisions of revisions do not chain —
+ *     the new quote still points at the same root.
+ *   - Quote numbers follow the {INITIALS}{NNNN}-{SYSTEM}.{REV} scheme
+ *     defined in src/lib/quote-number.ts: the root is
+ *     `SA0051-YAS`, its first revision is `SA0051-YAS.1`, second
+ *     is `SA0051-YAS.2`, etc.
+ *   - The next revision index is `max(version of all children of the
+ *     root) + 1`, so sibling collisions are impossible.
+ *   - Items / commercial terms / ek maliyet are copied from the
+ *     `source` quote (the one the user was looking at when they hit
+ *     "create revision"), not from the root — so revising `.2` gives
+ *     you `.3` with `.2`'s content, not the original's.
+ *   - The source quote's status is set to REVIZYON so the UI can mark
+ *     it as "superseded".
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
@@ -19,7 +39,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Fetch the source quote with items, commercial terms, and ek maliyet
+    // Fetch the source quote with all the data we need to copy
     const sourceQuote = await db.quote.findUnique({
       where: { id },
       include: {
@@ -33,18 +53,63 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Build revision quote number: BTS-2025-0001 -> BTS-2025-0001-R2
-    const baseNumber = sourceQuote.quoteNumber.split('-R')[0];
-    const nextVersion = sourceQuote.version + 1;
-    const revisionNumber = `${baseNumber}-R${nextVersion}`;
+    // Resolve the root: if source already is a revision, the root is
+    // source.parentQuote; otherwise source itself is the root.
+    const rootId = sourceQuote.parentQuoteId ?? sourceQuote.id;
+    const rootQuote = sourceQuote.parentQuoteId
+      ? await db.quote.findUnique({
+          where: { id: rootId },
+          select: { id: true, quoteNumber: true },
+        })
+      : { id: sourceQuote.id, quoteNumber: sourceQuote.quoteNumber };
 
-    // Mark the current quote as REVIZYON status
+    if (!rootQuote) {
+      return NextResponse.json(
+        { error: 'Kök teklif bulunamadı — revizyon zinciri bozuk olabilir' },
+        { status: 500 }
+      );
+    }
+
+    // Parse the root's quote number. The revision scheme requires a
+    // system code (`SA0051-YAS`), so reject if we can't build the
+    // `.{rev}` suffix deterministically.
+    const parsed = parseQuoteNumber(rootQuote.quoteNumber);
+    if (!parsed || !parsed.systemCode) {
+      return NextResponse.json(
+        {
+          error:
+            'Revizyon oluşturmak için ana teklif numarasında sistem kodu olmalıdır (örn: SA0051-YAS). Önce teklif numarasını güncelleyin.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Next revision = 1 + highest version among all children of the
+    // root. We only count rows whose parentQuoteId is the root, so
+    // siblings of a deleted branch don't poison the counter.
+    const children = await db.quote.findMany({
+      where: { parentQuoteId: rootId },
+      select: { version: true },
+    });
+    const maxRev = children.reduce((m, c) => Math.max(m, c.version), 0);
+    const nextRev = maxRev + 1;
+
+    const revisionNumber = generateQuoteNumber(
+      parsed.initials,
+      parsed.sequence,
+      parsed.systemCode,
+      nextRev
+    );
+
+    // Mark the source quote as REVIZYON (superseded). We mark source,
+    // not root, so intermediate revisions get flagged correctly when
+    // the user revises them.
     await db.quote.update({
-      where: { id },
+      where: { id: sourceQuote.id },
       data: { status: 'REVIZYON' },
     });
 
-    // Create the new revision quote
+    // Create the new revision quote, linked to the root
     const newQuote = await db.quote.create({
       data: {
         quoteNumber: revisionNumber,
@@ -61,8 +126,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         grandTotal: sourceQuote.grandTotal,
         status: 'TASLAK',
         validityDays: sourceQuote.validityDays,
-        version: nextVersion,
-        parentQuoteId: sourceQuote.id,
+        version: nextRev,
+        parentQuoteId: rootId,
         notes: sourceQuote.notes,
         language: sourceQuote.language,
         createdById: user.id,
@@ -79,7 +144,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const oldToNewId = new Map<string, string>();
 
       // First pass: create parent items (no parentItemId)
-      const parentItems = sourceQuote.items.filter(item => !item.parentItemId);
+      const parentItems = sourceQuote.items.filter((item) => !item.parentItemId);
       for (const item of parentItems) {
         const created = await db.quoteItem.create({
           data: {
@@ -104,13 +169,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             costPrice: item.costPrice,
             ekMaliyetDelta: item.ekMaliyetDelta,
             serviceMeta: item.serviceMeta ?? undefined,
+            priceLabel: item.priceLabel,
           },
         });
         oldToNewId.set(item.id, created.id);
       }
 
       // Second pass: create sub-items with remapped parentItemId
-      const subItems = sourceQuote.items.filter(item => item.parentItemId);
+      const subItems = sourceQuote.items.filter((item) => item.parentItemId);
       for (const item of subItems) {
         const newParentId = oldToNewId.get(item.parentItemId!);
         const created = await db.quoteItem.create({
@@ -136,6 +202,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             costPrice: item.costPrice,
             ekMaliyetDelta: item.ekMaliyetDelta,
             serviceMeta: item.serviceMeta ?? undefined,
+            priceLabel: item.priceLabel,
             parentItemId: newParentId ?? null,
           },
         });
@@ -177,7 +244,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         changes: {
           sourceQuoteId: sourceQuote.id,
           sourceQuoteNumber: sourceQuote.quoteNumber,
-          version: nextVersion,
+          rootQuoteId: rootId,
+          rootQuoteNumber: rootQuote.quoteNumber,
+          version: nextRev,
         },
       },
     });
@@ -194,7 +263,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 /**
  * GET /api/quotes/[id]/revisions
- * Returns all revisions of a quote (including the quote itself and all parent/child versions)
+ *
+ * Returns the full revision family of a quote: the root plus all its
+ * direct children, ordered newest-first by `version`. Works regardless
+ * of which quote in the family the caller is looking at.
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -205,47 +277,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id: quoteId } = await params;
 
-    // Get the quote to check if it exists and get its version info
+    // Get the quote to check existence and resolve the root.
     const quote = await db.quote.findUnique({
       where: { id: quoteId },
-      select: {
-        id: true,
-        quoteNumber: true,
-        version: true,
-        parentQuoteId: true,
-      },
+      select: { id: true, version: true, parentQuoteId: true },
     });
 
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Find the root quote (the original version without a parent)
-    let rootQuoteId = quote.id;
-    let currentQuote = quote;
+    // Root = the caller's parent if it has one, else the caller itself.
+    // Revisions of revisions aren't supported, so one hop is enough.
+    const rootId = quote.parentQuoteId ?? quote.id;
 
-    // Walk up the parent chain to find the root
-    while (currentQuote.parentQuoteId) {
-      const parent = await db.quote.findUnique({
-        where: { id: currentQuote.parentQuoteId },
-        select: {
-          id: true,
-          parentQuoteId: true,
-        },
-      });
-      if (!parent) break;
-      rootQuoteId = parent.id;
-      currentQuote = parent as typeof quote;
-    }
-
-    // Get all revisions by matching the exact base quote number and its -R revisions
-    const baseQuoteNumber = quote.quoteNumber.split('-R')[0];
+    // Pull the root itself plus every direct child in one query.
     const revisions = await db.quote.findMany({
       where: {
-        OR: [
-          { quoteNumber: baseQuoteNumber },
-          { quoteNumber: { startsWith: `${baseQuoteNumber}-R` } },
-        ],
+        OR: [{ id: rootId }, { parentQuoteId: rootId }],
       },
       select: {
         id: true,
@@ -263,6 +312,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
+      // Root first (version=1 with no parent), then children by version desc.
+      // Prisma can't express "root first" directly, so caller sorts if it
+      // wants — we return newest-child-first as that's what the sidebar
+      // expects.
       orderBy: { version: 'desc' },
     });
 

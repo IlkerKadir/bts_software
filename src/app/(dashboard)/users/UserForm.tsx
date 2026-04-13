@@ -24,11 +24,14 @@ interface UserFormProps {
   onSuccess: () => void;
   initialData?: UserFormData | null;
   roles: Role[];
+  currentUserId?: string;
 }
 
-export function UserForm({ isOpen, onClose, onSuccess, initialData, roles }: UserFormProps) {
+export function UserForm({ isOpen, onClose, onSuccess, initialData, roles, currentUserId }: UserFormProps) {
   const isEditing = !!initialData?.id;
+  const isSelf = isEditing && initialData?.id === currentUserId;
   const [isLoading, setIsLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState<UserFormData>({
@@ -103,6 +106,33 @@ export function UserForm({ isOpen, onClose, onSuccess, initialData, roles }: Use
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleDelete = async () => {
+    if (!isEditing || !initialData?.id) return;
+    const confirmed = window.confirm(
+      `"${initialData.fullName}" kalıcı olarak silinsin mi?\n\n` +
+      'Oluşturduğu teklif ve siparişler korunur, ancak kullanıcı tekrar giriş yapamaz ' +
+      've listelerde görünmez.'
+    );
+    if (!confirmed) return;
+
+    setError('');
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/users/${initialData.id}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || 'Kullanıcı silinemedi');
+        return;
+      }
+      onSuccess();
+      onClose();
+    } catch {
+      setError('Kullanıcı silinirken bir hata oluştu');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -110,14 +140,29 @@ export function UserForm({ isOpen, onClose, onSuccess, initialData, roles }: Use
       title={isEditing ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı'}
       size="lg"
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={isLoading}>
-            İptal
-          </Button>
-          <Button onClick={handleSubmit} isLoading={isLoading}>
-            {isEditing ? 'Güncelle' : 'Kaydet'}
-          </Button>
-        </>
+        <div className="flex items-center justify-between w-full gap-2">
+          <div>
+            {isEditing && !isSelf && (
+              <Button
+                variant="secondary"
+                onClick={handleDelete}
+                isLoading={isDeleting}
+                disabled={isLoading}
+                className="!bg-red-50 !text-red-700 hover:!bg-red-100 !border-red-200"
+              >
+                Sil
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose} disabled={isLoading || isDeleting}>
+              İptal
+            </Button>
+            <Button onClick={handleSubmit} isLoading={isLoading} disabled={isDeleting}>
+              {isEditing ? 'Güncelle' : 'Kaydet'}
+            </Button>
+          </div>
+        </div>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -142,7 +187,6 @@ export function UserForm({ isOpen, onClose, onSuccess, initialData, roles }: Use
             onChange={(e) => handleChange('username', e.target.value)}
             placeholder="Kullanıcı adı"
             required
-            disabled={isEditing}
           />
         </div>
 
