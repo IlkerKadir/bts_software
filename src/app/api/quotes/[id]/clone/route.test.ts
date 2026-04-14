@@ -35,7 +35,11 @@ vi.mock('@/lib/session', () => ({
 }));
 
 vi.mock('@/lib/quote-number', () => ({
-  generateQuoteNumber: vi.fn((seq: number) => `BTS-2026-${String(seq).padStart(4, '0')}`),
+  generateQuoteNumber: vi.fn(
+    (initials: string, seq: number) => `${initials}${String(seq).padStart(4, '0')}`
+  ),
+  getInitials: vi.fn(() => 'TU'),
+  getInitialsPrefix: vi.fn((initials: string) => initials.toUpperCase()),
   getCurrentYearPrefix: vi.fn(() => 'BTS-2026-'),
   getNextSequence: vi.fn(() => 42),
 }));

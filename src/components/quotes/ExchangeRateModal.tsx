@@ -9,10 +9,18 @@ import {
   ShieldCheck,
   TrendingUp,
   ArrowRight,
-  Download,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Modal, Button, Spinner } from '@/components/ui';
+// Shared rate-matrix types and helpers live in the services module so
+// both client (this modal, the editor) and server (`/api/quotes` POST
+// that stamps rateSnapshot) go through the same code path.
+import {
+  buildRateMatrix as buildMatrixFromTcmb,
+  type TcmbDirectRate,
+  type TcmbRateType,
+  type RateMatrix,
+} from '@/lib/services/tcmb-service';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -27,16 +35,7 @@ interface ExchangeRateModalProps {
   onApply: (exchangeRate: number, protectionPct: number, protectionMap: Record<string, number>, rateMatrix: RateMatrix, rateType: TcmbRateType) => void;
 }
 
-type RateMatrix = Record<string, Record<string, number>>;
 type ProtectionMap = Record<string, number>; // "EUR/TRY" → 5.0
-
-interface TcmbDirectRate {
-  currency: string;
-  forexSelling: number;
-  banknoteSelling: number;
-}
-
-type TcmbRateType = 'forexSelling' | 'banknoteSelling';
 
 const CURRENCIES = ['EUR', 'USD', 'GBP', 'TRY'] as const;
 
@@ -48,24 +47,6 @@ const CURRENCY_LABELS: Record<string, string> = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-/** Build a full rate matrix from TCMB direct rates using the chosen rate type */
-function buildMatrixFromTcmb(rates: TcmbDirectRate[], rateType: TcmbRateType): RateMatrix {
-  const matrix: RateMatrix = {};
-  const toTry: Record<string, number> = { TRY: 1 };
-  for (const r of rates) {
-    const val = rateType === 'forexSelling' ? r.forexSelling : r.banknoteSelling;
-    if (val > 0) toTry[r.currency] = val;
-  }
-  const keys = Object.keys(toTry);
-  for (const from of keys) {
-    matrix[from] = {};
-    for (const to of keys) {
-      if (from !== to) matrix[from][to] = Math.round((toTry[from] / toTry[to]) * 1000000) / 1000000;
-    }
-  }
-  return matrix;
-}
 
 /** Canonical sorted key for a currency pair */
 function pairKey(a: string, b: string): string {
@@ -124,7 +105,6 @@ export function ExchangeRateModal({
   // TCMB direct rates (Döviz Satış / Efektif Satış)
   const [tcmbDirectRates, setTcmbDirectRates] = useState<TcmbDirectRate[]>([]);
   const [tcmbRateType, setTcmbRateType] = useState<TcmbRateType>('forexSelling');
-  const [isFetchingTcmb, setIsFetchingTcmb] = useState(false);
   const [tcmbFetchedAt, setTcmbFetchedAt] = useState<string | null>(null);
 
   // ── Protection helpers ──────────────────────────────────────────────────
@@ -286,40 +266,6 @@ export function ExchangeRateModal({
     }
   };
 
-  // Fetch TCMB direct rates (ForexSelling / BanknoteSelling)
-  const handleFetchTcmbDirect = async () => {
-    setIsFetchingTcmb(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/exchange-rates/tcmb');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'TCMB kur bilgisi alınamadı');
-
-      const rates = (data.rates || []) as TcmbDirectRate[];
-      setTcmbDirectRates(rates);
-      setTcmbFetchedAt(data.fetchedAt || null);
-
-      // Rebuild the full rate matrix from TCMB direct rates
-      if (rates.length > 0) {
-        setRateMatrix(buildMatrixFromTcmb(rates, tcmbRateType));
-      }
-
-      // Auto-apply the rate for the currently selected currency
-      const match = rates.find((r) => r.currency === selectedFrom);
-      if (match) {
-        const rate = tcmbRateType === 'forexSelling' ? match.forexSelling : match.banknoteSelling;
-        if (rate > 0) {
-          setBaseRate(rate);
-          setIsManualRate(false);
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'TCMB kur bilgisi alınamadı');
-    } finally {
-      setIsFetchingTcmb(false);
-    }
-  };
-
   // When rate type changes, rebuild the matrix and apply new rate
   const handleTcmbRateTypeChange = (type: TcmbRateType) => {
     setTcmbRateType(type);
@@ -440,21 +386,15 @@ export function ExchangeRateModal({
             </Button>
           </div>
 
-          {/* ── TCMB Direct Rate Fetch ───────────────────────────── */}
+          {/* ── TCMB Rate Type Selection ───────────────────────────── */}
+          {/* tcmbDirectRates are auto-fetched on modal open and refreshed
+              by the TCMB Güncelle button above — no separate fetch action
+              needed here. */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-blue-900">
                 TCMB Kur Seçimi
               </h3>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleFetchTcmbDirect}
-                disabled={isFetchingTcmb}
-              >
-                <Download className={cn('w-4 h-4', isFetchingTcmb && 'animate-pulse')} />
-                TCMB Kuru Getir
-              </Button>
             </div>
 
             {tcmbDirectRates.length > 0 && (

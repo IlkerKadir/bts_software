@@ -208,7 +208,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (body.exchangeRate !== undefined) updateData.exchangeRate = body.exchangeRate;
     if (body.protectionPct !== undefined) updateData.protectionPct = body.protectionPct;
     if (body.protectionMap !== undefined) updateData.protectionMap = body.protectionMap;
+    if (body.rateSnapshot !== undefined) {
+      updateData.rateSnapshot = body.rateSnapshot === null
+        ? Prisma.JsonNull
+        : (body.rateSnapshot as Prisma.InputJsonValue);
+    }
     if (body.discountPct !== undefined) updateData.discountPct = body.discountPct;
+    if (body.discountScopeSubtotalId !== undefined) {
+      updateData.discountScopeSubtotalId = body.discountScopeSubtotalId;
+    }
     if (body.validityDays !== undefined) updateData.validityDays = body.validityDays;
     if (body.notes !== undefined) updateData.notes = body.notes;
     if (body.language !== undefined) updateData.language = body.language;
@@ -237,8 +245,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Build structured diff for history: { field: { from, to } }
     const trackableFields = [
       'refNo', 'currency', 'subject', 'description', 'language',
-      'projectId', 'discountPct', 'exchangeRate', 'validityDays',
-      'protectionPct', 'protectionMap', 'notes',
+      'projectId', 'discountPct', 'discountScopeSubtotalId', 'exchangeRate',
+      'validityDays', 'protectionPct', 'protectionMap', 'notes',
     ] as const;
 
     const changes: Record<string, { from: unknown; to: unknown }> = {};

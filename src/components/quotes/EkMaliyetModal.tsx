@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Plus, DollarSign, Trash2 } from 'lucide-react';
 import { Button, Spinner } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -14,11 +14,28 @@ interface EkMaliyetLine {
   amount: number;
 }
 
+/**
+ * Currencies the user can pick for ek maliyet entry. TRY is the
+ * common case (subcontractor costs quoted in Turkish Lira and
+ * translated into the quote currency at distribution time), but the
+ * user can pick any of the four supported currencies per modal open.
+ */
+type SourceCurrency = 'TRY' | 'EUR' | 'USD' | 'GBP';
+
 export interface EkMaliyetModalProps {
   isOpen: boolean;
   onClose: () => void;
   quoteId: string;
+  /** Quote's current currency — determines how the source total is
+   *  converted for display. */
   currency: string;
+  /** Full exchange rate matrix from the editor's `exchangeRates`
+   *  state. Used to convert the source total into the quote currency
+   *  regardless of which `sourceCurrency` the user picks. */
+  rateMatrix: Record<string, Record<string, number>>;
+  /** Legacy fallback: direct currency → TRY scalar. Only used when
+   *  the matrix is empty for some reason (first render, network
+   *  failure, etc.). */
   exchangeRate: number;
   onApply: (totalAmountInCurrency: number) => void;
 }
@@ -32,10 +49,12 @@ export function EkMaliyetModal({
   onClose,
   quoteId,
   currency,
+  rateMatrix,
   exchangeRate,
   onApply,
 }: EkMaliyetModalProps) {
   const [lines, setLines] = useState<EkMaliyetLine[]>([{ title: '', amount: 0 }]);
+  const [sourceCurrency, setSourceCurrency] = useState<SourceCurrency>('TRY');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,16 +71,42 @@ export function EkMaliyetModal({
         if (!res.ok) throw new Error('Yüklenirken hata oluştu');
         const data = await res.json();
         if (data.items && data.items.length > 0) {
-          setLines(data.items.map((item: any) => ({
+          setLines(data.items.map((item: { title: string; amount: number }) => ({
             title: item.title,
             amount: Number(item.amount),
           })));
+          // Restore the stamped source currency from the first entry.
+          // Legacy rows have sourceCurrency = null → treat as TRY
+          // (matches the old modal's hardcoded assumption).
+          //
+          // PUT writes a uniform sourceCurrency across every line in a
+          // single modal open, so in practice all rows share the same
+          // value. If a hand-edited DB row ever produced a mismatch,
+          // warn loudly — the picker would otherwise silently display
+          // one currency while ignoring that others exist.
+          const sources = data.items.map(
+            (item: { sourceCurrency?: string | null }) => item.sourceCurrency ?? 'TRY'
+          );
+          const firstSource = sources[0];
+          const hasMixedSources = sources.some((s: string) => s !== firstSource);
+          if (hasMixedSources) {
+            console.warn(
+              '[EkMaliyetModal] mixed sourceCurrency across entries — picker will show the first one:',
+              sources
+            );
+          }
+          if (firstSource === 'EUR' || firstSource === 'USD' || firstSource === 'GBP' || firstSource === 'TRY') {
+            setSourceCurrency(firstSource);
+          } else {
+            setSourceCurrency('TRY');
+          }
         } else {
           setLines([{ title: '', amount: 0 }]);
+          setSourceCurrency('TRY');
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Ek maliyet load error:', err);
-        setError(err.message || 'Yüklenirken hata oluştu');
+        setError(err instanceof Error ? err.message : 'Yüklenirken hata oluştu');
       } finally {
         setIsLoading(false);
       }
@@ -85,9 +130,29 @@ export function EkMaliyetModal({
     }));
   }, []);
 
-  const totalTRY = lines.reduce((sum, line) => sum + (line.amount || 0), 0);
-  const effectiveRate = exchangeRate > 0 ? exchangeRate : 1;
-  const totalInCurrency = currency === 'TRY' ? totalTRY : totalTRY / effectiveRate;
+  // Sum of all line amounts in the chosen source currency.
+  const totalSource = lines.reduce((sum, line) => sum + (line.amount || 0), 0);
+
+  // Convert the source total into the quote currency using the rate
+  // matrix. Three routes, most specific first:
+  //   1. Source === quote currency → no conversion.
+  //   2. Matrix lookup `rateMatrix[sourceCurrency][currency]` → the
+  //      normal case, works for all 4 supported currencies.
+  //   3. Legacy scalar fallback: divide TRY amounts by
+  //      `exchangeRate`. Only reachable when the matrix hasn't
+  //      loaded yet (very early in the component lifecycle) and
+  //      sourceCurrency === 'TRY'.
+  const totalInCurrency = useMemo(() => {
+    if (sourceCurrency === currency) return totalSource;
+
+    const rate = rateMatrix[sourceCurrency]?.[currency];
+    if (rate != null && rate > 0) return totalSource * rate;
+
+    if (sourceCurrency === 'TRY' && currency !== 'TRY' && exchangeRate > 0) {
+      return totalSource / exchangeRate;
+    }
+    return totalSource;
+  }, [totalSource, sourceCurrency, currency, rateMatrix, exchangeRate]);
 
   const handleApply = async () => {
     // Filter out empty lines
@@ -97,11 +162,14 @@ export function EkMaliyetModal({
     setError(null);
 
     try {
-      // Save to API (empty array clears all entries)
+      // Save to API (empty array clears all entries). `sourceCurrency`
+      // stamps every line with the user's current picker value so
+      // Phase 4's Kurları Güncelle flow can redistribute this line
+      // when rates move.
       const res = await fetch(`/api/quotes/${quoteId}/ek-maliyet`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: validLines }),
+        body: JSON.stringify({ items: validLines, sourceCurrency }),
       });
 
       if (!res.ok) {
@@ -112,9 +180,9 @@ export function EkMaliyetModal({
       // Apply distribution (0 when no entries → reverts TAŞERON items to base price)
       onApply(totalInCurrency);
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Ek maliyet save error:', err);
-      setError(err.message || 'Kaydedilirken hata oluştu');
+      setError(err instanceof Error ? err.message : 'Kaydedilirken hata oluştu');
     } finally {
       setIsSaving(false);
     }
@@ -156,11 +224,33 @@ export function EkMaliyetModal({
             </div>
           ) : (
             <>
+              {/* Source currency picker — applies to all lines */}
+              <div className="flex items-center gap-3 border border-primary-200 rounded-lg px-3 py-2 bg-primary-50">
+                <span className="text-xs font-medium text-primary-600">Para Birimi:</span>
+                <select
+                  value={sourceCurrency}
+                  onChange={(e) => setSourceCurrency(e.target.value as SourceCurrency)}
+                  className={cn(
+                    'text-sm font-medium px-2 py-1 border rounded-md text-primary-900 bg-white',
+                    'border-primary-300 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent',
+                    'cursor-pointer'
+                  )}
+                >
+                  <option value="TRY">TRY</option>
+                  <option value="EUR">EUR</option>
+                  <option value="USD">USD</option>
+                  <option value="GBP">GBP</option>
+                </select>
+                <span className="text-xs text-primary-500">
+                  Tüm satırlar bu para biriminde girilir.
+                </span>
+              </div>
+
               {/* Line items */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-xs font-medium text-primary-500 uppercase tracking-wider">
                   <span className="flex-1">Başlık</span>
-                  <span className="w-32 text-right">Tutar (TRY)</span>
+                  <span className="w-32 text-right">Tutar ({sourceCurrency})</span>
                   <span className="w-8" />
                 </div>
 
@@ -213,20 +303,26 @@ export function EkMaliyetModal({
               {/* Summary */}
               <div className="border-t border-primary-200 pt-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-primary-600">Toplam (TRY)</span>
+                  <span className="text-primary-600">Toplam ({sourceCurrency})</span>
                   <span className="font-semibold tabular-nums text-primary-900">
                     {new Intl.NumberFormat('tr-TR', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
-                    }).format(totalTRY)} TRY
+                    }).format(totalSource)} {sourceCurrency}
                   </span>
                 </div>
 
-                {currency !== 'TRY' && (
+                {sourceCurrency !== currency && (
                   <>
-                    <div className="flex justify-between text-xs text-primary-500">
-                      <span>Kur: 1 {currency} = {effectiveRate.toLocaleString('tr-TR', { minimumFractionDigits: 4 })} TRY</span>
-                    </div>
+                    {(() => {
+                      const rate = rateMatrix[sourceCurrency]?.[currency];
+                      if (rate == null || rate <= 0) return null;
+                      return (
+                        <div className="flex justify-between text-xs text-primary-500">
+                          <span>Kur: 1 {sourceCurrency} = {rate.toLocaleString('tr-TR', { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {currency}</span>
+                        </div>
+                      );
+                    })()}
                     <div className="flex justify-between text-sm">
                       <span className="text-primary-600">Toplam ({currency})</span>
                       <span className="font-semibold tabular-nums text-primary-900">

@@ -84,7 +84,14 @@ export const quoteUpdateSchema = z.object({
   exchangeRate: z.number().gt(0, 'Exchange rate must be greater than 0').lte(1000, 'Exchange rate must be at most 1000').optional(),
   protectionPct: z.number().gte(0, 'Protection % must be at least 0').lte(100, 'Protection % must be at most 100').optional(),
   protectionMap: z.any().optional(),
+  /** Frozen rate matrix at last explicit rating. Passed from the
+   *  client when the user applies new rates via the exchange-rate
+   *  modal; persisted as-is. Shape: `{ from: { to: rate } }`. */
+  rateSnapshot: z.record(z.string(), z.record(z.string(), z.number())).nullable().optional(),
   discountPct: z.number().gte(0, 'Discount % must be at least 0').lte(100, 'Discount % must be at most 100').optional(),
+  /** Optional cuid of the SUBTOTAL QuoteItem the discount should apply
+   *  to. `null` means "apply to whole quote" (legacy behavior). */
+  discountScopeSubtotalId: z.string().nullable().optional(),
   validityDays: z.number().gt(0, 'Validity days must be greater than 0').lte(365, 'Validity days must be at most 365').optional(),
   notes: z.string().nullable().optional(),
   language: languageEnum.optional(),

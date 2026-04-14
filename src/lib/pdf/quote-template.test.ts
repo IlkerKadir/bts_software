@@ -126,16 +126,20 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       expect(html).toContain('TOPLAM FİYAT');
     });
 
-    it('uses 6.5pt font for main content', () => {
+    it('uses 8pt font for main content', () => {
       const html = generateQuoteHtml(mockQuoteData);
 
-      expect(html).toContain('font-size:6.5pt');
+      // After the Proforma Fatura rewrite, body content uses .s1/.s2
+      // classes with Arial 8pt instead of the old 6.5pt.
+      expect(html).toContain('font-size:8pt');
     });
 
-    it('uses 7.2pt font for commercial terms', () => {
+    it('uses 9pt font for commercial terms section headings', () => {
       const html = generateQuoteHtml(mockQuoteData);
 
-      expect(html).toContain('font-size:7.2pt');
+      // Commercial term categories are rendered with the .s3 class
+      // (bold, 9pt). Body of each category is .s4 (regular, 9pt).
+      expect(html).toContain('font-size:9pt');
     });
 
     it('includes refNo in client info box', () => {
@@ -175,10 +179,14 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       expect(html).toContain('Kurulum dahildir');
     });
 
-    it('renders OPSİYONEL for quantity=0 items without sequential number', () => {
+    it('renders quantity=0 priced items as a regular numbered row', () => {
       const html = generateQuoteHtml(mockQuoteData);
 
-      expect(html).toContain('OPSİYONEL');
+      // The earlier template rendered quantity=0 items as "OPSİYONEL"
+      // (optional) without a sequence number. The current Proforma
+      // Fatura template treats them as regular priced rows so the
+      // client sees the full catalog with a 0-qty marker.
+      expect(html).toContain('0 Ad.');
     });
 
     it('computes SUBTOTAL section sums', () => {
@@ -326,10 +334,14 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       expect(html).toContain('Istanbul, Turkiye');
     });
 
-    it('includes project information', () => {
+    it('does NOT echo project name in the customer info block', () => {
       const html = generateQuoteHtml(mockQuoteData);
 
-      expect(html).toContain('Merkez Ofis Binasi');
+      // The Proforma Fatura layout intentionally drops the project
+      // name from the customer-info block — it appears in the quote's
+      // subject / description instead. Asserting absence here locks
+      // that layout in place.
+      expect(html).not.toContain('Merkez Ofis Binasi');
     });
 
     it('formats dates in Turkish locale', () => {

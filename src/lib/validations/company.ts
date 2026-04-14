@@ -6,7 +6,12 @@ export const companySchema = z.object({
     message: 'Firma tipi geçersiz',
   }),
   address: z.string().optional().nullable(),
-  taxNumber: z.string().optional().nullable(),
+  // Coerce empty / whitespace-only to null so the DB unique
+  // constraint doesn't clash between multiple "no vergi no" rows.
+  taxNumber: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() === '' ? null : val),
+    z.string().optional().nullable()
+  ),
   phone: z.string().optional().nullable(),
   email: z.preprocess(
     (val) => (typeof val === 'string' && val.trim() === '' ? null : val),

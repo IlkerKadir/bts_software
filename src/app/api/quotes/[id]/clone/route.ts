@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } from '@/lib/quote-number';
+import { fetchTcmbDirectRates, buildRateMatrix } from '@/lib/services/tcmb-service';
 import { Prisma } from '@prisma/client';
 
 interface RouteParams {
@@ -16,6 +17,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+
+    // Optional overrides from the client — when the user clones a
+    // quote for a different customer, they pick a new company (and
+    // optionally a new project) in the clone dialog. When omitted,
+    // the clone inherits the source's company and project.
+    let overrideCompanyId: string | undefined;
+    let overrideProjectId: string | null | undefined;
+    try {
+      const body = await request.json().catch(() => ({}));
+      if (body && typeof body === 'object') {
+        const b = body as { companyId?: unknown; projectId?: unknown };
+        if (typeof b.companyId === 'string' && b.companyId.length > 0) {
+          overrideCompanyId = b.companyId;
+        }
+        if (b.projectId === null) {
+          overrideProjectId = null;
+        } else if (typeof b.projectId === 'string' && b.projectId.length > 0) {
+          overrideProjectId = b.projectId;
+        }
+      }
+    } catch { /* empty body — inherit from source */ }
 
     // Fetch the source quote with items, commercial terms, and ek maliyet
     const sourceQuote = await db.quote.findUnique({
@@ -37,14 +59,85 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Kaynak teklif bulunamadi' }, { status: 404 });
     }
 
-    // Get current exchange rate (read-only, safe outside transaction)
-    const exchangeRate = await db.exchangeRate.findFirst({
-      where: {
-        fromCurrency: sourceQuote.currency,
-        toCurrency: 'TRY',
-      },
-      orderBy: { fetchedAt: 'desc' },
-    });
+    // Validate override company exists if supplied.
+    if (overrideCompanyId) {
+      const targetCompany = await db.company.findUnique({
+        where: { id: overrideCompanyId },
+        select: { id: true },
+      });
+      if (!targetCompany) {
+        return NextResponse.json(
+          { error: 'Seçilen firma bulunamadı' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate override project exists (if supplied and not explicitly null).
+    if (overrideProjectId) {
+      const targetProject = await db.project.findUnique({
+        where: { id: overrideProjectId },
+        select: { id: true },
+      });
+      if (!targetProject) {
+        return NextResponse.json(
+          { error: 'Seçilen proje bulunamadı' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Resolve the rate the same way POST /api/quotes does — live TCMB
+    // is the authoritative source, with DB-stored and source-quote
+    // fallbacks only if the live fetch fails. This keeps clones
+    // consistent with newly created quotes (same day → same base rate)
+    // and stamps a fresh rateSnapshot so the editor doesn't fall back
+    // to stale data on reopen.
+    //
+    // Source protection intent (protectionPct + protectionMap) is
+    // preserved: the live base rate is multiplied by the source's
+    // single-currency protectionPct, matching how the source quote's
+    // exchangeRate was originally stored.
+    let resolvedExchangeRate: number;
+    let rateSnapshot: Prisma.InputJsonValue | undefined;
+    const sourceProtectionPct = Number(sourceQuote.protectionPct) || 0;
+
+    let tcmbSnapshotRates: Awaited<ReturnType<typeof fetchTcmbDirectRates>> = null;
+    try {
+      tcmbSnapshotRates = await fetchTcmbDirectRates();
+      if (tcmbSnapshotRates && tcmbSnapshotRates.rates.length > 0) {
+        rateSnapshot = buildRateMatrix(
+          tcmbSnapshotRates.rates,
+          'forexSelling'
+        ) as unknown as Prisma.InputJsonValue;
+      }
+    } catch { /* fall through; rateSnapshot stays undefined */ }
+
+    if (sourceQuote.currency === 'TRY') {
+      resolvedExchangeRate = 1.0;
+    } else {
+      const match = tcmbSnapshotRates?.rates.find((r) => r.currency === sourceQuote.currency);
+      if (match && match.forexSelling > 0) {
+        // Re-apply the source's protection on top of the fresh base so
+        // the clone starts with the same "protected" semantics the
+        // original quote had.
+        resolvedExchangeRate = match.forexSelling * (1 + sourceProtectionPct / 100);
+      } else {
+        // TCMB unreachable — fall back to the most recent DB rate, then
+        // finally to the source quote's frozen rate. The DB fallback
+        // path does NOT re-apply protection because we don't know how
+        // the DB row was originally produced.
+        const dbRate = await db.exchangeRate.findFirst({
+          where: { fromCurrency: sourceQuote.currency, toCurrency: 'TRY' },
+          orderBy: { fetchedAt: 'desc' },
+        });
+        if (dbRate?.rate) {
+          resolvedExchangeRate = Number(dbRate.rate);
+        } else {
+          resolvedExchangeRate = Number(sourceQuote.exchangeRate);
+        }
+      }
+    }
 
     // Wrap quote number generation + creation in a transaction to prevent race conditions
     const newQuote = await db.$transaction(async (tx) => {
@@ -61,16 +154,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
       const quoteNumber = generateQuoteNumber(initials, nextSequence);
 
-      // Create the cloned quote
+      // Create the cloned quote. Company and project are either the
+      // user-picked overrides from the clone dialog or inherited from
+      // the source when omitted. `projectId === null` is meaningful:
+      // the user can detach the clone from any project.
       const quote = await tx.quote.create({
         data: {
           quoteNumber,
-          companyId: sourceQuote.companyId,
-          projectId: sourceQuote.projectId,
+          companyId: overrideCompanyId ?? sourceQuote.companyId,
+          projectId: overrideProjectId === undefined
+            ? sourceQuote.projectId
+            : overrideProjectId,
           subject: sourceQuote.subject,
           currency: sourceQuote.currency,
-          exchangeRate: exchangeRate?.rate || sourceQuote.exchangeRate,
+          exchangeRate: resolvedExchangeRate,
+          rateSnapshot,
           protectionPct: sourceQuote.protectionPct,
+          protectionMap: sourceQuote.protectionMap ?? Prisma.JsonNull,
           subtotal: sourceQuote.subtotal,
           discountTotal: sourceQuote.discountTotal,
           discountPct: sourceQuote.discountPct,
@@ -91,9 +191,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
 
       // Copy all QuoteItems (two passes: parent items first, then sub-items with remapped parentItemId)
+      const oldToNewId = new Map<string, string>();
       if (sourceQuote.items.length > 0) {
-        const oldToNewId = new Map<string, string>();
-
         // First pass: create parent items (no parentItemId)
         const parentItems = sourceQuote.items.filter(item => !item.parentItemId);
         for (const item of parentItems) {
@@ -156,6 +255,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
           });
           oldToNewId.set(item.id, created.id);
+        }
+      }
+
+      // Remap discountScopeSubtotalId onto the cloned SUBTOTAL's new id.
+      // The clone quote was created with scope=null (schema default);
+      // we fill it in here now that the new item ids exist. If the
+      // source pointer is stale (dangling cuid), we just leave the
+      // clone at null and the recalc path auto-heals on next save.
+      if (sourceQuote.discountScopeSubtotalId) {
+        const remappedScopeId = oldToNewId.get(sourceQuote.discountScopeSubtotalId);
+        if (remappedScopeId) {
+          await tx.quote.update({
+            where: { id: quote.id },
+            data: { discountScopeSubtotalId: remappedScopeId },
+          });
         }
       }
 

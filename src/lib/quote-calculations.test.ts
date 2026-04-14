@@ -242,6 +242,94 @@ describe('Quote Calculations', () => {
       expect(result.vatTotal).toBe(0);
       expect(result.grandTotal).toBe(2000);
     });
+
+    // ─── Scoped discount (discountScopeSubtotalId) ───────────────────
+    describe('with scoped discount', () => {
+      // Two sections: A (sum 1000) + section-A SUBTOTAL + B (sum 500) +
+      // section-B SUBTOTAL. Used across the scoped-discount tests.
+      const twoSectionItems: QuoteItem[] = [
+        { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+        { id: 'p2', itemType: 'PRODUCT', quantity: 5, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+      ];
+
+      it('applies the discount only to the targeted section when scope is set', () => {
+        const result = calculateQuoteTotals(twoSectionItems, 10, 'sub-a');
+        // subtotal is always the full sum across all sections
+        expect(result.subtotal).toBe(1500);
+        // Discount applies only to section A (1000 × 10% = 100)
+        expect(result.discountTotal).toBe(100);
+        // Grand = 1500 - 100
+        expect(result.grandTotal).toBe(1400);
+      });
+
+      it('scopes to the second section correctly', () => {
+        const result = calculateQuoteTotals(twoSectionItems, 20, 'sub-b');
+        expect(result.subtotal).toBe(1500);
+        // Section B = 500, 20% = 100
+        expect(result.discountTotal).toBe(100);
+        expect(result.grandTotal).toBe(1400);
+      });
+
+      it('falls back to whole-quote discount when scope id is missing from the list', () => {
+        const result = calculateQuoteTotals(twoSectionItems, 10, 'does-not-exist');
+        // Falls through to legacy behavior — 10% of full 1500 = 150
+        expect(result.discountTotal).toBe(150);
+        expect(result.grandTotal).toBe(1350);
+      });
+
+      it('falls back to whole-quote when scope id points at a non-SUBTOTAL item', () => {
+        // 'p1' is a PRODUCT row, not a SUBTOTAL — must not be mistaken for a section target.
+        const result = calculateQuoteTotals(twoSectionItems, 10, 'p1');
+        expect(result.discountTotal).toBe(150);
+        expect(result.grandTotal).toBe(1350);
+      });
+
+      it('behaves identically to whole-quote when scope is null', () => {
+        const scoped = calculateQuoteTotals(twoSectionItems, 10, null);
+        const unscoped = calculateQuoteTotals(twoSectionItems, 10);
+        expect(scoped).toEqual(unscoped);
+      });
+
+      it('handles a scope that targets the first SUBTOTAL with no preceding SUBTOTAL', () => {
+        // First SUBTOTAL's section is items[0..targetIdx). Verified above as 'sub-a'.
+        const result = calculateQuoteTotals(twoSectionItems, 50, 'sub-a');
+        expect(result.discountTotal).toBe(500); // 50% of 1000
+      });
+
+      it('respects price-labeled items — scoped section excludes them from the discount base', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
+          { id: 'p2', itemType: 'PRODUCT', quantity: 1, unitPrice: 9999, discountPct: 0, vatRate: 0, priceLabel: 'TARAFINIZCA SAĞLANACAKTIR' },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+        ];
+        const result = calculateQuoteTotals(items, 10, 'sub-a');
+        // Only p1 counts in the section (p2 is a label). 10% of 1000 = 100.
+        expect(result.subtotal).toBe(1000);
+        expect(result.discountTotal).toBe(100);
+        expect(result.grandTotal).toBe(900);
+      });
+
+      it('respects item-level discounts within the scoped section', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 20, vatRate: 20 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+        ];
+        const result = calculateQuoteTotals(items, 10, 'sub-a');
+        // p1 after item discount: 10 × 100 × 0.8 = 800
+        // Section sum = 800, overall 10% discount = 80
+        expect(result.subtotal).toBe(800);
+        expect(result.discountTotal).toBe(80);
+        expect(result.grandTotal).toBe(720);
+      });
+
+      it('zero discount percent with a scope still reports zero discount', () => {
+        const result = calculateQuoteTotals(twoSectionItems, 0, 'sub-a');
+        expect(result.discountTotal).toBe(0);
+        expect(result.grandTotal).toBe(1500);
+      });
+    });
   });
 
   describe('calculateItemProfit', () => {

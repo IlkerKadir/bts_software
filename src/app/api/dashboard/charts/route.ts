@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { db } from '@/lib/db';
+import { quoteVisibilityWhere } from '@/lib/quote-visibility';
+import { Prisma } from '@prisma/client';
 
 export async function GET() {
   const user = await getSession();
@@ -9,9 +11,16 @@ export async function GET() {
   const now = new Date();
   const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-  // Get all quotes from last 12 months
+  // Scope charts to quotes this user is allowed to see — managers
+  // bypass the filter, everyone else sees own + visible-project quotes.
+  const visibility = quoteVisibilityWhere(user);
+  const baseWhere: Prisma.QuoteWhereInput = { createdAt: { gte: twelveMonthsAgo } };
+  const where: Prisma.QuoteWhereInput = Object.keys(visibility).length === 0
+    ? baseWhere
+    : { AND: [baseWhere, visibility] };
+
   const quotes = await db.quote.findMany({
-    where: { createdAt: { gte: twelveMonthsAgo } },
+    where,
     select: { status: true, grandTotal: true, createdAt: true },
   });
 

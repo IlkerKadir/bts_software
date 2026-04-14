@@ -59,6 +59,7 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
     const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
 
     return {
+      id: item.id,
       itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL',
       code: item.code,
       brand: item.brand,
@@ -125,6 +126,7 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
       const pm = quote.protectionMap as Record<string, unknown> | null;
       return typeof pm?.__discountLabel === 'string' ? pm.__discountLabel : 'İskonto';
     })(),
+    discountScopeSubtotalId: quote.discountScopeSubtotalId ?? null,
     headerBase64,
     logoBase64,
   };

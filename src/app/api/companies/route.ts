@@ -78,6 +78,21 @@ export async function POST(request: NextRequest) {
 
     // Empty email is already cleaned to null by the validation preprocess
 
+    // Pre-check vergi no uniqueness so the user sees a friendly
+    // Turkish message instead of a raw Prisma P2002 error.
+    if (validatedData.taxNumber) {
+      const existing = await db.company.findUnique({
+        where: { taxNumber: validatedData.taxNumber },
+        select: { id: true, name: true },
+      });
+      if (existing) {
+        return NextResponse.json(
+          { error: `Bu vergi numarası "${existing.name}" firmasında kullanılıyor` },
+          { status: 409 }
+        );
+      }
+    }
+
     // Prepare data for Prisma (handle Json field)
     const createData = {
       ...validatedData,
@@ -90,6 +105,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ company }, { status: 201 });
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      Array.isArray(error.meta?.target) &&
+      (error.meta?.target as string[]).includes('taxNumber')
+    ) {
+      return NextResponse.json(
+        { error: 'Bu vergi numarası başka bir firmada kullanılıyor' },
+        { status: 409 }
+      );
+    }
     if (error instanceof Error && error.name === 'ZodError') {
       const zodError = error as import('zod').ZodError;
       const fieldErrors = zodError.issues.map((e) => {

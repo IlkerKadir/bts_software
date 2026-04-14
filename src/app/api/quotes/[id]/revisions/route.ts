@@ -140,8 +140,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     // Copy all QuoteItems (two passes: parent items first, then sub-items with remapped parentItemId)
+    const oldToNewId = new Map<string, string>();
     if (sourceQuote.items.length > 0) {
-      const oldToNewId = new Map<string, string>();
 
       // First pass: create parent items (no parentItemId)
       const parentItems = sourceQuote.items.filter((item) => !item.parentItemId);
@@ -207,6 +207,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         });
         oldToNewId.set(item.id, created.id);
+      }
+    }
+
+    // Remap discountScopeSubtotalId onto the new revision's SUBTOTAL id.
+    // The revision quote was created with scope=null (schema default);
+    // we fill it in here after items exist. Dangling pointers stay null
+    // and the recalc path auto-heals on next save.
+    if (sourceQuote.discountScopeSubtotalId) {
+      const remappedScopeId = oldToNewId.get(sourceQuote.discountScopeSubtotalId);
+      if (remappedScopeId) {
+        await db.quote.update({
+          where: { id: newQuote.id },
+          data: { discountScopeSubtotalId: remappedScopeId },
+        });
       }
     }
 

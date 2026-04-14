@@ -97,13 +97,13 @@ describe('ExcelService', () => {
       expect(buffer.length).toBeGreaterThan(0);
     });
 
-    it('creates workbook with Teklif sheet', async () => {
+    it('creates workbook with Proforma Fatura sheet', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
       expect(workbook.worksheets.length).toBeGreaterThan(0);
-      const sheet = workbook.getWorksheet('Teklif');
+      const sheet = workbook.getWorksheet('Proforma Fatura');
       expect(sheet).toBeDefined();
     });
 
@@ -114,7 +114,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'PROFORMA FATURA')).toBe(true);
     });
@@ -124,7 +124,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'ABC Insaat')).toBe(true);
     });
@@ -134,7 +134,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Ankara Caddesi')).toBe(true);
     });
@@ -144,7 +144,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'BTS-2026-0001')).toBe(true);
     });
@@ -154,7 +154,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, '15.01.2026')).toBe(true);
     });
@@ -166,7 +166,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Merkez Ofis')).toBe(false);
     });
@@ -176,7 +176,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'TYCO ZETTLER')).toBe(true);
     });
@@ -188,10 +188,11 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
-      // Column header is at row 6 (row 1 banner, rows 2-5 customer block)
-      const headerRow = sheet.getRow(6);
+      // Column header is at row 7 (row 1 banner, rows 2-6 customer block:
+      // name, address, subject, description spanning 2 rows).
+      const headerRow = sheet.getRow(7);
       const expectedHeaders = ['POZ NO', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
 
       const actualHeaders: string[] = [];
@@ -210,7 +211,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'KATSAYI')).toBe(false);
       expect(sheetContains(sheet, 'LİSTE FİYATI')).toBe(false);
@@ -220,19 +221,23 @@ describe('ExcelService', () => {
 
     // --- Items Section ---
 
-    it('includes HEADER items with green background', async () => {
+    it('includes HEADER items rendered in bold across B:E', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
+      // HEADER section marker text lands in the sheet.
       expect(sheetContains(sheet, 'Algilama Ekipmanlari')).toBe(true);
 
-      // Data starts at row 7 (row 1 banner, rows 2-5 customer block, row 6 col headers)
-      const headerItemCell = sheet.getCell(7, 1);
-      const fillColor = (headerItemCell.fill as ExcelJS.FillPattern)?.fgColor?.argb;
-      expect(fillColor).toBe('FFC6E0B4');
+      // First data row is row 8 (row 1 banner, rows 2-6 customer block,
+      // row 7 column headers). The HEADER item is mockQuoteData.items[0]
+      // and renders as a B:E merged band — column A is left empty,
+      // column B holds the label in bold.
+      const headerItemCell = sheet.getCell(8, 2);
+      expect(headerItemCell.value).toBe('Algilama Ekipmanlari');
+      expect((headerItemCell.font as ExcelJS.Font)?.bold).toBe(true);
     });
 
     it('includes PRODUCT items with description', async () => {
@@ -240,7 +245,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Duman Dedektoru')).toBe(true);
     });
@@ -250,7 +255,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Montaj Hizmeti')).toBe(true);
     });
@@ -260,7 +265,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Ozel Kablo')).toBe(true);
     });
@@ -270,7 +275,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'NOT:')).toBe(true);
       expect(sheetContains(sheet, 'Kurulum dahildir')).toBe(true);
@@ -281,17 +286,18 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
-      // Data starts at row 7 (row 1 banner, rows 2-5 customer block, row 6 col headers)
-      // Row 7:  HEADER (no POZ)
-      // Row 8:  PRODUCT => POZ 1
-      // Row 9:  SET => POZ 2
-      // Row 10: NOTE (no POZ)
-      // Row 11: CUSTOM => POZ 3
-      expect(sheet.getCell(8, 1).value).toBe(1); // First PRODUCT
-      expect(sheet.getCell(9, 1).value).toBe(2); // SET
-      expect(sheet.getCell(11, 1).value).toBe(3); // CUSTOM
+      // Data starts at row 8 (row 1 banner, rows 2-6 customer block,
+      // row 7 column headers).
+      // Row 8:  HEADER    — no POZ
+      // Row 9:  PRODUCT   — POZ 1
+      // Row 10: SET       — POZ 2
+      // Row 11: NOTE      — no POZ
+      // Row 12: CUSTOM    — POZ 3
+      expect(sheet.getCell(9, 1).value).toBe(1);  // First PRODUCT
+      expect(sheet.getCell(10, 1).value).toBe(2); // SET
+      expect(sheet.getCell(12, 1).value).toBe(3); // CUSTOM
     });
 
     it('uses Turkish currency format for prices', async () => {
@@ -299,7 +305,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       // Prices should be formatted as Turkish locale strings with currency symbol
       // e.g., "4.275,00 €" for totalPrice 4275 EUR
@@ -315,7 +321,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'SİSTEM GENEL TOPLAMI')).toBe(false);
     });
@@ -332,7 +338,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithTotal);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'GENEL TOPLAM')).toBe(true);
       // Grand total from mockQuoteData (6330 before VAT removal, now whatever
@@ -348,7 +354,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'TİCARİ ŞARTLAR')).toBe(true);
     });
@@ -358,7 +364,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, '30 gun vadeli')).toBe(true);
       expect(sheetContains(sheet, '2 yil garanti')).toBe(true);
@@ -370,7 +376,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'ÖDEME')).toBe(true);
       expect(sheetContains(sheet, 'GARANTİ')).toBe(true);
@@ -389,7 +395,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithDahil);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Dahil Olmayan Hizmetler:')).toBe(true);
       expect(sheetContains(sheet, 'Kablolama dahil degildir.')).toBe(true);
@@ -419,7 +425,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithUretici);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'ÜRETİCİ FİRMALAR')).toBe(true);
       expect(sheetContains(sheet, 'TYCO - Yangin Algilama')).toBe(true);
@@ -439,7 +445,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithOnaylar);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'ONAYLAR')).toBe(true);
       expect(sheetContains(sheet, 'VDS onayli, FM onayli, CE onayli')).toBe(true);
@@ -452,7 +458,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'NOTLAR')).toBe(true);
     });
@@ -462,7 +468,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Tum fiyatlar KDV haric')).toBe(true);
       expect(sheetContains(sheet, 'Teslim suresi siparis')).toBe(true);
@@ -482,7 +488,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithNotlarTerms);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'NOTLAR')).toBe(true);
       expect(sheetContains(sheet, 'Montaj dahildir.')).toBe(true);
@@ -502,7 +508,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithHighlight);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Highlighted note')).toBe(true);
       expect(sheetContains(sheet, 'Normal note')).toBe(true);
@@ -564,7 +570,7 @@ describe('ExcelService', () => {
       expect(buffer).toBeInstanceOf(Buffer);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Simple Company')).toBe(true);
     });
@@ -598,16 +604,17 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(serviceOnlyData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
-      // SET item should appear at row 7 (row 1 banner, rows 2-5 customer, row 6 col headers)
-      expect(sheet.getCell(7, 1).value).toBe(1); // POZ NO = 1
-      expect(sheet.getCell(7, 2).value).toBe('Muhendislik Hizmeti');
-      // Combined miktar cell, e.g. "5 Ad."
-      expect(String(sheet.getCell(7, 3).value)).toContain('5');
-      expect(String(sheet.getCell(7, 3).value)).toContain('Ad.');
-      expect(String(sheet.getCell(7, 4).value)).toContain('200');
-      expect(String(sheet.getCell(7, 5).value)).toContain('1.000');
+      // SET item should appear at row 8 (row 1 banner, rows 2-6
+      // customer block, row 7 column headers).
+      expect(sheet.getCell(8, 1).value).toBe(1); // POZ NO = 1
+      expect(sheet.getCell(8, 2).value).toBe('Muhendislik Hizmeti');
+      // Combined miktar cell, e.g. "5 ad."
+      expect(String(sheet.getCell(8, 3).value).toLowerCase()).toContain('5');
+      expect(String(sheet.getCell(8, 3).value).toLowerCase()).toContain('ad.');
+      expect(String(sheet.getCell(8, 4).value)).toContain('200');
+      expect(String(sheet.getCell(8, 5).value)).toContain('1.000');
     });
 
     // --- Print Setup ---
@@ -617,7 +624,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheet.pageSetup.orientation).toBe('portrait');
     });
@@ -627,7 +634,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheet.pageSetup.fitToWidth).toBe(1);
     });
@@ -637,7 +644,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       // Margins should approximate PDF's 5mm/10mm/15mm/10mm
       const margins = sheet.pageSetup.margins!;
@@ -658,7 +665,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithTry);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, '\u20BA')).toBe(true); // ₺ symbol
     });
@@ -672,7 +679,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithUsd);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, '$')).toBe(true);
     });
@@ -692,7 +699,7 @@ describe('ExcelService', () => {
       const buffer = await service.generateQuoteExcel(dataWithSubtotal);
 
       const workbook = await loadWorkbook(buffer);
-      const sheet = workbook.getWorksheet('Teklif')!;
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'Ara Toplam')).toBe(true);
       // Section sum should be 2000.00 formatted as Turkish

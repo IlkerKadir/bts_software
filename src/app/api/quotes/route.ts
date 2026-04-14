@@ -4,7 +4,7 @@ import { quoteQuerySchema, createQuoteSchema } from '@/lib/validations/quote';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } from '@/lib/quote-number';
-import { fetchTcmbDirectRates } from '@/lib/services/tcmb-service';
+import { fetchTcmbDirectRates, buildRateMatrix } from '@/lib/services/tcmb-service';
 
 /**
  * Resolve the "root" id for a quote used in revision grouping. A row
@@ -277,21 +277,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Determine exchange rate — prefer TCMB direct forexSelling rate
+    // Determine exchange rate — prefer TCMB direct forexSelling rate.
+    // Also build a full rate matrix from the same TCMB fetch so it can
+    // be frozen onto the quote as `rateSnapshot`. On reopen, the
+    // editor reads from the snapshot instead of hitting live TCMB, so
+    // every item — existing and newly added — uses the same rates.
+    //
+    // TRY-denominated quotes also stamp a snapshot: their own TRY leg
+    // is trivial (1:1), but the quote may later gain a non-TRY
+    // subcontractor row that needs the cross rates at the original
+    // creation time.
     let resolvedExchangeRate: number;
+    let rateSnapshot: Prisma.InputJsonValue | undefined;
+
+    // Always attempt a TCMB fetch so we can stamp the snapshot,
+    // regardless of the quote's own currency.
+    let tcmbSnapshotRates: Awaited<ReturnType<typeof fetchTcmbDirectRates>> = null;
+    try {
+      tcmbSnapshotRates = await fetchTcmbDirectRates();
+      if (tcmbSnapshotRates && tcmbSnapshotRates.rates.length > 0) {
+        rateSnapshot = buildRateMatrix(tcmbSnapshotRates.rates, 'forexSelling') as unknown as Prisma.InputJsonValue;
+      }
+    } catch { /* fall through, rateSnapshot stays undefined */ }
+
     if (data.currency === 'TRY') {
       resolvedExchangeRate = 1.0;
     } else {
       // Try TCMB direct rates first (forexSelling = Döviz Satış)
       let found = false;
-      try {
-        const tcmbData = await fetchTcmbDirectRates();
-        const match = tcmbData?.rates.find((r) => r.currency === data.currency);
-        if (match && match.forexSelling > 0) {
-          resolvedExchangeRate = match.forexSelling;
-          found = true;
-        }
-      } catch { /* fall through to DB lookup */ }
+      const match = tcmbSnapshotRates?.rates.find((r) => r.currency === data.currency);
+      if (match && match.forexSelling > 0) {
+        resolvedExchangeRate = match.forexSelling;
+        found = true;
+      }
 
       // Fallback to DB-stored rate
       if (!found) {
@@ -301,6 +319,10 @@ export async function POST(request: NextRequest) {
         });
         if (exchangeRate?.rate) {
           resolvedExchangeRate = Number(exchangeRate.rate);
+          // rateSnapshot stays whatever the TCMB block produced
+          // (possibly undefined if TCMB was unreachable). The editor
+          // will fall back to fresh TCMB on reopen until the user
+          // explicitly applies rates via Kurları Güncelle.
         } else {
           return NextResponse.json(
             { error: 'Döviz kuru bulunamadı. Lütfen önce kurları güncelleyin.' },
@@ -335,6 +357,7 @@ export async function POST(request: NextRequest) {
           description: data.description || null,
           currency: data.currency,
           exchangeRate: resolvedExchangeRate,
+          rateSnapshot,
           createdById: user.id,
           validityDays: data.validityDays,
           notes: data.notes || null,

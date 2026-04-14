@@ -25,6 +25,18 @@ export interface TcmbDirectRate {
   currency: string;
   forexSelling: number;
   banknoteSelling: number;
+  /**
+   * Official TCMB cross rate against USD, expressed as "1 unit of this
+   * currency = X USD". Populated only for currencies whose TCMB entry
+   * carries a non-empty `<CrossRateOther>` tag (EUR, GBP). USD itself
+   * and minor currencies (AUD/CAD/CHF/…) return `null`.
+   *
+   * The modal uses this for EUR/USD, GBP/USD, and derived EUR/GBP so
+   * the non-TRY pairs match TCMB's published values instead of being
+   * computed from the TL selling legs (which compounds the ~0.17%
+   * bid/ask spread).
+   */
+  crossRateToUsd: number | null;
 }
 
 export interface ExchangeRateData {
@@ -235,6 +247,116 @@ export function convertCurrency(
   return amount * rate;
 }
 
+// ── Rate matrix builder (shared between server and client) ────────────────
+
+export type TcmbRateType = 'forexSelling' | 'banknoteSelling';
+export type RateMatrix = Record<string, Record<string, number>>;
+
+/**
+ * Build the 4×4 rate matrix (EUR/USD/GBP/TRY) from a list of
+ * TcmbDirectRate rows. Used by:
+ *  - The exchange-rate modal when the user applies a new set of rates.
+ *  - The quote create handler to stamp `rateSnapshot` at create time.
+ *  - The "Kurları Güncelle" dialog to preview diffs.
+ *
+ * Two pricing paths, same as the current modal implementation:
+ *
+ * 1. **TRY pairs** use the caller-selected rate type (Döviz Satış or
+ *    Efektif Satış). Matches what a Turkish bank sells foreign
+ *    currency at — the authoritative rate for TL equivalence.
+ *
+ * 2. **Non-TRY pairs** use TCMB's official cross rates via USD pivot.
+ *    TCMB publishes EUR/USD and GBP/USD via `<CrossRateOther>`
+ *    (surfaced as `crossRateToUsd`); we use those verbatim and derive
+ *    EUR/GBP as `(EUR→USD) / (GBP→USD)`. This keeps the modal's
+ *    displayed cross rate matching TCMB's published values.
+ *
+ * If TCMB's cross rate is missing for a currency, we fall back to
+ * dividing TL selling legs so the matrix is never empty.
+ */
+export function buildRateMatrix(
+  rates: TcmbDirectRate[],
+  rateType: TcmbRateType
+): RateMatrix {
+  const matrix: RateMatrix = {};
+
+  // TL legs — caller-selected rate type.
+  const toTry: Record<string, number> = { TRY: 1 };
+  for (const r of rates) {
+    const val = rateType === 'forexSelling' ? r.forexSelling : r.banknoteSelling;
+    if (val > 0) toTry[r.currency] = val;
+  }
+
+  // USD legs — official TCMB cross rates. USD itself is 1 by definition.
+  const toUsd: Record<string, number | undefined> = { USD: 1 };
+  for (const r of rates) {
+    if (r.currency === 'USD') continue;
+    if (r.crossRateToUsd != null && r.crossRateToUsd > 0) {
+      toUsd[r.currency] = r.crossRateToUsd;
+    }
+  }
+
+  const round6 = (n: number) => Math.round(n * 1000000) / 1000000;
+
+  const keys = Object.keys(toTry);
+  for (const from of keys) {
+    matrix[from] = {};
+    for (const to of keys) {
+      if (from === to) continue;
+
+      // TRY pairs: TL legs.
+      if (from === 'TRY' || to === 'TRY') {
+        matrix[from][to] = round6(toTry[from] / toTry[to]);
+        continue;
+      }
+
+      // Non-TRY pairs: USD pivot via TCMB cross rates.
+      const fromUsd = toUsd[from];
+      const toUsdVal = toUsd[to];
+      if (fromUsd != null && toUsdVal != null) {
+        matrix[from][to] = round6(fromUsd / toUsdVal);
+        continue;
+      }
+
+      // Defensive fallback: divide TL selling legs (legacy behavior).
+      matrix[from][to] = round6(toTry[from] / toTry[to]);
+    }
+  }
+  return matrix;
+}
+
+/**
+ * Find the largest absolute percentage drift between two rate
+ * matrices, considered across every pair that appears in BOTH
+ * matrices. Used by the editor's reopen banner to decide whether to
+ * show a "rates have moved" prompt. Returns `null` when nothing
+ * overlaps (e.g. snapshot empty, fresh fetch failed) so callers can
+ * distinguish "no change" from "can't tell".
+ */
+export function maxRateDriftPct(
+  oldMatrix: RateMatrix,
+  newMatrix: RateMatrix
+): number | null {
+  let maxPct = 0;
+  let compared = 0;
+  for (const from of Object.keys(oldMatrix)) {
+    const oldInner = oldMatrix[from];
+    const newInner = newMatrix[from];
+    if (!oldInner || !newInner) continue;
+    for (const to of Object.keys(oldInner)) {
+      const oldRate = oldInner[to];
+      const newRate = newInner[to];
+      if (oldRate == null || newRate == null) continue;
+      if (!Number.isFinite(oldRate) || !Number.isFinite(newRate)) continue;
+      if (oldRate === 0) continue;
+      const pct = Math.abs((newRate - oldRate) / oldRate) * 100;
+      if (pct > maxPct) maxPct = pct;
+      compared++;
+    }
+  }
+  return compared === 0 ? null : maxPct;
+}
+
 // ── In-memory cache for direct TCMB rates ──────────────────────────────────
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -269,6 +391,10 @@ export async function fetchTcmbDirectRates(): Promise<{ rates: TcmbDirectRate[];
       currency: r.currencyCode,
       forexSelling: r.forexSelling,
       banknoteSelling: r.banknoteSelling,
+      // CrossRateOther on EUR/GBP is published as "1 unit = X USD",
+      // which is exactly the convention we need for the non-TRY pair
+      // slots in the modal's matrix.
+      crossRateToUsd: r.crossRateOther,
     }));
 
     const fetchedAt = new Date().toISOString();

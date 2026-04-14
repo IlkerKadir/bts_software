@@ -3,9 +3,9 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import {
   calculateUnitPrice,
-  calculateItemTotal,
   recalculateAndPersistQuoteTotals,
 } from '@/lib/quote-calculations';
+import { roundUnitPrice, computeRowTotal, round2 } from '@/lib/quote-rounding';
 import { quoteItemSchema, bulkQuoteItemUpdateSchema } from '@/lib/validations/quote';
 
 interface RouteParams {
@@ -110,17 +110,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // SET parents have unitPrice = childrenTotal — starts at 0 until children are added
     const isSetParent = data.itemType === 'SET' && !data.parentItemId;
 
-    // For non-priced items (HEADER, NOTE, SUBTOTAL), zero out prices
-    // For SET parents, start at 0 (price derived from children)
-    // For manual price items (CUSTOM), use provided unitPrice; otherwise calculate
-    const unitPrice = (isNonPriced || isSetParent) ? 0
-      : isManualPrice && body.unitPrice != null
-        ? Number(body.unitPrice)
-        : calculateUnitPrice(listPrice, katsayi);
-    const totalPrice = (isNonPriced || isSetParent) ? 0
-      : isManualPrice && body.totalPrice != null
-        ? Number(body.totalPrice)
-        : calculateItemTotal({ quantity, unitPrice, discountPct });
+    // For non-priced items (HEADER, NOTE, SUBTOTAL, GRAND_TOTAL),
+    // zero out prices. For SET parents, start at 0 (price derived from
+    // children). For manual-price items, accept the client unitPrice
+    // through the same tier-round rule. Otherwise, compute from
+    // listPrice × katsayi.
+    //
+    // `totalPrice` is never trusted from the client — always
+    // recomputed from the (rounded) unitPrice so the row total and
+    // the section subtotal always agree.
+    let unitPrice: number;
+    if (isNonPriced || isSetParent) {
+      unitPrice = 0;
+    } else if (isManualPrice && body.unitPrice != null) {
+      unitPrice = roundUnitPrice(Number(body.unitPrice));
+    } else {
+      unitPrice = roundUnitPrice(calculateUnitPrice(listPrice, katsayi));
+    }
+
+    const totalPrice = (isNonPriced || isSetParent)
+      ? 0
+      : computeRowTotal({ quantity, unitPrice, discountPct });
 
     const item = await db.quoteItem.create({
       data: {
@@ -211,23 +221,45 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       for (const item of validatedItems) {
         const { listPrice, katsayi, quantity, discountPct, vatRate } = item;
         const isManualPrice = item.isManualPrice === true;
-        const isNonPriced = item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL';
-        // SET parents have unitPrice = childrenTotal — accept frontend values
+        const isNonPriced =
+          item.itemType === 'HEADER' ||
+          item.itemType === 'NOTE' ||
+          item.itemType === 'SUBTOTAL' ||
+          item.itemType === 'GRAND_TOTAL';
+        // SET parents have unitPrice = sum of children's totalPrice —
+        // round2 only, no tier-round (children are already rounded).
         const isSetParent = item.itemType === 'SET' && !item.parentItemId;
 
-        // For non-priced items (HEADER, NOTE, SUBTOTAL), zero out prices
-        // For manual price / SET parent items, use provided unitPrice; otherwise calculate
-        // Include ekMaliyetDelta in the effective list price for unitPrice computation
+        // Include ekMaliyetDelta in the effective list price for
+        // unitPrice computation.
         const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
         const effectiveListPrice = listPrice + ekDelta;
-        const unitPrice = isNonPriced ? 0
-          : (isManualPrice || isSetParent) && item.unitPrice != null
-            ? item.unitPrice
-            : calculateUnitPrice(effectiveListPrice, katsayi);
-        const totalPrice = isNonPriced ? 0
-          : (isManualPrice || isSetParent) && item.totalPrice != null
-            ? item.totalPrice
-            : calculateItemTotal({ quantity, unitPrice, discountPct });
+
+        // Single choke point for unit price normalization:
+        // - non-priced rows → 0
+        // - SET parents → round2 of whatever the client computed from
+        //   children (no ceiling)
+        // - manual price → client value through the tier-round rule
+        // - auto (regular PRODUCT) → listPrice × katsayi through the
+        //   tier-round rule
+        // In every case, totalPrice is recomputed from the (rounded)
+        // unit price — the client-sent totalPrice is ignored.
+        let unitPrice: number;
+        if (isNonPriced) {
+          unitPrice = 0;
+        } else if (isSetParent) {
+          unitPrice = round2(Number(item.unitPrice ?? 0));
+        } else if (isManualPrice && item.unitPrice != null) {
+          unitPrice = roundUnitPrice(Number(item.unitPrice));
+        } else {
+          unitPrice = roundUnitPrice(
+            calculateUnitPrice(effectiveListPrice, katsayi)
+          );
+        }
+
+        const totalPrice = isNonPriced
+          ? 0
+          : computeRowTotal({ quantity, unitPrice, discountPct });
 
         await tx.quoteItem.update({
           where: { id: item.id },

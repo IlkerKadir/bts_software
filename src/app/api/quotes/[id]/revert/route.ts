@@ -111,8 +111,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
 
       // Copy items (two passes: parent items first, then sub-items with remapped parentItemId)
+      const oldToNewId = new Map<string, string>();
       if (sourceQuote.items.length > 0) {
-        const oldToNewId = new Map<string, string>();
 
         // First pass: create parent items (no parentItemId)
         const parentItems = sourceQuote.items.filter(item => !item.parentItemId);
@@ -176,6 +176,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
           });
           oldToNewId.set(item.id, created.id);
+        }
+      }
+
+      // Remap discountScopeSubtotalId onto the reverted-into SUBTOTAL's
+      // new id. Mirror of the clone route logic — dangling pointers
+      // stay null and the recalc path auto-heals.
+      if (sourceQuote.discountScopeSubtotalId) {
+        const remappedScopeId = oldToNewId.get(sourceQuote.discountScopeSubtotalId);
+        if (remappedScopeId) {
+          await tx.quote.update({
+            where: { id: quote.id },
+            data: { discountScopeSubtotalId: remappedScopeId },
+          });
         }
       }
 

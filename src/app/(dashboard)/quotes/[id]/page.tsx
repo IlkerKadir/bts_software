@@ -27,7 +27,7 @@ import {
   Shield,
   ShoppingCart,
 } from 'lucide-react';
-import { Button, Card, CardHeader, CardBody, Badge, Spinner } from '@/components/ui';
+import { Button, Card, CardHeader, CardBody, Badge, Spinner, Modal, Select } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
 import { ApprovalStatus } from '@/components/quotes/ApprovalStatus';
 import { StatusChangeDropdown } from '@/components/quotes/StatusChangeDropdown';
@@ -176,6 +176,17 @@ export default function QuoteDetailPage({ params }: PageProps) {
   const [isCreatingRevision, setIsCreatingRevision] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+
+  // Clone dialog state — the user picks a target company (defaulting
+  // to the source's company) and optional project, then clicks
+  // Kopyala to create the new quote. Backend accepts null projectId
+  // to detach the clone from any project.
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
+  const [cloneCompanyId, setCloneCompanyId] = useState('');
+  const [cloneProjectId, setCloneProjectId] = useState<string>('');
+  const [cloneCompanies, setCloneCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [cloneProjects, setCloneProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [cloneError, setCloneError] = useState<string | null>(null);
   const [approvalCheck, setApprovalCheck] = useState<ApprovalCheckResult | null>(null);
   const [documents, setDocuments] = useState<QuoteDocument[]>([]);
   const [ekMaliyetItems, setEkMaliyetItems] = useState<{ title: string; amount: number }[]>([]);
@@ -414,25 +425,88 @@ export default function QuoteDetailPage({ params }: PageProps) {
   // Clone Handler
   // ---------------------------------------------------------------------------
 
-  const handleClone = async () => {
+  /**
+   * Open the clone modal with the company and project pre-filled from
+   * the source quote. Fetches the full company + project lists lazily
+   * so the dropdowns are populated when the user opens the modal,
+   * not on page load.
+   */
+  const handleOpenCloneModal = useCallback(async () => {
     if (!quote) return;
+    setCloneCompanyId(quote.company.id);
+    setCloneProjectId(quote.project?.id ?? '');
+    // Seed the lists with the source so the <Select> can always
+    // render the pre-filled value, even if the source lives outside
+    // the first 200 rows of the list endpoint or the fetch fails.
+    // The real lists (below) will overwrite once they arrive.
+    setCloneCompanies([{ id: quote.company.id, name: quote.company.name }]);
+    setCloneProjects(quote.project ? [{ id: quote.project.id, name: quote.project.name }] : []);
+    setCloneError(null);
+    setCloneModalOpen(true);
+
+    // Lazy fetch — only when the user actually wants to clone.
+    // Merge the source into each list so it stays selectable even
+    // if pagination hid it.
+    const mergeById = <T extends { id: string }>(seed: T[], incoming: T[]): T[] => {
+      const seen = new Set(seed.map((x) => x.id));
+      return [...seed, ...incoming.filter((x) => !seen.has(x.id))];
+    };
+
+    try {
+      const [companiesRes, projectsRes] = await Promise.all([
+        fetch('/api/companies?limit=200'),
+        fetch('/api/projects?limit=200'),
+      ]);
+      if (companiesRes.ok) {
+        const data = await companiesRes.json();
+        const fetched = (data.companies || []).map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }));
+        setCloneCompanies((prev) => mergeById(prev, fetched));
+      }
+      if (projectsRes.ok) {
+        const data = await projectsRes.json();
+        const fetched = (data.projects || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name }));
+        setCloneProjects((prev) => mergeById(prev, fetched));
+      }
+    } catch (err) {
+      console.error('Clone modal lookup fetch failed', err);
+      setCloneError('Liste yüklenemedi — yine de kaynak firma/proje seçili kalır.');
+    }
+  }, [quote]);
+
+  const handleCloneSubmit = async () => {
+    if (!quote) return;
+    if (!cloneCompanyId) {
+      setCloneError('Hedef firma seçilmedi');
+      return;
+    }
+    setCloneError(null);
     setIsCloning(true);
     try {
       const response = await fetch(`/api/quotes/${id}/clone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: cloneCompanyId,
+          // Send null when the user explicitly cleared the project,
+          // so the backend detaches instead of inheriting.
+          projectId: cloneProjectId === '' ? null : cloneProjectId,
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Teklif kopyalanamadi');
       }
       const newQuoteId = data.quote?.id || data.id;
+      // Success: close the modal and navigate. On error we keep
+      // the modal open (below) so the user can fix the picker
+      // and retry without re-opening + re-fetching.
+      setCloneModalOpen(false);
       if (newQuoteId) {
         router.push(`/quotes/${newQuoteId}/edit`);
       }
     } catch (err) {
       console.error('Clone error:', err);
-      setError(err instanceof Error ? err.message : 'Teklif kopyalanirken bir hata olustu');
+      setCloneError(err instanceof Error ? err.message : 'Teklif kopyalanirken bir hata olustu');
     } finally {
       setIsCloning(false);
     }
@@ -503,7 +577,15 @@ export default function QuoteDetailPage({ params }: PageProps) {
     );
   }
 
-  const canEdit = quote.status === 'TASLAK' || quote.status === 'REVIZYON';
+  // Regular flow: creators and editors can edit TASLAK / REVIZYON quotes.
+  // Extra flow: managers (canApprove) can also edit ONAY_BEKLIYOR quotes
+  // so they can adjust the quote in place instead of bouncing it back to
+  // the salesperson. The backend PUT handler already allows this branch;
+  // this just surfaces the button in the UI.
+  const canEdit =
+    quote.status === 'TASLAK' ||
+    quote.status === 'REVIZYON' ||
+    (quote.status === 'ONAY_BEKLIYOR' && permissions.canApprove);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -566,8 +648,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
           {/* Copy / Revision */}
           <Button
             variant="secondary"
-            onClick={handleClone}
-            isLoading={isCloning}
+            onClick={handleOpenCloneModal}
             disabled={isCloning}
           >
             <Copy className="w-4 h-4" />
@@ -1168,6 +1249,63 @@ export default function QuoteDetailPage({ params }: PageProps) {
           <QuoteHistory quoteId={id} />
         </CardBody>
       </Card>
+
+      {/* Clone confirmation modal — lets the user pick a target
+          company and optionally a project before cloning. */}
+      <Modal
+        isOpen={cloneModalOpen}
+        onClose={() => {
+          if (!isCloning) {
+            setCloneModalOpen(false);
+            setCloneError(null);
+          }
+        }}
+        title="Teklifi Kopyala"
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCloneModalOpen(false);
+                setCloneError(null);
+              }}
+              disabled={isCloning}
+            >
+              İptal
+            </Button>
+            <Button onClick={handleCloneSubmit} isLoading={isCloning} disabled={isCloning || !cloneCompanyId}>
+              Kopyala
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-primary-600">
+            Yeni teklif için firma ve proje seçin. Kaynak teklifin tüm kalemleri, ticari şartları ve ek maliyetleri kopyalanır.
+          </p>
+          {cloneError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {cloneError}
+            </div>
+          )}
+          <Select
+            label="Firma *"
+            value={cloneCompanyId}
+            onChange={(e) => setCloneCompanyId(e.target.value)}
+            options={cloneCompanies.map((c) => ({ value: c.id, label: c.name }))}
+          />
+          <Select
+            label="Proje"
+            value={cloneProjectId}
+            onChange={(e) => setCloneProjectId(e.target.value)}
+            options={[
+              { value: '', label: '— Proje seçilmedi —' },
+              ...cloneProjects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

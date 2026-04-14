@@ -639,6 +639,8 @@ export function QuoteEditorHeader({
         onClose={() => setShowPdfPreview(false)}
         quoteId={quoteId}
         quoteNumber={quoteNumber}
+        projectName={currentProjectName !== 'Proje Yok' ? currentProjectName : null}
+        companyName={companyName}
       />
 
       {/* RefNo Builder Modal */}

@@ -77,6 +77,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Firma bulunamadı' }, { status: 404 });
     }
 
+    // Pre-check vergi no uniqueness for friendly Turkish error,
+    // skipping the check if the value is unchanged or being cleared.
+    if (
+      validatedData.taxNumber &&
+      validatedData.taxNumber !== existingCompany.taxNumber
+    ) {
+      const clash = await db.company.findUnique({
+        where: { taxNumber: validatedData.taxNumber },
+        select: { id: true, name: true },
+      });
+      if (clash && clash.id !== id) {
+        return NextResponse.json(
+          { error: `Bu vergi numarası "${clash.name}" firmasında kullanılıyor` },
+          { status: 409 }
+        );
+      }
+    }
+
     // Prepare data for Prisma (handle Json field)
     const updateData = {
       ...validatedData,
@@ -90,6 +108,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ company });
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      Array.isArray(error.meta?.target) &&
+      (error.meta?.target as string[]).includes('taxNumber')
+    ) {
+      return NextResponse.json(
+        { error: 'Bu vergi numarası başka bir firmada kullanılıyor' },
+        { status: 409 }
+      );
+    }
     if (error instanceof Error && error.name === 'ZodError') {
       const zodError = error as import('zod').ZodError;
       const fieldErrors = zodError.issues.map((e) => {

@@ -3,15 +3,18 @@
 import { useState, useEffect } from 'react';
 import { X, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { buildQuoteExportFilename } from '@/lib/filename';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   quoteId: string;
   quoteNumber: string;
+  projectName?: string | null;
+  companyName?: string | null;
 }
 
-export function PdfPreviewModal({ isOpen, onClose, quoteId, quoteNumber }: Props) {
+export function PdfPreviewModal({ isOpen, onClose, quoteId, quoteNumber, projectName, companyName }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +67,13 @@ export function PdfPreviewModal({ isOpen, onClose, quoteId, quoteNumber }: Props
         <h2 className="text-sm font-semibold text-primary-900">Teklif Ön İzleme</h2>
         <div className="flex items-center gap-2">
           {pdfUrl && (
-            <a href={pdfUrl} download={`${quoteNumber}.pdf`}>
+            <a
+              href={pdfUrl}
+              download={buildQuoteExportFilename(
+                { quoteNumber, projectName, companyName },
+                'pdf'
+              )}
+            >
               <Button variant="secondary" size="sm">
                 <Download className="h-4 w-4" /> İndir
               </Button>

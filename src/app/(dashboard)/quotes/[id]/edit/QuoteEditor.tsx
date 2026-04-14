@@ -14,6 +14,12 @@ import type { ApiQuoteItem, CommercialTerm, CreateItemPayload } from '@/lib/type
 import { PriceHistory } from './PriceHistory';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useSettings } from '@/components/settings/SettingsProvider';
+import { roundUnitPrice, computeRowTotal, round2 } from '@/lib/quote-rounding';
+import { buildRateMatrix, maxRateDriftPct, type TcmbDirectRate } from '@/lib/services/tcmb-service';
+import { reconvertEkMaliyetTotal, type EkMaliyetEntryLike } from '@/lib/ek-maliyet-reconvert';
+import { isRateSensitiveRow } from '@/lib/quote-item-classification';
+import { RateDriftBanner } from '@/components/quotes/RateDriftBanner';
+import { RateUpdateDialog } from '@/components/quotes/RateUpdateDialog';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -39,7 +45,13 @@ interface QuoteData {
   exchangeRate: number | string;
   protectionPct: number | string;
   protectionMap?: Record<string, number> | null;
+  /** Frozen rate matrix at last explicit rating. Null on quotes
+   *  created before this field existed. */
+  rateSnapshot?: Record<string, Record<string, number>> | null;
   discountPct: number | string;
+  /** cuid of the SUBTOTAL item the discount is scoped to, or null for
+   *  "apply to whole quote" (legacy behavior). */
+  discountScopeSubtotalId?: string | null;
   validityDays: number;
   notes: string | null;
   language: string;
@@ -78,16 +90,36 @@ interface HeaderFields {
   validityDays: number;
   discountPct: number;
   discountLabel: string;
+  /** When set, the quote-level discount applies only to the items in
+   *  the SUBTOTAL section whose id matches. `null` means "apply to the
+   *  entire quote" (legacy behavior and default for new quotes). */
+  discountScopeSubtotalId: string | null;
   notes: string;
   projectId: string | null;
 }
+
+/**
+ * Minimum absolute rate-drift percentage (max pair) required to
+ * trigger the reopen drift banner. 0.5% sits above TCMB spread
+ * noise and typical intraday jitter while still catching meaningful
+ * overnight FX moves. Module-scope so it isn't re-created on every
+ * render.
+ */
+const DRIFT_THRESHOLD_PCT = 0.5;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Recalculate a SET parent's totals from its children.
- * unitPrice = childrenTotal (SET has no own base price — sub-items determine the price).
- * Children are linked via parentItemId.
+ * unitPrice = sum of children's (already-rounded) totalPrice — SET has
+ * no own base price, sub-items determine the price. Children link via
+ * parentItemId.
+ *
+ * SET parent unit prices are NOT re-rounded through roundUnitPrice: the
+ * sum of child rounded totals is already post-rounding, and ceiling-
+ * rounding the sum again would make the parent total diverge from the
+ * visible sum of its children. totalPrice is still round2'd so the
+ * display is clean to the penny.
  *
  * Returns a new array — the original is never mutated.
  */
@@ -103,11 +135,11 @@ export function recalculateParentTotals(
     if (item.id !== parentId) return item;
     const qty = Number(item.quantity) || 1;
     const disc = Number(item.discountPct) || 0;
-    const unitPrice = childrenTotal;
+    const unitPrice = round2(childrenTotal);
     return {
       ...item,
       unitPrice,
-      totalPrice: qty * unitPrice * (1 - disc / 100),
+      totalPrice: round2(qty * unitPrice * (1 - disc / 100)),
     };
   });
 }
@@ -207,6 +239,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     validityDays: 30,
     discountPct: 0,
     discountLabel: 'İskonto',
+    discountScopeSubtotalId: null,
     notes: '',
     projectId: null,
   });
@@ -214,14 +247,50 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // Items dirty tracking for reorder/bulk update
   const itemsDirtyRef = useRef(false);
+  // Holds a pending rate-matrix snapshot to persist on the next save.
+  // Set whenever the user clicks Uygula in the exchange rate modal (or
+  // the Phase 4 Kurları Güncelle dialog). Read by handleSave, then
+  // cleared. Null means "nothing to persist for rateSnapshot".
+  const pendingRateSnapshotRef = useRef<Record<string, Record<string, number>> | null>(null);
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commercialTermsRef = useRef<CommercialTermsSectionHandle>(null);
 
   // Guard to prevent infinite re-render loop in the auto-recalculate effect
   const isRecalculating = useRef(false);
 
-  // Exchange rate matrix for currency conversion (fromCurrency -> toCurrency -> rate)
+  // Exchange rate matrix for currency conversion (fromCurrency -> toCurrency -> rate).
+  //
+  // `exchangeRates` is the matrix that drives the editor's live math —
+  // it's sourced from `quote.rateSnapshot` when present so the quote
+  // stays internally consistent on reopen. New items added during this
+  // session use the same rates as items already in the quote.
+  //
+  // `liveExchangeRates` is today's fresh-from-TCMB matrix, fetched in
+  // parallel on mount. It's used only by the drift-detection banner
+  // (Phase 5) and the Kurları Güncelle preview dialog (Phase 4) — it
+  // never touches item math directly.
   const [exchangeRates, setExchangeRates] = useState<Record<string, Record<string, number>>>({});
+  const [liveExchangeRates, setLiveExchangeRates] = useState<Record<string, Record<string, number>>>({});
+
+  // Rate-drift banner / Kurları Güncelle dialog state.
+  //
+  // `rateBannerDismissed` hides the banner for this editor session
+  // only (no persistence) — on next reopen, drift is re-evaluated
+  // against fresh TCMB. `rateDialogOpen` controls the preview
+  // dialog. `rateDialogApplying` disables the Uygula button while
+  // `applyRateMatrix` runs its async pipeline.
+  const [rateBannerDismissed, setRateBannerDismissed] = useState(false);
+  const [rateDialogOpen, setRateDialogOpen] = useState(false);
+  const [rateDialogApplying, setRateDialogApplying] = useState(false);
+  // Error surfaced inline inside RateUpdateDialog — separate from
+  // the page-level `error` state which is hidden behind the modal
+  // backdrop while the dialog is open.
+  const [rateDialogError, setRateDialogError] = useState<string | null>(null);
+  // Ek maliyet counts used by the dialog's "affected vs unaffected"
+  // summary. Fetched lazily when the dialog opens so we don't pay
+  // for it on every editor mount.
+  const [ekMaliyetStampedCount, setEkMaliyetStampedCount] = useState<number | null>(null);
+  const [ekMaliyetLegacyCount, setEkMaliyetLegacyCount] = useState<number>(0);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -264,31 +333,42 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       const savedDiscountLabel = typeof rawMap.__discountLabel === 'string' ? rawMap.__discountLabel : 'İskonto';
       const { __rateType: _rt, __discountLabel: _dl, ...cleanMap } = rawMap;
 
-      // Build exchange rate matrix — prefer TCMB direct rates using the persisted rate type
-      let matrixSet = false;
+      // Build exchange rate matrices. Two matrices matter here:
+      //
+      //   1. `exchangeRates`  — the matrix that drives the editor's
+      //      math (new items, recalc, TL conversion). Sourced from
+      //      the quote's `rateSnapshot` when present so reopening a
+      //      quote preserves its internal consistency. If the snapshot
+      //      is null (legacy quote) we fall back to fresh TCMB, then
+      //      to DB rates.
+      //
+      //   2. `liveExchangeRates` — today's fresh-from-TCMB matrix,
+      //      always populated if TCMB is reachable. Used only by the
+      //      Phase 4/5 Kurları Güncelle flow for drift detection and
+      //      preview; never touches item math.
+      let liveMatrix: Record<string, Record<string, number>> | null = null;
+      let tcmbFreshRates: TcmbDirectRate[] | null = null;
       if (tcmbRes.ok) {
         const tcmbData = await tcmbRes.json();
-        const tcmbRates = (tcmbData.rates || []) as Array<{ currency: string; forexSelling: number; banknoteSelling: number }>;
-        if (tcmbRates.length > 0) {
-          const matrix: Record<string, Record<string, number>> = {};
-          const toTry: Record<string, number> = { TRY: 1 };
-          for (const r of tcmbRates) {
-            const val = savedRateType === 'banknoteSelling' ? r.banknoteSelling : r.forexSelling;
-            if (val > 0) toTry[r.currency] = val;
-          }
-          const keys = Object.keys(toTry);
-          for (const from of keys) {
-            matrix[from] = {};
-            for (const to of keys) {
-              if (from !== to) matrix[from][to] = Math.round((toTry[from] / toTry[to]) * 1000000) / 1000000;
-            }
-          }
-          setExchangeRates(matrix);
-          matrixSet = true;
+        tcmbFreshRates = (tcmbData.rates || []) as TcmbDirectRate[];
+        if (tcmbFreshRates.length > 0) {
+          liveMatrix = buildRateMatrix(tcmbFreshRates, savedRateType);
+          setLiveExchangeRates(liveMatrix);
         }
       }
-      // Fallback to DB-stored rates if TCMB direct rates unavailable
-      if (!matrixSet && ratesRes.ok) {
+
+      // Prefer the quote's frozen snapshot when present.
+      const snapshot = q.rateSnapshot && typeof q.rateSnapshot === 'object'
+        ? (q.rateSnapshot as Record<string, Record<string, number>>)
+        : null;
+
+      if (snapshot && Object.keys(snapshot).length > 0) {
+        setExchangeRates(snapshot);
+      } else if (liveMatrix) {
+        // Legacy quote without a stored snapshot — use today's rates.
+        setExchangeRates(liveMatrix);
+      } else if (ratesRes.ok) {
+        // Last-resort fallback: DB-stored rates table.
         const ratesData = await ratesRes.json();
         const matrix: Record<string, Record<string, number>> = {};
         for (const r of ratesData.rates || []) {
@@ -313,6 +393,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         validityDays: q.validityDays,
         discountPct: Number(q.discountPct),
         discountLabel: savedDiscountLabel,
+        discountScopeSubtotalId: q.discountScopeSubtotalId ?? null,
         notes: q.notes || '',
         projectId: q.project?.id || null,
       };
@@ -353,6 +434,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       fields.validityDays !== saved.validityDays ||
       fields.discountPct !== saved.discountPct ||
       fields.discountLabel !== saved.discountLabel ||
+      fields.discountScopeSubtotalId !== saved.discountScopeSubtotalId ||
       fields.notes !== saved.notes ||
       fields.projectId !== saved.projectId
     );
@@ -419,8 +501,13 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     setError(null);
 
     try {
-      // 1. Save header fields if changed
-      if (checkHeaderChanges(headerFields)) {
+      // 1. Save header fields if changed (or if rateSnapshot is pending).
+      //    The header PUT fires whenever anything stored on the Quote
+      //    row has changed, including a new rateSnapshot pushed by the
+      //    exchange-rate modal's Uygula button.
+      const headerDirty = checkHeaderChanges(headerFields);
+      const pendingSnapshot = pendingRateSnapshotRef.current;
+      if (headerDirty || pendingSnapshot) {
         const headerRes = await fetch(`/api/quotes/${quoteId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -435,8 +522,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             language: headerFields.language,
             validityDays: headerFields.validityDays,
             discountPct: headerFields.discountPct,
+            discountScopeSubtotalId: headerFields.discountScopeSubtotalId,
             notes: headerFields.notes,
             projectId: headerFields.projectId,
+            // Only include rateSnapshot when we have a fresh one queued
+            // — leaving the key absent preserves whatever's in the DB.
+            ...(pendingSnapshot ? { rateSnapshot: pendingSnapshot } : {}),
           }),
         });
 
@@ -450,6 +541,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         setQuote((prev) =>
           prev ? { ...prev, ...headerData.quote } : prev
         );
+        // Snapshot successfully persisted — clear the pending ref,
+        // but only if the user hasn't queued a newer snapshot while
+        // this PUT was in flight (double-Uygula race). Clearing only
+        // when the ref still holds the same reference we sent keeps
+        // a fresher snapshot alive for the next save.
+        if (pendingSnapshot && pendingRateSnapshotRef.current === pendingSnapshot) {
+          pendingRateSnapshotRef.current = null;
+        }
       }
 
       // 2. Save items if dirty (reorder or modifications)
@@ -604,16 +703,23 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
               !isSetParentItem &&
               ('listPrice' in updates || 'katsayi' in updates)
             ) {
-              // Include ek maliyet delta so the distribution is preserved
+              // Include ek maliyet delta so the distribution is preserved,
+              // then tier-round per BTS's invoicing rule so the displayed
+              // unit price matches the value used in totalPrice / subtotal.
               const ekDelta = updated.ekMaliyetDelta != null ? Number(updated.ekMaliyetDelta) : 0;
-              updated.unitPrice = (Number(listPrice) + ekDelta) * Number(katsayi);
+              updated.unitPrice = roundUnitPrice(
+                (Number(listPrice) + ekDelta) * Number(katsayi)
+              );
             }
             // For manual-price items (e.g. TAŞERON), if only katsayi changed,
             // the unit price is user-set — we don't recalculate. The delta is
             // already baked into the unit price from handleEkMaliyetApply.
 
-            updated.totalPrice =
-              quantity * updated.unitPrice * (1 - discPct / 100);
+            updated.totalPrice = computeRowTotal({
+              quantity: Number(quantity),
+              unitPrice: Number(updated.unitPrice),
+              discountPct: Number(discPct),
+            });
           }
 
           return updated;
@@ -928,8 +1034,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       }
 
       const defaultKatsayi = 1;
-      // SET parents start with unitPrice=0 (price comes from children); others use listPrice*katsayi
-      const unitPrice = setCreationMode ? 0 : convertedListPrice * defaultKatsayi;
+      // SET parents start with unitPrice=0 (price comes from children);
+      // others use roundUnitPrice(listPrice * katsayi) so the stored
+      // value matches the displayed one from the first render.
+      const unitPrice = setCreationMode
+        ? 0
+        : roundUnitPrice(convertedListPrice * defaultKatsayi);
 
       // Sub-items: vatRate=0 (VAT is on the parent), keep catalog open for more
       const newItem: QuoteItemData = {
@@ -952,7 +1062,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         unitPrice,
         discountPct: 0,
         vatRate: isSubItem ? 0 : defaultVatRate,
-        totalPrice: unitPrice * (quantity || 1),
+        totalPrice: computeRowTotal({
+          quantity: quantity || 1,
+          unitPrice,
+          discountPct: 0,
+        }),
         isManualPrice: product.pricingType === 'PROJECT_BASED',
         costPrice: convertedCostPrice,
         productCurrency: product.currency,
@@ -1421,8 +1535,15 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         prev.map((item) => {
           if (item.productId !== productId) return item;
           if (item.itemType === 'SET' && !item.parentItemId) return item;
-          const newUnitPrice = item.isManualPrice ? unitPrice : item.listPrice * katsayi;
-          const total = item.quantity * newUnitPrice * (1 - item.discountPct / 100);
+          const rawUnitPrice = item.isManualPrice
+            ? unitPrice
+            : item.listPrice * katsayi;
+          const newUnitPrice = roundUnitPrice(rawUnitPrice);
+          const total = computeRowTotal({
+            quantity: Number(item.quantity),
+            unitPrice: newUnitPrice,
+            discountPct: Number(item.discountPct),
+          });
           return { ...item, katsayi, unitPrice: newUnitPrice, totalPrice: total };
         })
       );
@@ -1562,11 +1683,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       rateMatrix: Record<string, Record<string, number>>,
     ): QuoteItemData[] => {
       let result = items.map((item) => {
-        // Skip non-priced items, SET parents, manual-priced, and items without product data
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') return item;
-        if (item.itemType === 'SET' && !item.parentItemId) return item;
-        if (item.isManualPrice) return item;
-        if (!item.productCurrency || item.productListPrice == null || item.productListPrice === 0) return item;
+        // Skip rows the rate-update pipeline cannot derive: structural,
+        // SET parents (rolled up separately below), manual-priced, and
+        // items missing a product-level reference. The shared predicate
+        // also drives RateUpdateDialog's "affected" count, so the two
+        // stay in sync by construction.
+        if (!isRateSensitiveRow(item)) return item;
 
         // Ek maliyet delta is preserved as-is through currency changes.
         // It was applied in the previous quote currency; user can re-apply to
@@ -1577,8 +1699,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         if (item.productCurrency === quoteCurrency) {
           const newListPrice = item.productListPrice;
           const effectiveListPrice = newListPrice + ekDelta;
-          const newUnitPrice = effectiveListPrice * Number(item.katsayi);
-          const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+          const newUnitPrice = roundUnitPrice(effectiveListPrice * Number(item.katsayi));
+          const newTotalPrice = computeRowTotal({
+            quantity: Number(item.quantity),
+            unitPrice: newUnitPrice,
+            discountPct: Number(item.discountPct),
+          });
           const newCostPrice = item.productCostPrice ?? null;
           return { ...item, listPrice: newListPrice, unitPrice: newUnitPrice, totalPrice: newTotalPrice, costPrice: newCostPrice };
         }
@@ -1596,8 +1722,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
         const newListPrice = item.productListPrice * rate * (1 + protectionPct / 100);
         const effectiveListPrice = newListPrice + ekDelta;
-        const newUnitPrice = effectiveListPrice * Number(item.katsayi);
-        const newTotalPrice = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+        const newUnitPrice = roundUnitPrice(effectiveListPrice * Number(item.katsayi));
+        const newTotalPrice = computeRowTotal({
+          quantity: Number(item.quantity),
+          unitPrice: newUnitPrice,
+          discountPct: Number(item.discountPct),
+        });
 
         let newCostPrice = item.costPrice;
         if (item.productCostPrice != null) {
@@ -1621,24 +1751,31 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     []
   );
 
+  // `applyRateMatrix` is declared after `handleEkMaliyetApply` below
+  // to avoid a Temporal Dead Zone reference through its dep array.
+  // We still need `handleExchangeRateApply` to be stable before the
+  // exchange-rate modal uses it, so the actual implementation lives
+  // in a ref captured after both dependencies are in scope.
+  const exchangeRateApplyRef = useRef<
+    | ((
+        _newRate: number,
+        _newProtectionPct: number,
+        newProtectionMap: Record<string, number>,
+        rateMatrix: Record<string, Record<string, number>>,
+      ) => void)
+    | null
+  >(null);
+
   const handleExchangeRateApply = useCallback(
     (
-      _newRate: number,
-      _newProtectionPct: number,
+      newRate: number,
+      newProtectionPct: number,
       newProtectionMap: Record<string, number>,
       rateMatrix: Record<string, Record<string, number>>,
     ) => {
-      const quoteCurrency = headerFields.currency;
-
-      setItems((prev) => recalcItemPrices(prev, quoteCurrency, newProtectionMap, rateMatrix));
-
-      // Update exchangeRates state so newly added products use fresh rates too
-      setExchangeRates(rateMatrix);
-
-      itemsDirtyRef.current = true;
-      setHasChanges(true);
+      exchangeRateApplyRef.current?.(newRate, newProtectionPct, newProtectionMap, rateMatrix);
     },
-    [headerFields.currency, recalcItemPrices]
+    []
   );
 
   // ── Currency Change handler (recalculates all item prices) ────────────────
@@ -1694,8 +1831,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
    * unitPrice & totalPrice revert automatically.
    */
   const handleEkMaliyetApply = useCallback((totalAmount: number) => {
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-
     setItems(prev => {
       const taseronItems = prev.filter(i => i.brand === 'TAŞERON');
       const totalQty = taseronItems.reduce((s, i) => s + Number(i.quantity), 0);
@@ -1714,12 +1849,18 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         // Compute the base unitPrice WITHOUT any previous ek maliyet delta,
         // then add the new delta. This preserves manually-set prices and
         // handles items where listPrice=0 but unitPrice was set directly.
+        // The result is tier-rounded so the displayed unit price matches
+        // the one used for the row total and the section subtotal.
         const currentUnitPrice = Number(item.unitPrice);
         const baseUnitPrice = currentUnitPrice - (oldDelta * Number(item.katsayi));
-        const newUnitPrice = round2(baseUnitPrice + (deltaVal * Number(item.katsayi)));
-        const newTotal = round2(
-          Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100)
+        const newUnitPrice = roundUnitPrice(
+          baseUnitPrice + (deltaVal * Number(item.katsayi))
         );
+        const newTotal = computeRowTotal({
+          quantity: Number(item.quantity),
+          unitPrice: newUnitPrice,
+          discountPct: Number(item.discountPct),
+        });
 
         return {
           ...item,
@@ -1739,6 +1880,181 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     itemsDirtyRef.current = true;
     setHasChanges(true);
   }, []);
+
+  /**
+   * Shared "apply a new rate matrix" pipeline used by both the
+   * exchange-rate modal's Uygula button and Phase 4's Kurları
+   * Güncelle dialog. Recalculates catalog items, reconverts ek
+   * maliyet lines via their stamped sourceCurrency, stashes the new
+   * matrix for persistence on the next save, and marks everything
+   * dirty. Async because it needs to fetch the latest ek maliyet
+   * entries from the server so we reconvert whatever's on disk —
+   * the `await` between steps 1 and 2 is load-bearing because the
+   * second `setItems` inside `handleEkMaliyetApply` must see the
+   * freshly-recalculated state.
+   *
+   * Returns null on a clean apply, or an error message string when
+   * the ek maliyet redistribution failed. Even on partial failure,
+   * step 1 (item recalc) still happens because most quotes have no
+   * ek maliyet at all — the caller can decide to show the error,
+   * offer retry, or dismiss.
+   */
+  const applyRateMatrix = useCallback(
+    async (
+      rateMatrix: Record<string, Record<string, number>>,
+      newProtectionMap: Record<string, number>,
+    ): Promise<string | null> => {
+      const quoteCurrency = headerFields.currency;
+
+      // 1. Recalculate item prices using the new matrix and protection.
+      setItems((prev) => recalcItemPrices(prev, quoteCurrency, newProtectionMap, rateMatrix));
+
+      // 2. Reconvert ek maliyet lines and redistribute the new total
+      //    across TAŞERON items. Uses the latest entries from the DB
+      //    so we reflect whatever's actually stamped with
+      //    sourceCurrency, not a stale client snapshot.
+      const EK_MALIYET_ERROR =
+        'Ek maliyet satırları yeniden hesaplanamadı (bağlantı hatası). Lütfen tekrar deneyin veya Ek Maliyet modalını manuel olarak açın.';
+      let ekMaliyetError: string | null = null;
+      try {
+        const entriesRes = await fetch(`/api/quotes/${quoteId}/ek-maliyet`);
+        if (!entriesRes.ok) {
+          ekMaliyetError = EK_MALIYET_ERROR;
+          console.error(
+            `[applyRateMatrix] ek maliyet GET returned ${entriesRes.status} — skipping redistribution`
+          );
+        } else {
+          const data = await entriesRes.json();
+          const entries = (data.items || []) as Array<{
+            amount: number;
+            sourceCurrency?: string | null;
+          }>;
+          if (entries.length > 0) {
+            const normalized: EkMaliyetEntryLike[] = entries.map((e) => ({
+              amount: Number(e.amount),
+              sourceCurrency: e.sourceCurrency ?? null,
+            }));
+            const newTotal = reconvertEkMaliyetTotal(normalized, rateMatrix, quoteCurrency);
+            handleEkMaliyetApply(newTotal);
+          }
+        }
+      } catch (err) {
+        ekMaliyetError = EK_MALIYET_ERROR;
+        console.error('[applyRateMatrix] ek maliyet reconvert fetch failed', err);
+      }
+
+      // 3. Update exchangeRates so newly added products use fresh
+      //    rates too, and stash the matrix for the next save so it
+      //    lands on the quote as the new rateSnapshot.
+      setExchangeRates(rateMatrix);
+      pendingRateSnapshotRef.current = rateMatrix;
+
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+      return ekMaliyetError;
+    },
+    [headerFields.currency, recalcItemPrices, quoteId, handleEkMaliyetApply]
+  );
+
+  // Wire applyRateMatrix into the ref that `handleExchangeRateApply`
+  // reads from. The ref indirection is only here to dodge the TDZ
+  // issue between these two callbacks — both end up calling the
+  // same pipeline at runtime.
+  useEffect(() => {
+    exchangeRateApplyRef.current = (
+      _newRate,
+      _newProtectionPct,
+      newProtectionMap,
+      rateMatrix,
+    ) => {
+      // The ExchangeRateModal path has no in-dialog error surface,
+      // so route any ek-maliyet-reconvert error to the page-level
+      // banner. The drift-dialog path below handles its own error
+      // inline without touching `error` state.
+      void applyRateMatrix(rateMatrix, newProtectionMap).then((errMsg) => {
+        if (errMsg) setError(errMsg);
+      });
+    };
+  }, [applyRateMatrix]);
+
+  // ── Rate drift detection (Phase 5) ────────────────────────────────────────
+
+  // Max absolute drift between the quote's frozen snapshot
+  // (`exchangeRates`) and today's fresh TCMB (`liveExchangeRates`).
+  // Null when we can't compute a diff (no snapshot, live fetch
+  // failed, empty matrices).
+  const rateDriftPct = useMemo(() => {
+    if (Object.keys(exchangeRates).length === 0) return null;
+    if (Object.keys(liveExchangeRates).length === 0) return null;
+    return maxRateDriftPct(exchangeRates, liveExchangeRates);
+  }, [exchangeRates, liveExchangeRates]);
+
+  const showRateDriftBanner =
+    !rateBannerDismissed &&
+    rateDriftPct !== null &&
+    rateDriftPct >= DRIFT_THRESHOLD_PCT;
+
+  // When the user opens the Kurları Güncelle dialog, lazily fetch
+  // ek maliyet counts so the preview dialog can show accurate
+  // "affected vs unaffected" numbers. Legacy rows (null source)
+  // are unaffected; stamped rows (with source) are affected.
+  //
+  // Counts are reset to null at the start of every open so a
+  // second open after close doesn't flash stale numbers from the
+  // previous session.
+  const handleOpenRateDialog = useCallback(async () => {
+    setEkMaliyetStampedCount(null);
+    setEkMaliyetLegacyCount(0);
+    setRateDialogOpen(true);
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/ek-maliyet`);
+      if (res.ok) {
+        const data = await res.json();
+        const entries = (data.items || []) as Array<{ sourceCurrency?: string | null }>;
+        let stamped = 0;
+        let legacy = 0;
+        for (const e of entries) {
+          if (e.sourceCurrency) stamped++;
+          else legacy++;
+        }
+        setEkMaliyetStampedCount(stamped);
+        setEkMaliyetLegacyCount(legacy);
+      } else {
+        setEkMaliyetStampedCount(0);
+        setEkMaliyetLegacyCount(0);
+      }
+    } catch (err) {
+      console.warn('[RateUpdateDialog] ek maliyet count fetch failed', err);
+      setEkMaliyetStampedCount(0);
+      setEkMaliyetLegacyCount(0);
+    }
+  }, [quoteId]);
+
+  // When the user confirms Kurları Güncelle, run the unified apply
+  // pipeline against the live matrix, then close the dialog and
+  // dismiss the banner. Dismissal sticks because after apply, the
+  // snapshot IS the live matrix → drift is 0 and the banner
+  // wouldn't re-trigger anyway.
+  //
+  // On partial failure (ek maliyet fetch error), the error is
+  // surfaced inline inside the dialog via `rateDialogError` so the
+  // user can retry or cancel in context — the page-level error
+  // banner is hidden behind the modal backdrop at this point.
+  const handleApplyRateUpdate = useCallback(async () => {
+    setRateDialogApplying(true);
+    setRateDialogError(null);
+    try {
+      const errMsg = await applyRateMatrix(liveExchangeRates, headerFields.protectionMap);
+      if (errMsg === null) {
+        setRateDialogOpen(false);
+        setRateBannerDismissed(true);
+      } else {
+        setRateDialogError(errMsg);
+      }
+    } finally {
+      setRateDialogApplying(false);
+    }
+  }, [applyRateMatrix, liveExchangeRates, headerFields.protectionMap]);
 
   // ── Render: Loading ────────────────────────────────────────────────────────
 
@@ -1813,6 +2129,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         </div>
       )}
 
+      {/* Rate drift banner — shows when the quote's frozen rate
+          snapshot has meaningfully drifted from fresh TCMB */}
+      {showRateDriftBanner && rateDriftPct !== null && (
+        <RateDriftBanner
+          driftPct={rateDriftPct}
+          onOpenDialog={handleOpenRateDialog}
+          onDismiss={() => setRateBannerDismissed(true)}
+        />
+      )}
+
       {/* Header */}
       <QuoteEditorHeader
         quoteId={quote.id}
@@ -1880,6 +2206,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         discountPct={headerFields.discountPct}
         discountLabel={headerFields.discountLabel}
         onDiscountLabelChange={(v) => updateHeaderField('discountLabel', v)}
+        discountScopeSubtotalId={headerFields.discountScopeSubtotalId}
+        onDiscountScopeChange={(id) => updateHeaderField('discountScopeSubtotalId', id)}
         canViewCosts={user.role.canViewCosts}
         canOverrideKatsayi={user.role.canOverrideKatsayi}
         priceHistoryBatch={priceHistoryBatch}
@@ -1963,6 +2291,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onClose={() => setEkMaliyetOpen(false)}
         quoteId={quoteId}
         currency={headerFields.currency}
+        rateMatrix={exchangeRates}
         exchangeRate={(() => {
           if (headerFields.currency === 'TRY') return 1;
           const rawRate = exchangeRates[headerFields.currency]?.['TRY'] || Number(headerFields.exchangeRate);
@@ -1971,6 +2300,26 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           return rawRate * (1 + protPct / 100);
         })()}
         onApply={handleEkMaliyetApply}
+      />
+
+      {/* Kurları Güncelle preview dialog — opened from the drift
+          banner above. Reads both matrices from editor state and
+          runs `applyRateMatrix(liveExchangeRates, ...)` on Uygula. */}
+      <RateUpdateDialog
+        isOpen={rateDialogOpen}
+        onClose={() => {
+          setRateDialogOpen(false);
+          setRateDialogError(null);
+        }}
+        onApply={handleApplyRateUpdate}
+        quoteCurrency={headerFields.currency}
+        oldMatrix={exchangeRates}
+        newMatrix={liveExchangeRates}
+        items={items}
+        ekMaliyetStampedCount={ekMaliyetStampedCount}
+        ekMaliyetLegacyCount={ekMaliyetLegacyCount}
+        isApplying={rateDialogApplying}
+        applyError={rateDialogError}
       />
 
     </div>

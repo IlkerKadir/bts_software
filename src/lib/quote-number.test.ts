@@ -1,142 +1,170 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   generateQuoteNumber,
-  getCurrentYearPrefix,
   parseQuoteNumber,
+  getCurrentYearPrefix,
   getNextSequence,
+  getInitials,
+  getInitialsPrefix,
 } from './quote-number';
 
 describe('Quote Number', () => {
+  describe('getInitials', () => {
+    it('extracts initials from a two-word name', () => {
+      expect(getInitials('Selale Acar')).toBe('SA');
+    });
+
+    it('uppercases the result', () => {
+      expect(getInitials('ilker ozturk')).toBe('IO');
+    });
+
+    it('handles three-word names', () => {
+      expect(getInitials('Murat Can Demirhan')).toBe('MCD');
+    });
+
+    it('trims and collapses whitespace', () => {
+      expect(getInitials('  Selale   Acar  ')).toBe('SA');
+    });
+
+    it('returns a single letter for a one-word name', () => {
+      expect(getInitials('Cem')).toBe('C');
+    });
+  });
+
   describe('generateQuoteNumber', () => {
-    beforeEach(() => {
-      // Mock date to 2025-01-23
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date('2025-01-23T10:00:00Z'));
+    it('formats {INITIALS}{NNNN} with padded 4-digit sequence', () => {
+      expect(generateQuoteNumber('SA', 1)).toBe('SA0001');
+      expect(generateQuoteNumber('SA', 42)).toBe('SA0042');
+      expect(generateQuoteNumber('SA', 999)).toBe('SA0999');
+      expect(generateQuoteNumber('SA', 1234)).toBe('SA1234');
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
+    it('keeps sequence numbers above 9999 unpadded', () => {
+      expect(generateQuoteNumber('SA', 12345)).toBe('SA12345');
     });
 
-    it('generates format BTS-YYYY-NNNN', () => {
-      const result = generateQuoteNumber(1);
-      expect(result).toBe('BTS-2025-0001');
+    it('appends a system code as `-{SYSTEM}`', () => {
+      expect(generateQuoteNumber('SA', 51, 'YAS')).toBe('SA0051-YAS');
+      expect(generateQuoteNumber('CC', 4, 'CCTV')).toBe('CC0004-CCTV');
     });
 
-    it('pads sequence number to 4 digits', () => {
-      expect(generateQuoteNumber(1)).toBe('BTS-2025-0001');
-      expect(generateQuoteNumber(42)).toBe('BTS-2025-0042');
-      expect(generateQuoteNumber(999)).toBe('BTS-2025-0999');
-      expect(generateQuoteNumber(1234)).toBe('BTS-2025-1234');
+    it('appends a `.{rev}` revision suffix only when > 0', () => {
+      expect(generateQuoteNumber('SA', 51, 'YAS', 0)).toBe('SA0051-YAS');
+      expect(generateQuoteNumber('SA', 51, 'YAS', 1)).toBe('SA0051-YAS.1');
+      expect(generateQuoteNumber('SA', 51, 'YAS', 2)).toBe('SA0051-YAS.2');
     });
 
-    it('handles sequence numbers over 9999', () => {
-      const result = generateQuoteNumber(12345);
-      expect(result).toBe('BTS-2025-12345');
-    });
-
-    it('uses current year', () => {
-      vi.setSystemTime(new Date('2026-06-15T10:00:00Z'));
-      const result = generateQuoteNumber(1);
-      expect(result).toBe('BTS-2026-0001');
+    it('ignores revision when system code is absent (no suffix to attach to)', () => {
+      expect(generateQuoteNumber('SA', 51, undefined, 2)).toBe('SA0051');
     });
   });
 
   describe('getCurrentYearPrefix', () => {
     beforeEach(() => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date('2025-01-23T10:00:00Z'));
     });
 
     afterEach(() => {
       vi.useRealTimers();
     });
 
-    it('returns BTS-YYYY- prefix for current year', () => {
-      const result = getCurrentYearPrefix();
-      expect(result).toBe('BTS-2025-');
+    it('returns BTS-YYYY- prefix for the current year (legacy helper)', () => {
+      vi.setSystemTime(new Date('2025-01-23T10:00:00Z'));
+      expect(getCurrentYearPrefix()).toBe('BTS-2025-');
     });
 
-    it('changes with different year', () => {
+    it('changes with a different year', () => {
       vi.setSystemTime(new Date('2026-01-01T10:00:00Z'));
-      const result = getCurrentYearPrefix();
-      expect(result).toBe('BTS-2026-');
+      expect(getCurrentYearPrefix()).toBe('BTS-2026-');
     });
   });
 
   describe('parseQuoteNumber', () => {
-    it('extracts prefix, year, and sequence from quote number', () => {
-      const result = parseQuoteNumber('BTS-2025-0042');
-      expect(result).toEqual({
-        prefix: 'BTS',
-        year: 2025,
+    it('parses the new {INITIALS}{NNNN} form', () => {
+      expect(parseQuoteNumber('SA0042')).toEqual({
+        initials: 'SA',
         sequence: 42,
+        systemCode: '',
+        revision: 0,
       });
     });
 
-    it('handles different years and sequences', () => {
-      expect(parseQuoteNumber('BTS-2024-1234')).toEqual({
-        prefix: 'BTS',
-        year: 2024,
-        sequence: 1234,
+    it('parses {INITIALS}{NNNN}-{SYSTEM}', () => {
+      expect(parseQuoteNumber('SA0051-YAS')).toEqual({
+        initials: 'SA',
+        sequence: 51,
+        systemCode: 'YAS',
+        revision: 0,
       });
     });
 
-    it('returns null for invalid format', () => {
+    it('parses {INITIALS}{NNNN}-{SYSTEM}.{REV}', () => {
+      expect(parseQuoteNumber('SA0051-YAS.2')).toEqual({
+        initials: 'SA',
+        sequence: 51,
+        systemCode: 'YAS',
+        revision: 2,
+      });
+    });
+
+    it('parses the legacy BTS-YYYY-NNNN form for backward compatibility', () => {
+      expect(parseQuoteNumber('BTS-2025-0042')).toEqual({
+        initials: 'BTS',
+        sequence: 42,
+        systemCode: '',
+        revision: 0,
+      });
+    });
+
+    it('returns null for unrecognised formats', () => {
       expect(parseQuoteNumber('INVALID')).toBeNull();
-      expect(parseQuoteNumber('BTS2025-0001')).toBeNull(); // Missing dash
-      expect(parseQuoteNumber('BTS-20250001')).toBeNull(); // Missing dash
-      expect(parseQuoteNumber('TEK-2025-0001')).toBeNull(); // Wrong prefix
       expect(parseQuoteNumber('')).toBeNull();
+      expect(parseQuoteNumber(null as unknown as string)).toBeNull();
     });
 
-    it('handles sequence numbers with more than 4 digits', () => {
-      const result = parseQuoteNumber('BTS-2025-12345');
-      expect(result).toEqual({
-        prefix: 'BTS',
-        year: 2025,
+    it('handles sequence numbers over 9999', () => {
+      expect(parseQuoteNumber('SA12345')).toEqual({
+        initials: 'SA',
         sequence: 12345,
+        systemCode: '',
+        revision: 0,
       });
     });
 
-    it('returns null for null input', () => {
-      expect(parseQuoteNumber(null as unknown as string)).toBeNull();
+    it('is case-insensitive on the initials block', () => {
+      expect(parseQuoteNumber('sa0051-yas')?.initials).toBe('SA');
+      expect(parseQuoteNumber('sa0051-yas')?.systemCode).toBe('YAS');
+    });
+  });
+
+  describe('getInitialsPrefix', () => {
+    it('returns the uppercased initials', () => {
+      expect(getInitialsPrefix('sa')).toBe('SA');
+      expect(getInitialsPrefix('SA')).toBe('SA');
     });
   });
 
   describe('getNextSequence', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date('2025-01-23T10:00:00Z'));
+    it('returns 1 when the caller has no previous quote', () => {
+      expect(getNextSequence(null)).toBe(1);
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
+    it('increments from the parsed sequence in the new format', () => {
+      expect(getNextSequence('SA0042')).toBe(43);
+      expect(getNextSequence('SA0051-YAS')).toBe(52);
+      expect(getNextSequence('SA0051-YAS.2')).toBe(52);
     });
 
-    it('returns 1 when no previous quote', () => {
-      const result = getNextSequence(null);
-      expect(result).toBe(1);
+    it('increments from the parsed sequence in the legacy BTS format', () => {
+      expect(getNextSequence('BTS-2025-0042')).toBe(43);
     });
 
-    it('increments sequence from last quote in same year', () => {
-      const result = getNextSequence('BTS-2025-0042');
-      expect(result).toBe(43);
-    });
-
-    it('resets to 1 when last quote is from previous year', () => {
-      const result = getNextSequence('BTS-2024-0150');
-      expect(result).toBe(1);
-    });
-
-    it('returns 1 for invalid quote number format', () => {
-      const result = getNextSequence('INVALID');
-      expect(result).toBe(1);
+    it('returns 1 when the input does not parse', () => {
+      expect(getNextSequence('INVALID')).toBe(1);
     });
 
     it('handles high sequence numbers', () => {
-      const result = getNextSequence('BTS-2025-9999');
-      expect(result).toBe(10000);
+      expect(getNextSequence('SA9999')).toBe(10000);
     });
   });
 });

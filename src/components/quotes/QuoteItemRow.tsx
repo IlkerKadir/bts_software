@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/cn';
 import { formatPrice, formatNumber } from '@/lib/utils/format';
 import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { roundUnitPrice, computeRowTotal } from '@/lib/quote-rounding';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -818,8 +819,12 @@ export function QuoteItemRow({
                   type="number"
                   readOnly={isSetParent || !item.isManualPrice}
                   onChange={(v) => {
-                    const up = Number(v);
-                    const total = Number(item.quantity) * up * (1 - Number(item.discountPct) / 100);
+                    const up = roundUnitPrice(Number(v));
+                    const total = computeRowTotal({
+                      quantity: Number(item.quantity),
+                      unitPrice: up,
+                      discountPct: Number(item.discountPct),
+                    });
                     onUpdate({ unitPrice: up, totalPrice: total });
                   }}
                   displayValue={formatPrice(Number(item.unitPrice), currency)}
@@ -926,9 +931,16 @@ export function QuoteItemRow({
                       onChange={(v) => {
                         const k = Number(v);
                         const shouldCalc = isCustom || !item.isManualPrice;
-                        // Include ek maliyet delta in effective list price
-                        const newUnitPrice = shouldCalc ? effectiveListPriceNum * k : Number(item.unitPrice);
-                        const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+                        // Include ek maliyet delta in effective list price,
+                        // then tier-round the resulting unit price.
+                        const newUnitPrice = shouldCalc
+                          ? roundUnitPrice(effectiveListPriceNum * k)
+                          : Number(item.unitPrice);
+                        const total = computeRowTotal({
+                          quantity: Number(item.quantity),
+                          unitPrice: newUnitPrice,
+                          discountPct: Number(item.discountPct),
+                        });
                         onUpdate({ katsayi: k, unitPrice: newUnitPrice, totalPrice: total });
                       }}
                       displayValue={formatNumber(Number(item.katsayi), 4)}
@@ -951,10 +963,18 @@ export function QuoteItemRow({
                   onChange={(v) => {
                     const lp = Number(v);
                     const shouldCalc = isCustom || !item.isManualPrice;
-                    // unitPrice calculation uses the effective list price (base + ek maliyet delta)
+                    // unitPrice calculation uses the effective list price
+                    // (base + ek maliyet delta), tier-rounded so display
+                    // and math stay consistent.
                     const effectiveLp = lp + ekDelta;
-                    const newUnitPrice = shouldCalc ? effectiveLp * Number(item.katsayi) : Number(item.unitPrice);
-                    const total = Number(item.quantity) * newUnitPrice * (1 - Number(item.discountPct) / 100);
+                    const newUnitPrice = shouldCalc
+                      ? roundUnitPrice(effectiveLp * Number(item.katsayi))
+                      : Number(item.unitPrice);
+                    const total = computeRowTotal({
+                      quantity: Number(item.quantity),
+                      unitPrice: newUnitPrice,
+                      discountPct: Number(item.discountPct),
+                    });
                     onUpdate({ listPrice: lp, unitPrice: newUnitPrice, totalPrice: total });
                   }}
                   displayValue={formatPrice(effectiveListPriceNum, currency)}

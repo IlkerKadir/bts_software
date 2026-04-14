@@ -7,15 +7,34 @@ import { ProfitSummary } from '@/components/dashboard/ProfitSummary';
 import { DashboardCharts } from '@/components/dashboard/DashboardCharts';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { UpcomingReminders } from '@/components/dashboard/UpcomingReminders';
+import { quoteVisibilityWhere } from '@/lib/quote-visibility';
+import { Prisma } from '@prisma/client';
 
-async function getPipelineCounts() {
+interface DashboardUser {
+  id: string;
+  role: { canApprove: boolean; canManageUsers: boolean };
+}
+
+function withVisibility(
+  user: DashboardUser,
+  extra: Prisma.QuoteWhereInput
+): Prisma.QuoteWhereInput {
+  const visibility = quoteVisibilityWhere(user);
+  // quoteVisibilityWhere returns {} for managers — merge is a no-op.
+  if (Object.keys(visibility).length === 0) {
+    return extra;
+  }
+  return { AND: [extra, visibility] };
+}
+
+async function getPipelineCounts(user: DashboardUser) {
   const [taslak, onayBekliyor, onaylandi, gonderildi, takipte, revizyon] = await Promise.all([
-    db.quote.count({ where: { status: 'TASLAK' } }),
-    db.quote.count({ where: { status: 'ONAY_BEKLIYOR' } }),
-    db.quote.count({ where: { status: 'ONAYLANDI' } }),
-    db.quote.count({ where: { status: 'GONDERILDI' } }),
-    db.quote.count({ where: { status: 'TAKIPTE' } }),
-    db.quote.count({ where: { status: 'REVIZYON' } }),
+    db.quote.count({ where: withVisibility(user, { status: 'TASLAK' }) }),
+    db.quote.count({ where: withVisibility(user, { status: 'ONAY_BEKLIYOR' }) }),
+    db.quote.count({ where: withVisibility(user, { status: 'ONAYLANDI' }) }),
+    db.quote.count({ where: withVisibility(user, { status: 'GONDERILDI' }) }),
+    db.quote.count({ where: withVisibility(user, { status: 'TAKIPTE' }) }),
+    db.quote.count({ where: withVisibility(user, { status: 'REVIZYON' }) }),
   ]);
 
   return {
@@ -28,15 +47,15 @@ async function getPipelineCounts() {
   };
 }
 
-async function getProfitSummary() {
+async function getProfitSummary(user: DashboardUser) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const sentThisMonth = await db.quote.findMany({
-    where: {
+    where: withVisibility(user, {
       status: 'GONDERILDI',
       updatedAt: { gte: startOfMonth },
-    },
+    }),
     select: {
       subtotal: true,
       discountTotal: true,
@@ -82,8 +101,8 @@ export default async function DashboardPage() {
   const canViewCosts = user.role.canViewCosts;
 
   const [pipelineCounts, profitData] = await Promise.all([
-    getPipelineCounts(),
-    canViewCosts ? getProfitSummary() : Promise.resolve(null),
+    getPipelineCounts(user),
+    canViewCosts ? getProfitSummary(user) : Promise.resolve(null),
   ]);
 
   return (

@@ -47,11 +47,20 @@ export interface QuoteDataForPdf {
   }[];
   discountPct?: number;
   discountLabel?: string;
+  /** cuid of the SUBTOTAL item the discount is scoped to, or null/undefined
+   *  for "apply to whole quote" (legacy behavior). When scoped, discount /
+   *  net lines render only under the targeted SUBTOTAL; the others show
+   *  only their raw section sum. */
+  discountScopeSubtotalId?: string | null;
   headerBase64?: string;
   logoBase64?: string;
 }
 
 export interface QuoteItemForPdf {
+  /** Optional DB id. Required on SUBTOTAL rows when the quote has a
+   *  scoped discount — the template matches the scope target by id to
+   *  decide which section gets the visual discount / net lines. */
+  id?: string;
   itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   code?: string | null;
   brand?: string | null;
@@ -182,7 +191,7 @@ function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): nu
 // ---------------------------------------------------------------------------
 
 export function generateQuoteHtml(data: QuoteDataForPdf): string {
-  const { quote, company, project, items, totals, commercialTerms, notes, discountPct: pdfDiscountPct, discountLabel: pdfDiscountLabel, headerBase64, logoBase64 } = data;
+  const { quote, company, project, items, totals, commercialTerms, notes, discountPct: pdfDiscountPct, discountLabel: pdfDiscountLabel, discountScopeSubtotalId, headerBase64, logoBase64 } = data;
   const safeTerms = commercialTerms || [];
   const safeNotes = notes || [];
   const currency = quote.currency;
@@ -191,6 +200,13 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
   const currencyName = CURRENCY_NAMES[currency] || currency;
   const overallDiscountPct = pdfDiscountPct || 0;
   const overallDiscountLabel = pdfDiscountLabel || 'İskonto';
+  // Resolve once whether the scope target is actually present. If the
+  // id is stale (shouldn't happen after the server auto-heal runs, but
+  // treat as safe fallback) we treat the quote as unscoped.
+  const scopeItemExists =
+    !!discountScopeSubtotalId &&
+    items.some((i) => i.id === discountScopeSubtotalId && i.itemType === 'SUBTOTAL');
+  const hasScope = scopeItemExists;
 
   const proformaTitle = isTR ? 'PROFORMA FATURA' : 'PROFORMA INVOICE';
   const dateLabel = isTR ? 'Tarih' : 'Date';
@@ -236,7 +252,15 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
         <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${subtotalLabel} (${currencyName})</p></td>
         <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
       </tr>`;
-      if (overallDiscountPct > 0) {
+      // Decide whether to render the discount/net lines under this SUBTOTAL.
+      // - Scoped mode: show them only under the targeted SUBTOTAL; every
+      //   other section displays only its raw sum.
+      // - Unscoped (legacy whole-quote mode): show them under every section
+      //   — per-section splits sum to the full discount so the math stays
+      //   consistent with the GRAND_TOTAL rendered at the bottom.
+      const isScopeTarget = hasScope && item.id === discountScopeSubtotalId;
+      const showDiscountHere = overallDiscountPct > 0 && (hasScope ? isScopeTarget : true);
+      if (showDiscountHere) {
         const discountAmount = sectionSum * (overallDiscountPct / 100);
         const netAmount = sectionSum - discountAmount;
         const discLabel = escapeHtml(overallDiscountLabel);
@@ -283,14 +307,23 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     </tr>`;
     }
 
-    const qtyStr = `${item.quantity} ${unitAbbr(item.unit || 'Adet')}`;
+    // Format with Turkish thousand separators and drop trailing
+    // zero decimals so integer quantities read as "40.000" not
+    // "40.000,00". `white-space:nowrap` on the cell below keeps the
+    // number + unit on a single line even when the column is tight —
+    // the auto table layout will expand c3 slightly if it truly has
+    // to, stealing width from the description (which wraps).
+    const qtyFormatted = new Intl.NumberFormat('tr-TR', {
+      maximumFractionDigits: 2,
+    }).format(item.quantity);
+    const qtyStr = `${qtyFormatted} ${unitAbbr(item.unit || 'Adet')}`;
 
     return `<tr>
       <td><p class="s1" style="text-align:center;">${pozText}</p></td>
       <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
-      <td><p class="s2" style="text-align:right;padding-right:10pt;">${qtyStr}</p></td>
-      <td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
-      <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>
+      <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
+      <td><p class="s2" style="text-align:right;padding-right:14pt;white-space:nowrap;">${formatCurrency(item.unitPrice, currency)}</p></td>
+      <td><p class="s2" style="text-align:right;white-space:nowrap;">${formatCurrency(item.totalPrice, currency)}</p></td>
     </tr>`;
   }).join('\n');
 

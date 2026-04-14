@@ -14,6 +14,13 @@ const ekMaliyetPutSchema = z.object({
       amount: z.number().min(0, 'Tutar negatif olamaz'),
     })
   ),
+  /**
+   * Currency that every line's `amount` is denominated in. Modal
+   * stamps this on Apply so rate-update flows can redistribute later.
+   * Optional for backwards-compatibility: omitting it leaves
+   * sourceCurrency as NULL on the row (treated as TRY on read).
+   */
+  sourceCurrency: z.enum(['TRY', 'EUR', 'USD', 'GBP']).optional(),
 });
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -34,6 +41,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       items: items.map(item => ({
         ...item,
         amount: Number(item.amount),
+        sourceCurrency: item.sourceCurrency,
       })),
     });
   } catch (error) {
@@ -69,6 +77,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
+    const sourceCurrency = validation.data.sourceCurrency ?? null;
+
     // Replace all entries in a transaction
     const items = await db.$transaction(async (tx) => {
       await tx.quoteEkMaliyet.deleteMany({ where: { quoteId } });
@@ -81,6 +91,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             quoteId,
             title: entry.title,
             amount: entry.amount,
+            // Stamp the entry currency so Phase 4's Kurları Güncelle
+            // flow can redistribute this line correctly when rates
+            // move. Null here = legacy row (modal never sent it).
+            sourceCurrency,
             sortOrder: i,
           },
         });

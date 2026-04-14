@@ -4,6 +4,7 @@
  */
 
 import type { QuoteApprovalInput } from './approval-rules';
+import { roundUnitPrice, computeRowTotal } from './quote-rounding';
 
 export type QuoteItemType = 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM';
 
@@ -29,15 +30,17 @@ export interface QuoteStats {
 }
 
 /**
- * Calculate item total value
- * @param item - Quote item with pricing details
- * @returns Total value of the item after discount
+ * Calculate item total value — routes through the shared row-total
+ * formula so approval thresholds match the numbers the user actually
+ * sees on the quote (tier-rounded unit price × qty × (1−disc)).
  */
 function calculateItemValue(item: QuoteItemForMetrics): number {
-  const unitPrice = item.listPrice * item.katsayi;
-  const subtotal = item.quantity * unitPrice;
-  const discountMultiplier = 1 - item.discountPct / 100;
-  return subtotal * discountMultiplier;
+  const unitPrice = roundUnitPrice(item.listPrice * item.katsayi);
+  return computeRowTotal({
+    quantity: item.quantity,
+    unitPrice,
+    discountPct: item.discountPct,
+  });
 }
 
 /**

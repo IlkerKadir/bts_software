@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { getPdfService } from '@/lib/pdf/pdf-service';
 import { generateQuoteHtml, QuoteDataForPdf } from '@/lib/pdf/quote-template';
+import { buildQuoteExportFilename } from '@/lib/filename';
 import fs from 'fs';
 import path from 'path';
 
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
 
       return {
+        id: item.id,
         itemType: item.itemType as 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL',
         code: item.code,
         brand: item.brand,
@@ -146,6 +148,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const pm = quote.protectionMap as Record<string, unknown> | null;
         return typeof pm?.__discountLabel === 'string' ? pm.__discountLabel : 'İskonto';
       })(),
+      discountScopeSubtotalId: quote.discountScopeSubtotalId ?? null,
       headerBase64,
       logoBase64,
     };
@@ -156,7 +159,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const pdfBuffer = await pdfService.generatePdf(html);
 
     // Return PDF as download
-    const filename = `${quote.quoteNumber}.pdf`;
+    const filename = buildQuoteExportFilename(
+      {
+        quoteNumber: quote.quoteNumber,
+        projectName: quote.project?.name,
+        companyName: quote.company.name,
+      },
+      'pdf'
+    );
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {

@@ -68,7 +68,7 @@ model Company {
   name         String
   type         CompanyType
   address      String?
-  taxNumber    String?
+  taxNumber    String?        @unique
   phone        String?
   email        String?
   contacts     Json? // Array of {name, title, email, phone}
@@ -245,6 +245,15 @@ model Quote {
   subtotal        Decimal               @default(0) @db.Decimal(12, 2)
   discountTotal   Decimal               @default(0) @db.Decimal(12, 2)
   discountPct     Decimal               @default(0) @db.Decimal(5, 2)
+  /**
+   * Optional scope for the quote-level discount. When null, the discount
+   * applies to the entire quote subtotal (legacy behavior). When set, it
+   * points at a SUBTOTAL QuoteItem and the discount only reduces the sum
+   * of priced items in that SUBTOTAL's section (items between the previous
+   * SUBTOTAL and this one). Auto-healed to null by the persistence layer
+   * if the referenced item is deleted or is no longer a SUBTOTAL.
+   */
+  discountScopeSubtotalId String?
   vatTotal        Decimal               @default(0) @db.Decimal(12, 2)
   grandTotal      Decimal               @default(0) @db.Decimal(12, 2)
   status          QuoteStatus           @default(TASLAK)
@@ -265,6 +274,19 @@ model Quote {
    *  Does NOT mutate the structured quote data. Null if no override set. */
   pdfOverrideHtml String?               @db.Text
   pdfOverrideAt   DateTime?
+  /**
+   * Frozen rate matrix that was in effect when the quote was last
+   * explicitly rated (on create or via the Kurları Güncelle flow).
+   * Shape: `{ "EUR": { "TRY": 52.2669, "USD": 1.1689, ... }, ... }`.
+   * Loaded on reopen so new items and recalcs stay internally
+   * consistent with items that were saved under the same rates. Fresh
+   * TCMB is fetched separately in the background so the banner can
+   * detect drift and offer an explicit update.
+   *
+   * Null on quotes created before this field existed — in that case
+   * the editor falls back to live TCMB, same as legacy behavior.
+   */
+  rateSnapshot    Json?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   items              QuoteItem[]
@@ -518,7 +540,28 @@ model QuoteEkMaliyet {
   quoteId   String
   quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   title     String
+  /**
+   * The raw amount the user typed for this cost line, denominated in
+   * `sourceCurrency`. For legacy rows (`sourceCurrency = NULL`) this
+   * is whatever the user typed in the old modal, which is
+   * conventionally TRY. Conversion to the quote currency happens at
+   * distribution time via `rateMatrix[sourceCurrency][quote.currency]`.
+   */
   amount    Decimal  @db.Decimal(12, 2)
+  /**
+   * Entry currency for `amount`. New writes stamp this explicitly
+   * (default TRY in the modal). Null on rows created before this
+   * field existed — those are treated as TRY for backward
+   * compatibility with the old modal, which was hardcoded to TRY.
+   */
+  sourceCurrency String?
+  /**
+   * Reserved for future use. Kept nullable and unused today — the
+   * canonical source-currency value lives on `amount`, and carrying
+   * it twice would drift. A later schema cleanup can drop this
+   * column if we never find a use for it.
+   */
+  sourceAmount   Decimal? @db.Decimal(12, 2)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

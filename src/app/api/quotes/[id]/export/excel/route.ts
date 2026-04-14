@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { getExcelService, QuoteDataForExcel, QuoteItemForExcel, CompanyInfo } from '@/lib/excel/excel-service';
+import { buildQuoteExportFilename } from '@/lib/filename';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -162,7 +163,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const excelService = getExcelService();
     const buffer = await excelService.generateQuoteExcel(excelData, companyInfo);
 
-    const filename = `${quote.quoteNumber}.xlsx`;
+    const filename = buildQuoteExportFilename(
+      {
+        quoteNumber: quote.quoteNumber,
+        projectName: quote.project?.name,
+        companyName: quote.company.name,
+      },
+      'xlsx'
+    );
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {

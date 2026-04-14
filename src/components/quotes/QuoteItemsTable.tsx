@@ -30,6 +30,12 @@ export interface QuoteItemsTableProps {
   discountPct: number;
   discountLabel?: string;
   onDiscountLabelChange?: (value: string) => void;
+  /** cuid of the SUBTOTAL row the discount should apply to, or null
+   *  for "apply to the whole quote". Controls both the summary math
+   *  at the bottom of the table and which section the discount line
+   *  shows under. */
+  discountScopeSubtotalId?: string | null;
+  onDiscountScopeChange?: (subtotalId: string | null) => void;
   canViewCosts: boolean;
   onItemUpdate: (itemId: string, updates: Partial<QuoteItemData>) => void;
   onItemDelete: (itemId: string) => void;
@@ -109,6 +115,8 @@ export function QuoteItemsTable({
   discountPct,
   discountLabel: discountLabelProp = 'İskonto',
   onDiscountLabelChange,
+  discountScopeSubtotalId = null,
+  onDiscountScopeChange,
   canViewCosts,
   onItemUpdate,
   onItemDelete,
@@ -447,6 +455,59 @@ export function QuoteItemsTable({
     return count;
   }, [columnVisibility, canViewCosts]);
 
+  // Flat list of SUBTOTAL rows in document order. Used to populate
+  // the discount-scope selector and to auto-heal a stale scope id.
+  const subtotalRows = useMemo(
+    () =>
+      items
+        .filter((item) => item.itemType === 'SUBTOTAL')
+        .map((item, idx) => ({
+          id: item.id,
+          label: item.description?.trim() || `Ara Toplam ${idx + 1}`,
+        })),
+    [items]
+  );
+
+  // Auto-heal: if the saved scope points at a SUBTOTAL that no longer
+  // exists (deleted, converted, etc.), clear it client-side so the
+  // dropdown doesn't render a ghost option and the summary math falls
+  // back to "whole quote". The server also auto-heals on save.
+  useEffect(() => {
+    if (!discountScopeSubtotalId) return;
+    const stillExists = subtotalRows.some((r) => r.id === discountScopeSubtotalId);
+    if (!stillExists) {
+      onDiscountScopeChange?.(null);
+    }
+  }, [discountScopeSubtotalId, subtotalRows, onDiscountScopeChange]);
+
+  // Set of item ids that live inside the scoped SUBTOTAL's section
+  // (including the SUBTOTAL row itself). Used to gate the visual
+  // "crossed-out raw + green after-discount" rendering on each row so
+  // that items outside the scoped section show their raw prices — the
+  // actual discount is already reflected in the bottom-of-table
+  // summary. Returns `null` when no scope is active; callers then fall
+  // back to the legacy "apply visually to everyone" behavior.
+  const scopedItemIds = useMemo<Set<string> | null>(() => {
+    if (!discountScopeSubtotalId) return null;
+    const set = new Set<string>();
+    const targetIdx = items.findIndex(
+      (i) => i.id === discountScopeSubtotalId && i.itemType === 'SUBTOTAL'
+    );
+    if (targetIdx === -1) return set; // scope target missing — nobody gets the visual
+    // Section starts just after the previous SUBTOTAL (or at index 0).
+    let startIdx = 0;
+    for (let j = targetIdx - 1; j >= 0; j--) {
+      if (items[j].itemType === 'SUBTOTAL') {
+        startIdx = j + 1;
+        break;
+      }
+    }
+    for (let j = startIdx; j <= targetIdx; j++) {
+      set.add(items[j].id);
+    }
+    return set;
+  }, [items, discountScopeSubtotalId]);
+
   // Compute section subtotal values for each SUBTOTAL row
   const subtotalMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -553,7 +614,19 @@ export function QuoteItemsTable({
       }
     }
 
-    const discountAmount = araTotal * (discountPct / 100);
+    // Resolve the base the discount percent multiplies:
+    // - null scope  → full araTotal (legacy whole-quote behavior)
+    // - scoped      → the section sum for that SUBTOTAL
+    // - stale scope → fall back to araTotal (matches server auto-heal)
+    let discountBase = araTotal;
+    if (discountScopeSubtotalId) {
+      const sectionSum = subtotalMap.get(discountScopeSubtotalId);
+      if (typeof sectionSum === 'number') {
+        discountBase = sectionSum;
+      }
+    }
+
+    const discountAmount = discountBase * (discountPct / 100);
     const afterDiscount = araTotal - discountAmount;
 
     // VAT is intentionally not computed — quotes are VAT-exclusive.
@@ -570,7 +643,7 @@ export function QuoteItemsTable({
       totalProfit,
       profitMargin,
     };
-  }, [items, discountPct, subtotalMap]);
+  }, [items, discountPct, subtotalMap, discountScopeSubtotalId]);
 
   // Drag handlers
   const handleDragStart = useCallback(
@@ -1010,7 +1083,16 @@ export function QuoteItemsTable({
                     item={item}
                     pozNo={pozMap.get(item.id) ?? null}
                     currency={currency}
-                    overallDiscountPct={discountPct}
+                    overallDiscountPct={
+                      // Whole-quote mode (scopedItemIds === null) → every
+                      // row shows the visual discount, matching legacy
+                      // behavior. Scoped mode → only rows inside the
+                      // targeted section show it; everything else gets 0
+                      // so its price renders raw.
+                      scopedItemIds === null || scopedItemIds.has(item.id)
+                        ? discountPct
+                        : 0
+                    }
                     canViewCosts={canViewCosts}
                     isDragging={!hasActiveFilter && dragIndex === origIdx}
                     columnVisibility={columnVisibility}
@@ -1198,6 +1280,23 @@ export function QuoteItemsTable({
                     }}
                     className="w-16 rounded border border-accent-300 px-2 py-0.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
                   />
+                  {subtotalRows.length > 0 && (
+                    <select
+                      value={discountScopeSubtotalId ?? ''}
+                      onChange={(e) =>
+                        onDiscountScopeChange?.(e.target.value === '' ? null : e.target.value)
+                      }
+                      className="rounded border border-accent-300 px-2 py-0.5 text-xs text-accent-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                      title="İskontonun uygulanacağı bölüm — 'Tüm teklif' iskontoyu toplam üzerine uygular, bir ara toplam seçildiğinde yalnızca o bölüme uygulanır."
+                    >
+                      <option value="">Tüm teklif</option>
+                      {subtotalRows.map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {row.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </span>
               </td>
               <td className="px-2 py-2 text-right tabular-nums text-red-600 whitespace-nowrap">
