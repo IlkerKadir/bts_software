@@ -363,14 +363,14 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
    dense 5-column table layout. Client mentioned "10 punto" but that refers
    to the original Word template; at 10pt the table columns overflow on A4.
    If 10pt is truly needed, column widths and page margins must be revisited. */
-body { font-family: Arial, sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
+body { font-family: Arial, "Noto Sans", sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
 
-.s1 { font-family:Arial,sans-serif; font-weight:bold; font-size:8pt; color:black; }
-.s2 { font-family:Arial,sans-serif; font-weight:normal; font-size:8pt; color:black; }
-.s3 { font-family:Arial,sans-serif; font-weight:bold; font-size:9pt; color:black; }
-.s4 { font-family:Arial,sans-serif; font-weight:normal; font-size:9pt; color:black; }
+.s1 { font-family:Arial,"Noto Sans",sans-serif; font-weight:bold; font-size:8pt; color:black; }
+.s2 { font-family:Arial,"Noto Sans",sans-serif; font-weight:normal; font-size:8pt; color:black; }
+.s3 { font-family:Arial,"Noto Sans",sans-serif; font-weight:bold; font-size:9pt; color:black; }
+.s4 { font-family:Arial,"Noto Sans",sans-serif; font-weight:normal; font-size:9pt; color:black; }
 
-p { font-family:Arial,sans-serif; font-weight:normal; font-size:8pt; color:black; margin:0; }
+p { font-family:Arial,"Noto Sans",sans-serif; font-weight:normal; font-size:8pt; color:black; margin:0; }
 
 table.main { width:100%; border-collapse:collapse; }
 thead { display: table-header-group; }

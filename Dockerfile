@@ -29,14 +29,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install Chromium for Puppeteer PDF generation
+# Install Chromium for Puppeteer PDF generation.
+# font-noto is required because the Turkish Lira sign (₺, U+20BA) and
+# a few currency glyphs aren't covered by ttf-freefont in Alpine.
+# Without it, Chromium renders those glyphs as tofu boxes in the PDF.
 RUN apk add --no-cache \
     chromium \
     nss \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    font-noto
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
