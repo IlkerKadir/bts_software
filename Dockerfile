@@ -29,15 +29,25 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install Chromium for Puppeteer PDF generation.
-# font-liberation — Liberation Sans is metric-compatible with Arial
-#   (same character widths, same line-wrapping), so table layouts look
-#   identical to Arial. The quote template references it as the primary
-#   font; it must match the dev setup (Homebrew `font-liberation` cask)
-#   so local and prod PDFs render the same.
-# font-noto — fallback for any glyph Liberation Sans doesn't carry,
-#   most notably the Turkish Lira sign (₺, U+20BA). Without a font that
-#   covers it, Chromium renders TRY quotes with `?` boxes instead of ₺.
+# Install Chromium for Puppeteer PDF generation + fonts.
+#
+# Font stack:
+#   1. Arial (proprietary Microsoft font, COPY'd in a step below) — the
+#      client's quote template references Arial explicitly and expects
+#      Arial metrics and glyph shapes. Copied from a licensed Mac into
+#      the image; only valid under the organization's Office/Windows
+#      license, not for public redistribution.
+#   2. font-liberation — Liberation Sans is metric-compatible with
+#      Arial. Kept as the first fallback so if the Arial COPY fails
+#      (file missing in the build context, etc.) the layout still
+#      matches Arial's character widths and wrapping.
+#   3. font-noto — final fallback covering any glyph the first two
+#      don't carry, most notably the Turkish Lira sign (U+20BA).
+#      Without it, TRY quotes render "?" boxes instead of the ₺ sign.
+#
+# fontconfig is required so `fc-cache` can register the Arial files
+# after the COPY step below, and so Chromium can discover them at run
+# time.
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -46,7 +56,15 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     font-liberation \
-    font-noto
+    font-noto \
+    fontconfig
+
+# Copy proprietary Arial fonts from the repo into the system fonts dir
+# and refresh the font cache so Chromium/fontconfig can find them.
+# These files live under `fonts/arial/` in the repo; see
+# `fonts/arial/LICENSE-NOTES.md` for the legal context.
+COPY fonts/arial/*.ttf /usr/share/fonts/TTF/
+RUN fc-cache -f /usr/share/fonts/TTF/
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true

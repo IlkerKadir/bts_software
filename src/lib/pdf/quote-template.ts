@@ -359,25 +359,27 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 <style>
 @page { size: A4 portrait; margin: 5mm 10mm 15mm 10mm; }
 * { margin:0; padding:0; text-indent:0; }
-/* Font: Liberation Sans, fallback Noto Sans. Liberation Sans is
-   designed to be metric-compatible with Arial (character widths match
-   exactly), so table layouts and wrapping look identical to what
-   Arial would produce. It renders the same in dev and prod — local
-   Mac via the font-liberation Homebrew cask, prod Docker via the
-   font-liberation Alpine package. Noto Sans covers any rare glyphs
-   Liberation might be missing (e.g. the Turkish Lira sign U+20BA).
+/* Font: Arial (client requirement), fallbacks Liberation Sans then
+   Noto Sans. Local Mac has Arial preinstalled under
+   /System/Library/Fonts/Supplemental; prod Docker has the Arial TTFs
+   COPY'd in from fonts/arial/ via the Dockerfile. Liberation Sans is
+   kept as the first fallback because it is metric-compatible with
+   Arial (same character widths, same wrapping) — if the Arial COPY
+   ever fails to land in the image, layouts still match Arial. Noto
+   Sans is the final fallback for rare glyphs the first two do not
+   carry (most importantly the Turkish Lira sign U+20BA).
    Sizes 6.5pt/7.2pt are tuned for the dense 5-column table layout.
    Client mentioned "10 punto" but that refers to the original Word
    template; at 10pt the table columns overflow on A4. If 10pt is
    truly needed, column widths and page margins must be revisited. */
-body { font-family: "Liberation Sans", "Noto Sans", sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
+body { font-family: Arial, "Liberation Sans", "Noto Sans", sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
 
-.s1 { font-family:"Liberation Sans","Noto Sans",sans-serif; font-weight:bold; font-size:8pt; color:black; }
-.s2 { font-family:"Liberation Sans","Noto Sans",sans-serif; font-weight:normal; font-size:8pt; color:black; }
-.s3 { font-family:"Liberation Sans","Noto Sans",sans-serif; font-weight:bold; font-size:9pt; color:black; }
-.s4 { font-family:"Liberation Sans","Noto Sans",sans-serif; font-weight:normal; font-size:9pt; color:black; }
+.s1 { font-family:Arial,"Liberation Sans","Noto Sans",sans-serif; font-weight:bold; font-size:8pt; color:black; }
+.s2 { font-family:Arial,"Liberation Sans","Noto Sans",sans-serif; font-weight:normal; font-size:8pt; color:black; }
+.s3 { font-family:Arial,"Liberation Sans","Noto Sans",sans-serif; font-weight:bold; font-size:9pt; color:black; }
+.s4 { font-family:Arial,"Liberation Sans","Noto Sans",sans-serif; font-weight:normal; font-size:9pt; color:black; }
 
-p { font-family:"Liberation Sans","Noto Sans",sans-serif; font-weight:normal; font-size:8pt; color:black; margin:0; }
+p { font-family:Arial,"Liberation Sans","Noto Sans",sans-serif; font-weight:normal; font-size:8pt; color:black; margin:0; }
 
 table.main { width:100%; border-collapse:collapse; }
 thead { display: table-header-group; }
