@@ -30,9 +30,14 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Install Chromium for Puppeteer PDF generation.
-# font-noto is required because the Turkish Lira sign (₺, U+20BA) and
-# a few currency glyphs aren't covered by ttf-freefont in Alpine.
-# Without it, Chromium renders those glyphs as tofu boxes in the PDF.
+# font-liberation — Liberation Sans is metric-compatible with Arial
+#   (same character widths, same line-wrapping), so table layouts look
+#   identical to Arial. The quote template references it as the primary
+#   font; it must match the dev setup (Homebrew `font-liberation` cask)
+#   so local and prod PDFs render the same.
+# font-noto — fallback for any glyph Liberation Sans doesn't carry,
+#   most notably the Turkish Lira sign (₺, U+20BA). Without a font that
+#   covers it, Chromium renders TRY quotes with `?` boxes instead of ₺.
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -40,6 +45,7 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
+    font-liberation \
     font-noto
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
