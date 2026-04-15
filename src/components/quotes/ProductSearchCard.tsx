@@ -93,14 +93,16 @@ export function ProductSearchCard({
           )}
         </div>
 
-        {/* Second row: product name */}
-        <p className="text-sm font-medium text-primary-900 truncate">
+        {/* Second row: product name — wraps up to 2 lines so long names
+            like "FireFibre-AT fiber sensör kablosu, 62.5/125 Multi Mode"
+            stay fully readable instead of getting ellipsed. */}
+        <p className="text-sm font-medium text-primary-900 break-words line-clamp-2">
           {displayName}
         </p>
 
         {/* Third row: model if available */}
         {product.model && (
-          <p className="text-xs text-primary-400 truncate">
+          <p className="text-xs text-primary-400 break-words line-clamp-2">
             {product.model}
           </p>
         )}
