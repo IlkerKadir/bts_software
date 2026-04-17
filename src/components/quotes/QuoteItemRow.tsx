@@ -52,6 +52,9 @@ export interface QuoteItemData {
   /** Per-unit ek maliyet distributed amount. Adds to listPrice and costPrice
    *  for display/calculation, but the underlying fields remain untouched. */
   ekMaliyetDelta?: number | null;
+  /** Optional per-SET currency override. Only meaningful on top-level
+   *  SET rows. null = use quote currency (legacy behavior). */
+  currency?: string | null;
 }
 
 export interface PriceHistoryStats {
@@ -765,52 +768,56 @@ export function QuoteItemRow({
           </div>
         </td>
 
-        {/* MIKTAR / BIRIM FIYAT / TOPLAM FIYAT. When priceLabel is set,
-            these three columns collapse into a merged cell showing the
-            label text. Changing / clearing the label is done via the
-            right-click context menu, not an inline control — inline
-            selects auto-size to the longest option and overlap other
-            cells. */}
+        {/* MIKTAR — always editable, even when a price label is set.
+            The client may ship 10 adet "FİYATA DAHİLDİR" items and they
+            still need to see the quantity. */}
+        <td className="border border-accent-200 px-0 py-0 text-right whitespace-nowrap cursor-pointer">
+          <div className="flex flex-col items-end px-2 py-1.5 w-full h-full">
+            <div className="w-full text-right">
+              <EditableCell
+                value={Number(item.quantity)}
+                type="number"
+                onChange={(v) => {
+                  const qty = Number(v);
+                  const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
+                  onUpdate({ quantity: qty, totalPrice: total });
+                }}
+                displayValue={formatNumber(Number(item.quantity), 2)}
+                className="text-right w-full inline-block"
+              />
+            </div>
+            <select
+              value={item.unit}
+              onChange={(e) => onUpdate({ unit: e.target.value })}
+              className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none w-full"
+              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
+            >
+              {unitList.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          </div>
+        </td>
+
+        {/* BIRIM FIYAT + TOPLAM FIYAT. When priceLabel is set these two
+            columns collapse into a merged cell showing the label text;
+            MIKTAR stays editable above. Changing / clearing the label
+            is done via the right-click context menu, not an inline
+            control — inline selects auto-size to the longest option
+            and overlap other cells. */}
         {item.priceLabel ? (
-          <td
-            colSpan={columnVisibility.fiyat ? 3 : 1}
-            className="border border-accent-200 bg-accent-50 px-2 py-1.5 text-center whitespace-nowrap"
-          >
-            <span className="text-xs font-semibold text-accent-800 uppercase">
-              {item.priceLabel}
-            </span>
-          </td>
+          columnVisibility.fiyat ? (
+            <td
+              colSpan={2}
+              className="border border-accent-200 bg-accent-50 px-2 py-1.5 text-center whitespace-nowrap"
+            >
+              <span className="text-xs font-semibold text-accent-800">
+                {item.priceLabel}
+              </span>
+            </td>
+          ) : null
         ) : (
           <>
-            {/* MIKTAR */}
-            <td className="border border-accent-200 px-0 py-0 text-right whitespace-nowrap cursor-pointer">
-              <div className="flex flex-col items-end px-2 py-1.5 w-full h-full">
-                <div className="w-full text-right">
-                  <EditableCell
-                    value={Number(item.quantity)}
-                    type="number"
-                    onChange={(v) => {
-                      const qty = Number(v);
-                      const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
-                      onUpdate({ quantity: qty, totalPrice: total });
-                    }}
-                    displayValue={formatNumber(Number(item.quantity), 2)}
-                    className="text-right w-full inline-block"
-                  />
-                </div>
-                <select
-                  value={item.unit}
-                  onChange={(e) => onUpdate({ unit: e.target.value })}
-                  className="text-xs text-accent-600 bg-transparent border-none p-0 pr-4 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 rounded appearance-none w-full"
-                  style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'8\' height=\'8\' viewBox=\'0 0 8 8\'%3E%3Cpath d=\'M0 2l4 4 4-4z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
-                >
-                  {unitList.map((u) => (
-                    <option key={u} value={u}>{u}</option>
-                  ))}
-                </select>
-              </div>
-            </td>
-
             {/* BIRIM FIYAT (Teklif Satış Fiyatları group) */}
             {columnVisibility.fiyat && (
               <td className="border border-accent-200 px-2 py-1.5 text-right whitespace-nowrap">

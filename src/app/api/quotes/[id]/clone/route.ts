@@ -219,6 +219,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               costPrice: item.costPrice,
               ekMaliyetDelta: item.ekMaliyetDelta,
               serviceMeta: item.serviceMeta ?? undefined,
+              currency: item.currency,
             },
           });
           oldToNewId.set(item.id, created.id);
@@ -251,6 +252,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               costPrice: item.costPrice,
               ekMaliyetDelta: item.ekMaliyetDelta,
               serviceMeta: item.serviceMeta ?? undefined,
+              currency: item.currency,
               parentItemId: newParentId ?? null,
             },
           });

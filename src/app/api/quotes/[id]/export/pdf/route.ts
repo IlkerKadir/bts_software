@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session';
 import { getPdfService } from '@/lib/pdf/pdf-service';
 import { generateQuoteHtml, QuoteDataForPdf } from '@/lib/pdf/quote-template';
 import { buildQuoteExportFilename } from '@/lib/filename';
+import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 import fs from 'fs';
 import path from 'path';
 
@@ -71,12 +72,34 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // All terms (including NOTLAR) go through commercialTerms — the template handles grouping
     const allTerms = quote.commercialTerms;
 
+    // Build a currency context only when the quote has at least one
+    // SET row with a non-null currency override. Without mixed-currency
+    // SETs the PDF template takes the raw-total path (legacy behavior).
+    const hasMixedCurrency = quote.items.some(
+      (i) => i.currency && i.currency !== quote.currency
+    );
+    let pdfCtx: QuoteCurrencyContext | undefined;
+    if (hasMixedCurrency) {
+      const protectionPct = Number(quote.protectionPct || 0);
+      const protectedRate = Number(quote.exchangeRate || 1);
+      const baseForeignRate = protectionPct > 0
+        ? protectedRate / (1 + protectionPct / 100)
+        : protectedRate;
+      pdfCtx = { quoteCurrency: quote.currency, baseForeignRate };
+    }
+
     // Map item to PDF format
     const mapItemForPdf = (item: typeof quote.items[0]) => {
       // Extract headerColor from serviceMeta JSON if present
       const meta = item.serviceMeta as Record<string, unknown> | null;
       const headerColor = meta && typeof meta.headerColor === 'string' ? meta.headerColor : undefined;
       const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
+
+      const rawTotal = Number(item.totalPrice);
+      let totalPriceInQuoteCurrency: number | undefined;
+      if (pdfCtx && item.currency && item.currency !== pdfCtx.quoteCurrency) {
+        totalPriceInQuoteCurrency = convertToQuoteCurrency(rawTotal, item.currency, pdfCtx);
+      }
 
       return {
         id: item.id,
@@ -88,11 +111,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         unit: item.unit,
         unitPrice: Number(item.unitPrice),
         discountPct: Number(item.discountPct),
-        totalPrice: Number(item.totalPrice),
+        totalPrice: rawTotal,
         vatRate: Number(item.vatRate),
         headerColor,
         customPozNo,
         priceLabel: item.priceLabel,
+        currency: item.currency ?? null,
+        totalPriceInQuoteCurrency,
       };
     };
 

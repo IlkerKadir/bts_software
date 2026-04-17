@@ -14,6 +14,12 @@ interface BrandProfitSummaryProps {
   items: QuoteItemData[];
   discountPct: number;
   currency: string;
+  /** Quote.exchangeRate (protected TRY rate). Used together with
+   *  `protectionPct` to recover the non-protected base rate so TRY
+   *  SETs in a non-TRY quote contribute their quote-currency
+   *  equivalent to the brand totals instead of their face TRY value. */
+  exchangeRate?: number;
+  protectionPct?: number;
   canViewCosts: boolean;
 }
 
@@ -112,6 +118,8 @@ export function BrandProfitSummary({
   items,
   discountPct,
   currency,
+  exchangeRate = 1,
+  protectionPct = 0,
   canViewCosts,
 }: BrandProfitSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -130,6 +138,43 @@ export function BrandProfitSummary({
     return items.slice(section.startIndex, section.endIndex);
   }, [items, selectedSection, sections, hasSubtotals]);
 
+  // ---- Currency conversion helpers ----
+  // Brand totals are displayed in the quote's currency, so every
+  // TRY-priced SET (and its TRY-priced children's costs) must be
+  // converted to quote currency using the base, non-protected rate.
+  // Matches the server-side calculateQuoteProfitSummary ctx and the
+  // QuoteItemsTable summary so the three views always agree.
+  const baseForeignRate = useMemo(() => {
+    if (currency === 'TRY') return 1;
+    const r = Number(exchangeRate) || 1;
+    const p = Number(protectionPct) || 0;
+    return p > 0 ? r / (1 + p / 100) : r;
+  }, [currency, exchangeRate, protectionPct]);
+
+  // Pre-index top-level SETs that carry a currency override so
+  // children can look up their effective currency in O(1). Built
+  // from the full items array (not filteredItems) so a child whose
+  // parent SET sits outside the selected section still resolves.
+  const setCurrencyByParentId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const it of items) {
+      if (it.itemType === 'SET' && !it.parentItemId && it.currency) {
+        m.set(it.id, it.currency);
+      }
+    }
+    return m;
+  }, [items]);
+
+  const convertRowToQuoteCurrency = (item: QuoteItemData, amount: number): number => {
+    const effCur = item.currency
+      || (item.parentItemId ? setCurrencyByParentId.get(item.parentItemId) : undefined)
+      || currency;
+    if (effCur === 'TRY' && currency !== 'TRY' && baseForeignRate > 0) {
+      return amount / baseForeignRate;
+    }
+    return amount;
+  };
+
   // ---- Manager mode computation (cost-based) ----
   const managerData = useMemo(() => {
     if (canViewCosts) {
@@ -138,24 +183,36 @@ export function BrandProfitSummary({
       for (const item of filteredItems) {
         if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
         if (item.priceLabel) continue;
-        if (item.parentItemId) continue;
+
+        // Top-level priced rows contribute revenue; children never do
+        // (SET parent's totalPrice already includes them). Costs
+        // contribute from EVERY priced row except the SET parent
+        // itself — children of a TRY-priced SET hold TRY costs, and
+        // we need them converted to quote currency here.
+        const isTopLevelPriced = !item.parentItemId
+          && (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET');
+        const isSetParent = item.itemType === 'SET' && !item.parentItemId;
 
         const brandKey = item.brand || 'Diger';
         if (!grouped[brandKey]) {
           grouped[brandKey] = { revenue: 0, cost: 0, count: 0 };
         }
 
-        const qty = Number(item.quantity) || 0;
-        const up = Number(item.unitPrice) || 0;
-        const disc = Number(item.discountPct) || 0;
-        const itemRevenue = qty * up * (1 - disc / 100);
+        if (isTopLevelPriced) {
+          const qty = Number(item.quantity) || 0;
+          const up = Number(item.unitPrice) || 0;
+          const disc = Number(item.discountPct) || 0;
+          const itemRevenue = qty * up * (1 - disc / 100);
+          grouped[brandKey].revenue += convertRowToQuoteCurrency(item, itemRevenue);
+          grouped[brandKey].count += 1;
+        }
 
-        grouped[brandKey].revenue += itemRevenue;
-        grouped[brandKey].count += 1;
-
-        const effectiveCost = getEffectiveCostPrice(item);
-        if (effectiveCost != null) {
-          grouped[brandKey].cost += effectiveCost * qty;
+        if (!isSetParent) {
+          const qty = Number(item.quantity) || 0;
+          const effectiveCost = getEffectiveCostPrice(item);
+          if (effectiveCost != null) {
+            grouped[brandKey].cost += convertRowToQuoteCurrency(item, effectiveCost * qty);
+          }
         }
       }
 
@@ -206,14 +263,14 @@ export function BrandProfitSummary({
         const qty = Number(item.quantity) || 0;
         const up = Number(item.unitPrice) || 0;
         const disc = Number(item.discountPct) || 0;
-        const lp = Number(item.listPrice) || 0;
         const k = Number(item.katsayi) || 1;
-        const itemRevenue = qty * up * (1 - disc / 100);
+        const rawRevenue = qty * up * (1 - disc / 100);
+        const itemRevenue = convertRowToQuoteCurrency(item, rawRevenue);
 
         grouped[brandKey].totalRevenue += itemRevenue;
         grouped[brandKey].count += 1;
 
-        // Weight by revenue for average katsayi
+        // Weight by (converted) revenue for average katsayi
         grouped[brandKey].katsayiWeightedSum += k * itemRevenue;
         grouped[brandKey].revenueWeightSum += itemRevenue;
 
@@ -251,7 +308,7 @@ export function BrandProfitSummary({
         const up = Number(item.unitPrice) || 0;
         const disc = Number(item.discountPct) || 0;
         const k = Number(item.katsayi) || 1;
-        const rev = qty * up * (1 - disc / 100);
+        const rev = convertRowToQuoteCurrency(item, qty * up * (1 - disc / 100));
         totalWeightedK += k * rev;
         totalWeightSum += rev;
       }

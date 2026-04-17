@@ -132,6 +132,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ? 0
       : computeRowTotal({ quantity, unitPrice, discountPct });
 
+    // Per-SET currency override: only accepted on top-level SET rows,
+    // and only when the value is either 'TRY' or the parent quote's
+    // currency. Any other combination is rejected — children never
+    // carry their own currency (they inherit), and non-SET rows must
+    // always sit in the quote's currency. An override equal to the
+    // quote's currency is normalized to NULL so the DB only holds
+    // meaningful overrides (keeps `hasMixedCurrency` detection cheap).
+    let itemCurrency: string | null = null;
+    if (data.currency) {
+      if (!isSetParent) {
+        return NextResponse.json(
+          { error: 'Para birimi sadece set başlığına atanabilir' },
+          { status: 400 }
+        );
+      }
+      if (data.currency !== 'TRY' && data.currency !== quote.currency) {
+        return NextResponse.json(
+          { error: `Set para birimi yalnızca TRY veya teklif para birimi (${quote.currency}) olabilir` },
+          { status: 400 }
+        );
+      }
+      itemCurrency = data.currency === quote.currency ? null : data.currency;
+    }
+
     const item = await db.quoteItem.create({
       data: {
         quoteId,
@@ -156,6 +180,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         parentItemId: data.parentItemId || null,
         costPrice: data.costPrice ?? null,
         ekMaliyetDelta: data.ekMaliyetDelta ?? null,
+        currency: itemCurrency,
       },
       include: {
         product: {
@@ -216,6 +241,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Pre-validate SET currency overrides across the batch so a bad
+    // value returns a friendly 400 instead of tripping the generic
+    // transaction 500 below.
+    for (const item of validatedItems) {
+      if (item.currency == null) continue;
+      const isSetParent = item.itemType === 'SET' && !item.parentItemId;
+      if (!isSetParent) continue;
+      if (item.currency !== 'TRY' && item.currency !== quote.currency) {
+        return NextResponse.json(
+          { error: `Set para birimi yalnızca TRY veya teklif para birimi (${quote.currency}) olabilir` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Update items in a transaction
     await db.$transaction(async (tx) => {
       for (const item of validatedItems) {
@@ -229,6 +269,25 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         // SET parents have unitPrice = sum of children's totalPrice —
         // round2 only, no tier-round (children are already rounded).
         const isSetParent = item.itemType === 'SET' && !item.parentItemId;
+
+        // Normalize the currency override. Undefined means "don't
+        // touch" (PUT omits the field → keep existing DB value); null
+        // means "clear back to quote currency"; a set value on a
+        // non-SET row gets coerced to null so we never store an
+        // orphaned override on a child or PRODUCT row; a value equal
+        // to the quote's currency is also normalized to null so the
+        // DB only holds meaningful overrides. The cross-quote
+        // validity check already ran above as a pre-flight.
+        let currencyUpdate: string | null | undefined;
+        if (item.currency === undefined) {
+          currencyUpdate = undefined;
+        } else if (item.currency === null || !isSetParent) {
+          currencyUpdate = null;
+        } else if (item.currency === quote.currency) {
+          currencyUpdate = null;
+        } else {
+          currencyUpdate = item.currency;
+        }
 
         // Include ekMaliyetDelta in the effective list price for
         // unitPrice computation.
@@ -284,6 +343,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             costPrice: item.costPrice ?? undefined,
             ekMaliyetDelta: item.ekMaliyetDelta !== undefined ? item.ekMaliyetDelta : undefined,
             serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
+            ...(currencyUpdate === undefined ? {} : { currency: currencyUpdate }),
           },
         });
       }

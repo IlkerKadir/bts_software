@@ -77,6 +77,17 @@ export interface QuoteItemForPdf {
   /** When set, the row's MIKTAR/BIRIM/TOPLAM columns collapse into one
    *  merged cell with this literal label. */
   priceLabel?: string | null;
+  /** Optional per-SET currency override. When set on a top-level SET
+   *  row, the MIKTAR/BİRİM/TOPLAM cells render in that currency
+   *  instead of the quote's. Grand total and subtotal lines still use
+   *  the quote currency. */
+  currency?: string | null;
+  /** Row total already converted to the quote's currency — used only
+   *  when the template computes per-section SUBTOTAL sums so a TRY
+   *  SET in an EUR quote contributes its EUR-equivalent instead of
+   *  its raw TRY face value. When omitted the raw `totalPrice` is
+   *  summed (legacy single-currency behavior). */
+  totalPriceInQuoteCurrency?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +191,10 @@ function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): nu
     // Price-labeled items (e.g. "TARAFINIZCA SAĞLANACAKTIR") contribute 0.
     if (item.priceLabel) continue;
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
-      sum += item.totalPrice;
+      // Prefer the pre-converted quote-currency total when supplied
+      // (mixed-currency quotes); fall back to raw totalPrice for pure
+      // single-currency quotes where the two are identical.
+      sum += item.totalPriceInQuoteCurrency ?? item.totalPrice;
     }
   }
   return sum;
@@ -297,16 +311,6 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       pozText = `${itemNumber}`;
     }
 
-    // When the item has a priceLabel, collapse MIKTAR + BIRIM FIYAT +
-    // TOPLAM FIYAT into a single merged cell showing the label text.
-    if (item.priceLabel) {
-      return `<tr>
-      <td><p class="s1" style="text-align:center;">${pozText}</p></td>
-      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
-      <td colspan="3"><p class="s1" style="text-align:center;padding:0 4pt;">${escapeHtml(item.priceLabel)}</p></td>
-    </tr>`;
-    }
-
     // Format with Turkish thousand separators and drop trailing
     // zero decimals so integer quantities read as "40.000" not
     // "40.000,00". `white-space:nowrap` on the cell below keeps the
@@ -318,12 +322,32 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     }).format(item.quantity);
     const qtyStr = `${qtyFormatted} ${unitAbbr(item.unit || 'Adet')}`;
 
+    // When the item has a priceLabel, keep the MIKTAR column showing
+    // the quantity and only merge BIRIM FIYAT + TOPLAM FIYAT into a
+    // single cell for the label — client needs the adet info even on
+    // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR" rows.
+    if (item.priceLabel) {
+      return `<tr>
+      <td><p class="s1" style="text-align:center;">${pozText}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
+      <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
+      <td colspan="2"><p class="s1" style="text-align:center;padding:0 4pt;">${escapeHtml(item.priceLabel)}</p></td>
+    </tr>`;
+    }
+
+    // Per-SET currency override: the row's MIKTAR/BİRİM/TOPLAM cells
+    // render in the SET's own currency if it set one, otherwise the
+    // quote currency. Subtotals and the grand total further below still
+    // use the quote currency — conversion already happened in
+    // recalculateAndPersistQuoteTotals before persisting.
+    const rowCurrency = (item.itemType === 'SET' && item.currency) ? item.currency : currency;
+
     return `<tr>
       <td><p class="s1" style="text-align:center;">${pozText}</p></td>
       <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
-      <td><p class="s2" style="text-align:right;padding-right:14pt;white-space:nowrap;">${formatCurrency(item.unitPrice, currency)}</p></td>
-      <td><p class="s2" style="text-align:right;white-space:nowrap;">${formatCurrency(item.totalPrice, currency)}</p></td>
+      <td><p class="s2" style="text-align:right;padding-right:14pt;white-space:nowrap;">${formatCurrency(item.unitPrice, rowCurrency)}</p></td>
+      <td><p class="s2" style="text-align:right;white-space:nowrap;">${formatCurrency(item.totalPrice, rowCurrency)}</p></td>
     </tr>`;
   }).join('\n');
 

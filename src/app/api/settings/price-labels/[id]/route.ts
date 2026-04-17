@@ -34,7 +34,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const data: Record<string, unknown> = {};
     if (parsed.data.label !== undefined) {
-      data.label = parsed.data.label.trim().toLocaleUpperCase('tr-TR');
+      data.label = parsed.data.label.trim();
     }
     if (parsed.data.sortOrder !== undefined) data.sortOrder = parsed.data.sortOrder;
     if (parsed.data.isActive !== undefined) data.isActive = parsed.data.isActive;

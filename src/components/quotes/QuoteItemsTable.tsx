@@ -27,6 +27,15 @@ import { useSettings } from '@/components/settings/SettingsProvider';
 export interface QuoteItemsTableProps {
   items: QuoteItemData[];
   currency: string;
+  /** Quote's protected TRY rate (Quote.exchangeRate). Used to derive
+   *  the base rate for converting TRY-priced SETs into the quote's
+   *  currency in the live summary — mirrors the PDF/server math so
+   *  the numbers the user sees while editing match the saved totals. */
+  exchangeRate?: number;
+  /** Quote.protectionPct, used together with exchangeRate to recover
+   *  the non-protected base rate for TRY-set → quote-currency
+   *  conversion. Defaults to 0 (no protection). */
+  protectionPct?: number;
   discountPct: number;
   discountLabel?: string;
   onDiscountLabelChange?: (value: string) => void;
@@ -112,6 +121,8 @@ const COLUMN_GROUPS = [
 export function QuoteItemsTable({
   items,
   currency,
+  exchangeRate = 1,
+  protectionPct = 0,
   discountPct,
   discountLabel: discountLabelProp = 'İskonto',
   onDiscountLabelChange,
@@ -508,6 +519,41 @@ export function QuoteItemsTable({
     return set;
   }, [items, discountScopeSubtotalId]);
 
+  // Base (non-protected) TRY rate. When the quote is TRY, or when
+  // neither exchangeRate nor protectionPct have meaningful values,
+  // this collapses to 1 and every row contributes at face value —
+  // matching legacy single-currency behavior byte-for-byte.
+  const baseForeignRate = useMemo(() => {
+    if (currency === 'TRY') return 1;
+    const r = Number(exchangeRate) || 1;
+    const p = Number(protectionPct) || 0;
+    return p > 0 ? r / (1 + p / 100) : r;
+  }, [currency, exchangeRate, protectionPct]);
+
+  // Convert a priced row's raw (quantity × unitPrice × (1 - disc/100))
+  // to the quote's currency. Only top-level SET rows with a TRY
+  // override in a non-TRY quote actually convert; everything else
+  // passes through.
+  const rowTotalInQuoteCurrency = useCallback(
+    (item: QuoteItemData): number => {
+      const qty = Number(item.quantity) || 0;
+      const up = Number(item.unitPrice) || 0;
+      const disc = Number(item.discountPct) || 0;
+      const raw = qty * up * (1 - disc / 100);
+      if (
+        item.itemType === 'SET' &&
+        !item.parentItemId &&
+        item.currency === 'TRY' &&
+        currency !== 'TRY' &&
+        baseForeignRate > 0
+      ) {
+        return raw / baseForeignRate;
+      }
+      return raw;
+    },
+    [currency, baseForeignRate]
+  );
+
   // Compute section subtotal values for each SUBTOTAL row
   const subtotalMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -522,14 +568,11 @@ export function QuoteItemsTable({
         !item.parentItemId &&
         !item.priceLabel
       ) {
-        const qty = Number(item.quantity) || 0;
-        const up = Number(item.unitPrice) || 0;
-        const disc = Number(item.discountPct) || 0;
-        sectionSum += qty * up * (1 - disc / 100);
+        sectionSum += rowTotalInQuoteCurrency(item);
       }
     }
     return map;
-  }, [items]);
+  }, [items, rowTotalInQuoteCurrency]);
 
   // Label span for summary rows: spans from first col up to (but not including) Toplam Fiyat
   // New column order: Drag | Poz | [Marka,Model,Kod] | Aciklama | Miktar | [BirimFiyat, ToplamFiyat, Katsayi, ListeFiyati] | [Maliyet,Kar,Kar%] | PB | [Gecmis x8] | Delete
@@ -585,7 +628,7 @@ export function QuoteItemsTable({
           if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
       if (item.priceLabel) continue;
           if (item.parentItemId) continue;
-          araTotal += Number(item.quantity) * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
+          araTotal += rowTotalInQuoteCurrency(item);
         }
       }
     } else {
@@ -594,24 +637,39 @@ export function QuoteItemsTable({
         if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
       if (item.priceLabel) continue;
         if (item.parentItemId) continue;
-        const qty = Number(item.quantity) || 0;
-        const up = Number(item.unitPrice) || 0;
-        const disc = Number(item.discountPct) || 0;
-        araTotal += qty * up * (1 - disc / 100);
+        araTotal += rowTotalInQuoteCurrency(item);
       }
     }
 
-    // Cost calculation – exclude SUBTOTAL and parentItemId items
-    // Use effective cost (base + ek maliyet delta) so totals reflect distributed costs
+    // Cost calculation – walk every row (including children of
+    // mixed-currency SETs, which carry the actual cost). The SET
+    // parent's cost is ignored (its children carry the real costs).
+    // Children of a TRY-priced SET hold TRY costs, so their cost
+    // contribution is divided by the base rate to land in quote
+    // currency — matching calculateQuoteProfitSummary on the server.
+    const setCurrencyByParentId = new Map<string, string>();
+    for (const it of items) {
+      if (it.itemType === 'SET' && !it.parentItemId && it.currency) {
+        setCurrencyByParentId.set(it.id, it.currency);
+      }
+    }
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
       if (item.priceLabel) continue;
-      if (item.parentItemId) continue;
+      // SET parent carries no cost of its own (children do).
+      if (item.itemType === 'SET' && !item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
       const effectiveCost = getEffectiveCostPrice(item);
-      if (effectiveCost != null) {
-        totalCost += effectiveCost * qty;
+      if (effectiveCost == null) continue;
+      // Resolve the row's effective currency — its own (unused on
+      // children today), parent SET's, or quote currency.
+      const parentSetCur = item.parentItemId ? setCurrencyByParentId.get(item.parentItemId) : undefined;
+      const effCurrency = item.currency || parentSetCur || currency;
+      let contribution = effectiveCost * qty;
+      if (effCurrency === 'TRY' && currency !== 'TRY' && baseForeignRate > 0) {
+        contribution = contribution / baseForeignRate;
       }
+      totalCost += contribution;
     }
 
     // Resolve the base the discount percent multiplies:
@@ -1015,6 +1073,8 @@ export function QuoteItemsTable({
         items={filteredItems}
         discountPct={discountPct}
         currency={currency}
+        exchangeRate={exchangeRate}
+        protectionPct={protectionPct}
         canViewCosts={canViewCosts}
       />
 
@@ -1077,12 +1137,19 @@ export function QuoteItemsTable({
 
             {filteredItems.map((item) => {
               const origIdx = itemIndexMap.get(item.id) ?? 0;
+              // Effective currency for pricing cells in this row. Only
+              // top-level SET rows may override — everything else falls
+              // back to the quote's currency. Passed to QuoteItemRow so
+              // formatPrice renders the correct symbol.
+              const rowCurrency = (item.itemType === 'SET' && !item.parentItemId && item.currency)
+                ? item.currency
+                : currency;
               return (
                 <React.Fragment key={item.id}>
                   <QuoteItemRow
                     item={item}
                     pozNo={pozMap.get(item.id) ?? null}
-                    currency={currency}
+                    currency={rowCurrency}
                     overallDiscountPct={
                       // Whole-quote mode (scopedItemIds === null) → every
                       // row shows the visual discount, matching legacy
@@ -1119,12 +1186,59 @@ export function QuoteItemsTable({
                   {/* Render sub-rows for SET parents */}
                   {(() => {
                     const subs = subRowsByParent.get(item.id) || [];
+                    // Per-SET currency selector — shown next to the
+                    // sub-item toolbar. Hidden entirely when the quote
+                    // is TRY (the 2 allowed options would collapse to
+                    // one) or when the row is not a SET. The picker
+                    // writes `null` for the "quote currency" option so
+                    // the server stores the override only when it
+                    // actually differs — keeps the DB clean for the
+                    // legacy single-currency case.
+                    //
+                    // The picker is also disabled once the SET has at
+                    // least one child: flipping currency after children
+                    // exist would leave their numeric prices unchanged
+                    // while the displayed symbol flips, producing
+                    // silently wrong numbers. User must pick the
+                    // currency BEFORE adding any sub-items, or clear
+                    // them first.
+                    const showCurrencyPicker = item.itemType === 'SET' && !item.parentItemId && currency !== 'TRY';
+                    const currentSetCurrency = item.currency ?? currency;
+                    const lockCurrencyPicker = subs.length > 0;
+                    const setCurrencyPicker = showCurrencyPicker ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-accent-500">Set Para Birimi:</span>
+                        <select
+                          value={currentSetCurrency}
+                          disabled={lockCurrencyPicker}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            onItemUpdate(item.id, { currency: val === currency ? null : val });
+                          }}
+                          className={cn(
+                            'text-xs border rounded px-1 py-0.5',
+                            lockCurrencyPicker
+                              ? 'border-accent-200 bg-accent-100 text-accent-500 cursor-not-allowed'
+                              : 'border-accent-300 bg-white'
+                          )}
+                          title={
+                            lockCurrencyPicker
+                              ? 'Para birimi değiştirmek için önce alt kalemleri kaldırın — fiyatlar otomatik çevrilmez.'
+                              : 'Set fiyatlarının para birimi. Alt kalemlerin fiyatları bu para birimine göre girilmelidir.'
+                          }
+                        >
+                          <option value={currency}>{currency}</option>
+                          <option value="TRY">TRY</option>
+                        </select>
+                      </div>
+                    ) : null;
                     if (subs.length > 0) {
                       return (
                         <>
                           <tr>
                             <td colSpan={totalColCount} className="px-8 py-0.5 bg-accent-50 border-x border-accent-200">
                               <div className="flex items-center gap-3">
+                                {setCurrencyPicker}
                                 <button
                                   type="button"
                                   onClick={() => setCollapsedParents(prev => {
@@ -1166,7 +1280,7 @@ export function QuoteItemsTable({
                               key={sub.id}
                               item={sub}
                               pozNo={null}
-                              currency={currency}
+                              currency={rowCurrency}
                               canViewCosts={canViewCosts}
                               isDragging={false}
                               isSubRow={true}
@@ -1191,6 +1305,7 @@ export function QuoteItemsTable({
                         <tr>
                           <td colSpan={totalColCount} className="px-8 py-0.5 bg-accent-50 border-x border-accent-200">
                             <div className="flex items-center gap-3">
+                              {setCurrencyPicker}
                               {onAddSubItem && (
                                 <button
                                   type="button"

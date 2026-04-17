@@ -11,6 +11,10 @@ vi.mock('@/lib/db', () => ({
       update: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
+    quoteItem: {
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
+    },
     quoteHistory: {
       create: vi.fn(),
     },
@@ -64,6 +68,9 @@ describe('PUT /api/quotes/[id] - input validation', () => {
     vi.mocked(db.quote.update).mockResolvedValue(mockQuote as never);
     vi.mocked(db.quote.findUniqueOrThrow).mockResolvedValue(mockQuote as never);
     vi.mocked(db.quoteHistory.create).mockResolvedValue({} as never);
+    // Set-currency cleanup on quote-currency change calls updateMany
+    vi.mocked(db.quoteItem.updateMany).mockResolvedValue({ count: 0 } as never);
+    vi.mocked(db.quoteItem.findMany).mockResolvedValue([] as never);
   });
 
   function createPutRequest(body: unknown): NextRequest {

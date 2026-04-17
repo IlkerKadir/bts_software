@@ -54,6 +54,10 @@ export const quoteItemSchema = z.object({
   priceLabel: z.string().nullish(),
   costPrice: z.number().nullish(),
   ekMaliyetDelta: z.number().nullish(),
+  /** Optional per-SET currency override. Only accepted on top-level SET
+   *  rows. Semantic enforcement (value must match quote currency or be
+   *  'TRY') is done at the route level where we know the parent quote. */
+  currency: currencyEnum.nullish(),
 });
 
 export const quoteItemUpdateSchema = quoteItemSchema.extend({

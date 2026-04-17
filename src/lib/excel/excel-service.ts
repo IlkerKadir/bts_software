@@ -22,6 +22,11 @@ export interface QuoteItemForExcel {
   /** Replaces MIKTAR + BIRIM + TOPLAM columns with a merged cell showing
    *  this literal text. */
   priceLabel?: string | null;
+  /** Optional per-SET currency override. When set on a top-level SET
+   *  row, the MIKTAR/BİRİM/TOPLAM cells render in that currency. */
+  currency?: string | null;
+  /** Row total converted to quote currency for SUBTOTAL aggregation. */
+  totalPriceInQuoteCurrency?: number;
 }
 
 export interface CommercialTermForExcel {
@@ -195,7 +200,10 @@ function computeExcelSubtotalSum(items: QuoteItemForExcel[], subtotalIndex: numb
     if (item.itemType === 'SUBTOTAL') break;
     if (item.priceLabel) continue;
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
-      sum += item.totalPrice ?? 0;
+      // Prefer the pre-converted quote-currency total when present
+      // (mixed-currency quotes); fall back to raw totalPrice for pure
+      // single-currency quotes where the two are identical.
+      sum += item.totalPriceInQuoteCurrency ?? item.totalPrice ?? 0;
     }
   }
   return sum;
@@ -487,13 +495,24 @@ export class ExcelService {
         descCell.border = blackBoxBorder();
 
         if (item.priceLabel) {
-          // Merge C:E and fill with the literal label text
-          sheet.mergeCells(currentRow, 3, currentRow, 5);
-          const labelCell = sheet.getCell(currentRow, 3);
+          // Keep MIKTAR (col C) with the quantity; merge only BIRIM
+          // FIYAT + TOPLAM FIYAT (D:E) for the literal label text.
+          // Client still needs the "adet" information on rows like
+          // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR".
+          const qty = item.quantity ?? 0;
+          const unit = unitAbbr(item.unit || 'Adet');
+          const qtyCell = sheet.getCell(currentRow, 3);
+          qtyCell.value = `${qty} ${unit}`;
+          qtyCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
+          qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          qtyCell.border = blackBoxBorder();
+
+          sheet.mergeCells(currentRow, 4, currentRow, 5);
+          const labelCell = sheet.getCell(currentRow, 4);
           labelCell.value = item.priceLabel;
           labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           labelCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          styleMergedRange(sheet, currentRow, 3, 5);
+          styleMergedRange(sheet, currentRow, 4, 5);
         } else {
           const qty = item.quantity ?? 0;
           const unit = unitAbbr(item.unit || 'Adet');
@@ -503,14 +522,19 @@ export class ExcelService {
           qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           qtyCell.border = blackBoxBorder();
 
+          // Per-SET currency override: the row's MIKTAR/BİRİM/TOPLAM
+          // cells render in the SET's own currency when set, otherwise
+          // the quote's currency. Subtotals/grand total below use the
+          // quote currency.
+          const rowCurrency = (item.itemType === 'SET' && item.currency) ? item.currency : currency;
           const unitPriceCell = sheet.getCell(currentRow, 4);
-          unitPriceCell.value = formatTurkishCurrency(item.unitPrice ?? 0, currency);
+          unitPriceCell.value = formatTurkishCurrency(item.unitPrice ?? 0, rowCurrency);
           unitPriceCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           unitPriceCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           unitPriceCell.border = blackBoxBorder();
 
           const totalCell = sheet.getCell(currentRow, 5);
-          totalCell.value = formatTurkishCurrency(item.totalPrice ?? 0, currency);
+          totalCell.value = formatTurkishCurrency(item.totalPrice ?? 0, rowCurrency);
           totalCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           totalCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           totalCell.border = blackBoxBorder();

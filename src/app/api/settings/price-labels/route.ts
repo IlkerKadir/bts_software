@@ -52,9 +52,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upper-casing the label to keep the existing visual convention of
-    // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR" as uppercase.
-    const label = parsed.data.label.trim().toLocaleUpperCase('tr-TR');
+    // Preserve the user's casing — admins set whatever style they want
+    // (mixed case, sentence case, uppercase) and every render path
+    // shows it verbatim.
+    const label = parsed.data.label.trim();
 
     const existing = await db.priceLabelOption.findUnique({ where: { label } });
     if (existing) {

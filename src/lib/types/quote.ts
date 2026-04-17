@@ -37,6 +37,9 @@ export interface ApiQuoteItem {
   ekMaliyetDelta?: number | string | null;
   serviceMeta?: unknown;
   subRows?: ApiQuoteItem[];
+  /** Per-SET currency override. Only set on top-level SET rows; null
+   *  means "use quote currency" (all existing data). */
+  currency?: string | null;
   product?: { model?: string | null; currency?: string | null; listPrice?: number | string | null; costPrice?: number | string | null; minKatsayi?: number | string | null; maxKatsayi?: number | string | null; [key: string]: unknown };
 }
 

@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { db } from '@/lib/db';
 import type { QuoteDataForPdf } from '@/lib/pdf/quote-template';
+import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 
 function loadImageBase64(relativePath: string): string | undefined {
   try {
@@ -52,11 +53,37 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
   const notlarTerms = quote.commercialTerms.filter(term => term.category === 'NOTLAR');
   const allTerms = quote.commercialTerms;
 
+  // Build a currency context only when the quote has at least one
+  // SET row with a non-null currency override. Without mixed-currency
+  // SETs, every item already sits in the quote's currency and the
+  // section-sum helper reads the raw `totalPrice` as before.
+  const hasMixedCurrency = quote.items.some(
+    (i) => i.currency && i.currency !== quote.currency
+  );
+  let ctx: QuoteCurrencyContext | undefined;
+  if (hasMixedCurrency) {
+    const protectionPct = Number(quote.protectionPct || 0);
+    const protectedRate = Number(quote.exchangeRate || 1);
+    const baseForeignRate = protectionPct > 0
+      ? protectedRate / (1 + protectionPct / 100)
+      : protectedRate;
+    ctx = { quoteCurrency: quote.currency, baseForeignRate };
+  }
+
   // Map item to PDF format
   const mapItemForPdf = (item: typeof quote.items[0]) => {
     const meta = item.serviceMeta as Record<string, unknown> | null;
     const headerColor = meta && typeof meta.headerColor === 'string' ? meta.headerColor : undefined;
     const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
+
+    const rawTotal = Number(item.totalPrice);
+    // For section-sum aggregation the PDF template needs the total in
+    // quote currency. We pre-compute it here once per item so the
+    // template stays pure.
+    let totalPriceInQuoteCurrency: number | undefined;
+    if (ctx && item.currency && item.currency !== ctx.quoteCurrency) {
+      totalPriceInQuoteCurrency = convertToQuoteCurrency(rawTotal, item.currency, ctx);
+    }
 
     return {
       id: item.id,
@@ -68,11 +95,13 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
       unit: item.unit,
       unitPrice: Number(item.unitPrice),
       discountPct: Number(item.discountPct),
-      totalPrice: Number(item.totalPrice),
+      totalPrice: rawTotal,
       vatRate: Number(item.vatRate),
       headerColor,
       customPozNo,
       priceLabel: item.priceLabel,
+      currency: item.currency ?? null,
+      totalPriceInQuoteCurrency,
     };
   };
 

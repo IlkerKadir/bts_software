@@ -20,6 +20,75 @@ export interface QuoteItem {
   /** When set, the row's price is replaced by a literal label and the
    *  item contributes 0 to the quote totals. */
   priceLabel?: string | null;
+  /** Optional per-SET currency override. Only meaningful on top-level
+   *  SET rows. NULL/undefined = use the quote's own currency (legacy
+   *  behavior, all existing data). Must be either 'TRY' or the quote's
+   *  own currency — enforcement lives at the API validation layer. */
+  currency?: string | null;
+  /** When present, identifies the parent SET this row sits under. Used
+   *  by the mixed-currency conversion helpers to resolve a child's
+   *  effective currency by walking up to its parent. */
+  parentItemId?: string | null;
+}
+
+/**
+ * Quote-level currency context used to convert mixed-currency SET
+ * subtotals into the quote's own currency for grand-total math. When
+ * `undefined` is passed to the calculation functions, no conversion
+ * happens (legacy, single-currency behavior).
+ */
+export interface QuoteCurrencyContext {
+  /** The quote's own currency (e.g. 'EUR', 'USD', 'TRY'). */
+  quoteCurrency: string;
+  /** Base (non-protected) foreign/TRY rate — how many TRY for 1 unit of
+   *  the quote's currency. 1 when the quote is TRY. Derived upstream
+   *  from `Quote.exchangeRate / (1 + Quote.protectionPct/100)` so the
+   *  protection uplift is NOT applied to TRY-set contributions: a set
+   *  priced in TRY has no FX exposure to protect against. */
+  baseForeignRate: number;
+}
+
+/**
+ * Resolve the effective currency of an item. Top-level rows use their
+ * own `currency` when set; children look up their parent SET. Falls
+ * back to the quote's currency when neither carries an override.
+ *
+ * `items` should be the same array passed to the totals functions —
+ * the lookup walks it positionally, not through the DB.
+ */
+export function effectiveItemCurrency(
+  item: Pick<QuoteItem, 'currency' | 'parentItemId'>,
+  items: QuoteItem[],
+  quoteCurrency: string
+): string {
+  if (item.currency) return item.currency;
+  if (item.parentItemId) {
+    const parent = items.find((i) => i.id === item.parentItemId);
+    if (parent?.currency) return parent.currency;
+  }
+  return quoteCurrency;
+}
+
+/**
+ * Convert a raw amount from an item's effective currency to the quote
+ * currency. Only the TRY-set-in-non-TRY-quote case actually converts;
+ * every other combination is either identity or disallowed by API
+ * validation (handled as a safe pass-through).
+ */
+export function convertToQuoteCurrency(
+  amount: number,
+  fromCurrency: string,
+  ctx: QuoteCurrencyContext
+): number {
+  if (fromCurrency === ctx.quoteCurrency) return amount;
+  if (fromCurrency === 'TRY' && ctx.quoteCurrency !== 'TRY') {
+    return ctx.baseForeignRate > 0 ? amount / ctx.baseForeignRate : amount;
+  }
+  // Cross-foreign or foreign-in-TRY-quote aren't allowed by validation
+  // (the UI only lets users pick TRY or the quote currency). If one
+  // somehow reaches us we pass through raw so the total is visibly off
+  // rather than silently wrong.
+  return amount;
 }
 
 // Re-export for backwards compatibility — lives in ek-maliyet.ts so client code can import it
@@ -94,7 +163,8 @@ function isPricedItem(item: QuoteItem): boolean {
  */
 function sumSectionForSubtotal(
   items: QuoteItem[],
-  subtotalId: string
+  subtotalId: string,
+  ctx?: QuoteCurrencyContext
 ): number | null {
   const targetIdx = items.findIndex(
     (i) => i.id === subtotalId && i.itemType === 'SUBTOTAL'
@@ -115,11 +185,17 @@ function sumSectionForSubtotal(
   for (let j = startIdx; j < targetIdx; j++) {
     const item = items[j];
     if (isPricedItem(item)) {
-      sum += calculateItemTotal({
+      const raw = calculateItemTotal({
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         discountPct: item.discountPct,
       });
+      if (ctx) {
+        const cur = effectiveItemCurrency(item, items, ctx.quoteCurrency);
+        sum += convertToQuoteCurrency(raw, cur, ctx);
+      } else {
+        sum += raw;
+      }
     }
   }
   return sum;
@@ -141,7 +217,8 @@ function sumSectionForSubtotal(
 export function calculateQuoteTotals(
   items: QuoteItem[],
   overallDiscountPct: number,
-  discountScopeSubtotalId?: string | null
+  discountScopeSubtotalId?: string | null,
+  ctx?: QuoteCurrencyContext
 ): QuoteTotals {
   const productItems = items.filter(isPricedItem);
 
@@ -155,19 +232,27 @@ export function calculateQuoteTotals(
   }
 
   // Subtotal is always the full sum, regardless of scope — scoping only
-  // changes which portion gets the discount applied.
+  // changes which portion gets the discount applied. When a currency
+  // context is supplied, each item is converted to the quote's currency
+  // before summing (a TRY-priced SET in an EUR quote contributes its
+  // EUR-equivalent at the base, non-protected rate).
   const subtotal = productItems.reduce((sum, item) => {
-    return sum + calculateItemTotal({
+    const raw = calculateItemTotal({
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       discountPct: item.discountPct,
     });
+    if (ctx) {
+      const cur = effectiveItemCurrency(item, items, ctx.quoteCurrency);
+      return sum + convertToQuoteCurrency(raw, cur, ctx);
+    }
+    return sum + raw;
   }, 0);
 
   // Determine the base that the discount percent multiplies.
   let discountBase = subtotal;
   if (discountScopeSubtotalId) {
-    const sectionSum = sumSectionForSubtotal(items, discountScopeSubtotalId);
+    const sectionSum = sumSectionForSubtotal(items, discountScopeSubtotalId, ctx);
     if (sectionSum !== null) {
       discountBase = sectionSum;
     }
@@ -228,17 +313,46 @@ export interface QuoteProfitSummary {
 
 export function calculateQuoteProfitSummary(
   items: Array<{
+    id?: string;
     totalPrice: number;
     costPrice?: number | null;
     quantity: number;
     itemType: string;
     parentItemId?: string | null;
     priceLabel?: string | null;
+    currency?: string | null;
   }>,
-  overallDiscountPct: number = 0
+  overallDiscountPct: number = 0,
+  ctx?: QuoteCurrencyContext
 ): QuoteProfitSummary {
   let itemRevenue = 0;
   let totalCost = 0;
+
+  // Pre-resolve each item's effective currency once so children of a
+  // mixed-currency SET find their parent's currency in O(1) inside the
+  // loop. Without a ctx this map stays empty and everything flows
+  // through unchanged (legacy single-currency path).
+  const currencyById = new Map<string, string>();
+  if (ctx) {
+    const parentCurrency = new Map<string, string>();
+    for (const it of items) {
+      if (!it.parentItemId && it.id && it.currency) {
+        parentCurrency.set(it.id, it.currency);
+      }
+    }
+    for (const it of items) {
+      if (!it.id) continue;
+      const own = it.currency;
+      const parentCur = it.parentItemId ? parentCurrency.get(it.parentItemId) : undefined;
+      currencyById.set(it.id, own || parentCur || ctx.quoteCurrency);
+    }
+  }
+
+  const convert = (amount: number, id: string | undefined): number => {
+    if (!ctx || !id) return amount;
+    const cur = currencyById.get(id) ?? ctx.quoteCurrency;
+    return convertToQuoteCurrency(amount, cur, ctx);
+  };
 
   for (const item of items) {
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
@@ -248,12 +362,13 @@ export function calculateQuoteProfitSummary(
       if (item.priceLabel) continue;
       // Revenue: only top-level items (SET parent totalPrice includes children)
       if (!item.parentItemId) {
-        itemRevenue += item.totalPrice;
+        itemRevenue += convert(item.totalPrice, item.id);
       }
       // Cost: all items except SET parents (sub-items carry the actual costs)
       const isSetParent = item.itemType === 'SET' && !item.parentItemId;
       if (!isSetParent) {
-        totalCost += (item.costPrice || 0) * item.quantity;
+        const rawCost = (item.costPrice || 0) * item.quantity;
+        totalCost += convert(rawCost, item.id);
       }
     }
   }
@@ -284,7 +399,13 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
 
   const quote = await db.quote.findUnique({
     where: { id: quoteId },
-    select: { discountPct: true, discountScopeSubtotalId: true },
+    select: {
+      discountPct: true,
+      discountScopeSubtotalId: true,
+      currency: true,
+      exchangeRate: true,
+      protectionPct: true,
+    },
   });
 
   const quoteItems = items
@@ -300,6 +421,8 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
       listPrice: Number(item.listPrice),
       katsayi: Number(item.katsayi),
       priceLabel: item.priceLabel,
+      currency: item.currency ?? null,
+      parentItemId: item.parentItemId ?? null,
     }));
 
   // Auto-heal a dangling discount scope: if the referenced id is no
@@ -313,10 +436,28 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
     );
   const resolvedScopeId = scopeValid ? rawScopeId : null;
 
+  // Build a currency context only when the quote actually contains a
+  // SET with a non-null currency override. Avoids introducing any
+  // numerical drift for the 100% of existing quotes that are
+  // single-currency — they take the ctx=undefined path through the
+  // calculation and sum identically to before.
+  const hasMixedCurrency = quoteItems.some(
+    (i) => i.currency && i.currency !== quote?.currency
+  );
+  const protectionPct = Number(quote?.protectionPct || 0);
+  const protectedRate = Number(quote?.exchangeRate || 1);
+  const baseForeignRate = protectionPct > 0
+    ? protectedRate / (1 + protectionPct / 100)
+    : protectedRate;
+  const ctx: QuoteCurrencyContext | undefined = hasMixedCurrency && quote
+    ? { quoteCurrency: quote.currency, baseForeignRate }
+    : undefined;
+
   const totals = calculateQuoteTotals(
     quoteItems,
     Number(quote?.discountPct || 0),
-    resolvedScopeId
+    resolvedScopeId,
+    ctx
   );
 
   await db.quote.update({

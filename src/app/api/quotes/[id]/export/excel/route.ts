@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { getExcelService, QuoteDataForExcel, QuoteItemForExcel, CompanyInfo } from '@/lib/excel/excel-service';
 import { buildQuoteExportFilename } from '@/lib/filename';
+import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -82,6 +83,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Format date
     const formatDate = (date: Date) => date.toLocaleDateString('tr-TR');
 
+    // Build currency context when the quote has at least one SET with
+    // a non-null currency override — otherwise every item is already in
+    // the quote's currency and subtotal math stays identical.
+    const hasMixedCurrency = quote.items.some(
+      (i) => i.currency && i.currency !== quote.currency
+    );
+    let xlsxCtx: QuoteCurrencyContext | undefined;
+    if (hasMixedCurrency) {
+      const protectionPct = Number(quote.protectionPct || 0);
+      const protectedRate = Number(quote.exchangeRate || 1);
+      const baseForeignRate = protectionPct > 0
+        ? protectedRate / (1 + protectionPct / 100)
+        : protectedRate;
+      xlsxCtx = { quoteCurrency: quote.currency, baseForeignRate };
+    }
+
     // Map items to customer-facing interface (no internal columns)
     // Filter out sub-rows (parentItemId != null) — they are internal cost tracking only
     const excelItems: QuoteItemForExcel[] = quote.items
@@ -94,6 +111,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return { itemType, description };
         }
 
+        const rawTotal = Number(item.totalPrice);
+        let totalPriceInQuoteCurrency: number | undefined;
+        if (xlsxCtx && item.currency && item.currency !== xlsxCtx.quoteCurrency) {
+          totalPriceInQuoteCurrency = convertToQuoteCurrency(rawTotal, item.currency, xlsxCtx);
+        }
+
         // PRODUCT, CUSTOM, SET - include quantity, unit, prices, katsayı and list price
         return {
           itemType,
@@ -101,10 +124,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           quantity: Number(item.quantity),
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
-          totalPrice: Number(item.totalPrice),
+          totalPrice: rawTotal,
           katsayi: Number(item.katsayi),
           listPrice: Number(item.listPrice),
           priceLabel: item.priceLabel,
+          currency: item.currency ?? null,
+          totalPriceInQuoteCurrency,
         };
       });
 

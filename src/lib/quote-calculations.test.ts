@@ -432,4 +432,110 @@ describe('Quote Calculations', () => {
       expect(result.overallMarginPct).toBe(0);
     });
   });
+
+  describe('Mixed-currency SETs (set currency)', () => {
+    // All tests here use the same quote setup: EUR quote, base EUR/TRY
+    // rate of 50 (protected rate 52.5 at 5% protection). A TRY-priced
+    // SET therefore contributes TRY/50 = EUR to the grand total, with
+    // NO protection uplift applied to that contribution.
+    const ctx = { quoteCurrency: 'EUR', baseForeignRate: 50 };
+
+    it('TRY set in EUR quote converts at base rate (no protection)', () => {
+      const items: QuoteItem[] = [
+        // EUR product: 1 × 400 = 400 EUR
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 20 },
+        // TRY set: 1 × 5000 TRY = 100 EUR at rate 50
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
+      ];
+      const result = calculateQuoteTotals(items, 0, null, ctx);
+      // subtotal = 400 EUR + 100 EUR (converted from 5000 TRY) = 500
+      expect(result.subtotal).toBe(500);
+      expect(result.grandTotal).toBe(500);
+    });
+
+    it('set matching quote currency is NOT converted', () => {
+      const items: QuoteItem[] = [
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 20 },
+        // EUR set (matches quote): stays at face value
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 200, discountPct: 0, vatRate: 20, currency: 'EUR' },
+      ];
+      const result = calculateQuoteTotals(items, 0, null, ctx);
+      expect(result.subtotal).toBe(600);
+    });
+
+    it('null currency inherits quote currency (no conversion)', () => {
+      const items: QuoteItem[] = [
+        // Legacy set with no override — treated as EUR
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 300, discountPct: 0, vatRate: 20 },
+      ];
+      const result = calculateQuoteTotals(items, 0, null, ctx);
+      expect(result.subtotal).toBe(300);
+    });
+
+    it('overall discount applies on the converted subtotal', () => {
+      const items: QuoteItem[] = [
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 20 },
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
+      ];
+      const result = calculateQuoteTotals(items, 10, null, ctx);
+      // Converted subtotal = 500 EUR, 10% discount = 50 EUR, net = 450 EUR
+      expect(result.subtotal).toBe(500);
+      expect(result.discountTotal).toBe(50);
+      expect(result.grandTotal).toBe(450);
+    });
+
+    it('scoped discount on a section containing a TRY set uses converted section sum', () => {
+      const items: QuoteItem[] = [
+        // Section A: 400 EUR product + 5000 TRY set = 500 EUR after convert
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 20 },
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 1, unitPrice: 0, discountPct: 0, vatRate: 0 },
+        // Section B: 100 EUR product
+        { id: 'p2', itemType: 'PRODUCT', quantity: 1, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 1, unitPrice: 0, discountPct: 0, vatRate: 0 },
+      ];
+      // 20% scoped on section A: base = 500 EUR, discount = 100 EUR
+      const result = calculateQuoteTotals(items, 20, 'sub-a', ctx);
+      expect(result.subtotal).toBe(600);
+      expect(result.discountTotal).toBe(100);
+      expect(result.grandTotal).toBe(500);
+    });
+
+    it('TRY-quote baseline: ctx with baseForeignRate=1 behaves as identity', () => {
+      const tryCtx = { quoteCurrency: 'TRY', baseForeignRate: 1 };
+      const items: QuoteItem[] = [
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 20 },
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 0, vatRate: 20, currency: 'TRY' },
+      ];
+      const result = calculateQuoteTotals(items, 0, null, tryCtx);
+      expect(result.subtotal).toBe(1500);
+    });
+
+    it('legacy single-currency path: no ctx argument behaves unchanged', () => {
+      const items: QuoteItem[] = [
+        // `currency` on the item is ignored without ctx — older callers
+        // don't know about mixed currency, and their totals must not
+        // suddenly shift.
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
+      ];
+      const result = calculateQuoteTotals(items, 0);
+      expect(result.subtotal).toBe(5000);
+    });
+
+    it('profit summary: TRY set children have their cost converted to quote currency', () => {
+      // 100 EUR revenue + 5000 TRY set revenue (=100 EUR at rate 50)
+      // Costs: 60 EUR product + 2500 TRY child of the set (=50 EUR converted)
+      const items = [
+        { id: 'p1', totalPrice: 100, costPrice: 60, quantity: 1, itemType: 'PRODUCT', parentItemId: null, currency: null },
+        { id: 'set1', totalPrice: 5000, costPrice: null, quantity: 1, itemType: 'SET', parentItemId: null, currency: 'TRY' },
+        { id: 'child1', totalPrice: 2500, costPrice: 2500, quantity: 1, itemType: 'PRODUCT', parentItemId: 'set1', currency: null },
+      ];
+      const result = calculateQuoteProfitSummary(items, 0, ctx);
+      // Revenue: 100 + (5000/50) = 200 EUR
+      // Cost: 60 + (2500/50) = 110 EUR (child inherits parent's TRY currency)
+      expect(result.totalRevenue).toBe(200);
+      expect(result.totalCost).toBe(110);
+      expect(result.totalProfit).toBe(90);
+    });
+  });
 });

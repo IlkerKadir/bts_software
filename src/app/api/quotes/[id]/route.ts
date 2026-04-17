@@ -93,23 +93,37 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     let profitSummary = null;
     if (user.role.canViewCosts) {
       const { calculateQuoteProfitSummary } = await import('@/lib/quote-calculations');
-      const raw = calculateQuoteProfitSummary(
-        quote.items.map(item => {
-          // Include ek maliyet delta in effective cost price for profit calc
-          const baseCost = item.costPrice != null ? Number(item.costPrice) : null;
-          const delta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
-          const effectiveCost = delta > 0 ? (baseCost ?? 0) + delta : baseCost;
-          return {
-            totalPrice: Number(item.totalPrice),
-            costPrice: effectiveCost,
-            quantity: Number(item.quantity),
-            itemType: item.itemType,
-            parentItemId: item.parentItemId,
-            priceLabel: item.priceLabel,
-          };
-        }),
-        Number(quote.discountPct) || 0
+      const mapped = quote.items.map(item => {
+        // Include ek maliyet delta in effective cost price for profit calc
+        const baseCost = item.costPrice != null ? Number(item.costPrice) : null;
+        const delta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+        const effectiveCost = delta > 0 ? (baseCost ?? 0) + delta : baseCost;
+        return {
+          id: item.id,
+          totalPrice: Number(item.totalPrice),
+          costPrice: effectiveCost,
+          quantity: Number(item.quantity),
+          itemType: item.itemType,
+          parentItemId: item.parentItemId,
+          priceLabel: item.priceLabel,
+          currency: item.currency ?? null,
+        };
+      });
+      // Only build a currency ctx when the quote actually has a set
+      // with a non-null currency override. Pure single-currency quotes
+      // take the identity path inside calculateQuoteProfitSummary.
+      const hasMixedCurrency = mapped.some(
+        (i) => i.currency && i.currency !== quote.currency
       );
+      const protectionPct = Number(quote.protectionPct || 0);
+      const protectedRate = Number(quote.exchangeRate || 1);
+      const baseForeignRate = protectionPct > 0
+        ? protectedRate / (1 + protectionPct / 100)
+        : protectedRate;
+      const ctx = hasMixedCurrency
+        ? { quoteCurrency: quote.currency, baseForeignRate }
+        : undefined;
+      const raw = calculateQuoteProfitSummary(mapped, Number(quote.discountPct) || 0, ctx);
       profitSummary = {
         totalCost: raw.totalCost,
         totalProfit: raw.totalProfit,
@@ -225,6 +239,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       where: { id },
       data: updateData,
     });
+
+    // If the quote's currency just changed, clear any SET currency
+    // overrides that are now invalid — a SET can only carry 'TRY' or
+    // the quote's own currency. Silently resetting to null (= inherit
+    // the new quote currency) is safer than erroring the save, and it
+    // matches the editor UI which clamps the dropdown to the new
+    // options on refresh.
+    if (body.currency !== undefined && body.currency !== existingQuote.currency) {
+      await db.quoteItem.updateMany({
+        where: {
+          quoteId: id,
+          itemType: 'SET',
+          parentItemId: null,
+          currency: { not: null, notIn: ['TRY', body.currency] },
+        },
+        data: { currency: null },
+      });
+    }
 
     // Always recalculate totals to keep them in sync
     await recalculateAndPersistQuoteTotals(id);

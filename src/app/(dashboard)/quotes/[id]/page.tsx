@@ -77,6 +77,7 @@ interface QuoteItem {
   isManualPrice?: boolean;
   costPrice?: number | null;
   ekMaliyetDelta?: number | null;
+  currency?: string | null;
   product?: {
     minKatsayi?: number | string | null;
     maxKatsayi?: number | string | null;
@@ -264,9 +265,13 @@ export default function QuoteDetailPage({ params }: PageProps) {
   // ---------------------------------------------------------------------------
 
   const formatPrice = useCallback(
-    (price: number | string | { toNumber?: () => number } | null | undefined) => {
+    (
+      price: number | string | { toNumber?: () => number } | null | undefined,
+      overrideCurrency?: string
+    ) => {
       const numPrice = Number(price) || 0;
-      const symbol = quote ? (currencySymbols[quote.currency] || quote.currency) : '€';
+      const cur = overrideCurrency ?? (quote?.currency ?? 'EUR');
+      const symbol = currencySymbols[cur] || cur;
       return `${symbol}${numPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     },
     [quote],
@@ -280,12 +285,17 @@ export default function QuoteDetailPage({ params }: PageProps) {
     });
   };
 
-  // Build POZ NO mapping: sequential for PRODUCT/CUSTOM/SET
+  // Build POZ NO mapping: sequential for top-level PRODUCT/CUSTOM/SET
+  // only. Sub-rows (children of a SET) are not numbered — their
+  // contribution is rolled into the SET parent's line, same rule as
+  // the PDF/editor. Without this filter children would push the POZ
+  // counter and make top-level items look like they skip numbers.
   const pozMap = useMemo(() => {
     if (!quote) return new Map<string, number>();
     const map = new Map<string, number>();
     let counter = 1;
     for (const item of quote.items) {
+      if (item.parentItemId) continue;
       if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
         map.set(item.id, counter);
         counter++;
@@ -294,8 +304,67 @@ export default function QuoteDetailPage({ params }: PageProps) {
     return map;
   }, [quote]);
 
+  // Map each sub-item to its parent SET's currency override, so a
+  // child of a TRY-priced SET in an EUR quote renders with its TRY
+  // unitPrice/totalPrice instead of being converted. Top-level rows
+  // continue to render in the quote's currency (via the existing
+  // `convertRowTotalToQuote` helper).
+  const parentSetCurrencyById = useMemo(() => {
+    if (!quote) return new Map<string, string>();
+    const map = new Map<string, string>();
+    for (const it of quote.items) {
+      if (it.itemType === 'SET' && !it.parentItemId && it.currency) {
+        map.set(it.id, it.currency);
+      }
+    }
+    return map;
+  }, [quote]);
+
+  // Group children by their parent SET so the rendering loop can emit
+  // them directly under the parent row regardless of their raw
+  // `sortOrder`. Without this, a child with sortOrder=5 and a parent
+  // with sortOrder=10 ended up visually above an unrelated row
+  // between them. Mirrors the editor's subRowsByParent behavior.
+  const subRowsByParent = useMemo(() => {
+    if (!quote) return new Map<string, QuoteItem[]>();
+    const map = new Map<string, QuoteItem[]>();
+    for (const it of quote.items) {
+      if (!it.parentItemId) continue;
+      const list = map.get(it.parentItemId) ?? [];
+      list.push(it);
+      map.set(it.parentItemId, list);
+    }
+    // Keep each child group internally sorted by its own sortOrder.
+    for (const list of map.values()) {
+      list.sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+    }
+    return map;
+  }, [quote]);
+
   // Precompute the section sum ending at each SUBTOTAL row. Price-labeled
   // items contribute 0, matching the PDF export logic.
+  // Base (non-protected) foreign/TRY rate, used to convert any
+  // TRY-priced SET into the quote's currency for every view on the
+  // detail page. Collapses to identity for TRY quotes and for quotes
+  // with no mixed-currency SETs — legacy behavior preserved.
+  const baseForeignRate = useMemo(() => {
+    if (!quote || quote.currency === 'TRY') return 1;
+    const r = Number(quote.exchangeRate) || 1;
+    const p = Number(quote.protectionPct) || 0;
+    return p > 0 ? r / (1 + p / 100) : r;
+  }, [quote]);
+
+  const convertRowTotalToQuote = useCallback(
+    (item: QuoteItem, amount: number): number => {
+      if (!quote) return amount;
+      if (item.currency === 'TRY' && quote.currency !== 'TRY' && baseForeignRate > 0) {
+        return amount / baseForeignRate;
+      }
+      return amount;
+    },
+    [quote, baseForeignRate]
+  );
+
   const subtotalSumMap = useMemo(() => {
     if (!quote) return new Map<string, number>();
     const map = new Map<string, number>();
@@ -307,12 +376,18 @@ export default function QuoteDetailPage({ params }: PageProps) {
         continue;
       }
       if (item.priceLabel) continue;
+      // Sub-rows are already rolled into the SET parent's totalPrice —
+      // counting them here would double their contribution AND treat
+      // their native-currency numbers as quote currency (children
+      // have no own `currency` field so the converter passes them
+      // through). Skip them entirely.
+      if (item.parentItemId) continue;
       if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
-        running += Number(item.totalPrice);
+        running += convertRowTotalToQuote(item, Number(item.totalPrice));
       }
     }
     return map;
-  }, [quote]);
+  }, [quote, convertRowTotalToQuote]);
 
   // Summary calculations
   const summary = useMemo(() => {
@@ -816,9 +891,12 @@ export default function QuoteDetailPage({ params }: PageProps) {
             isManualPrice: item.isManualPrice,
             costPrice: item.costPrice != null ? Number(item.costPrice) : null,
             ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
+            currency: item.currency ?? null,
           }))}
           discountPct={Number(quote.discountPct) || 0}
           currency={quote.currency}
+          exchangeRate={Number(quote.exchangeRate) || 1}
+          protectionPct={Number(quote.protectionPct) || 0}
           canViewCosts={permissions.canViewCosts}
         />
       )}
@@ -854,7 +932,15 @@ export default function QuoteDetailPage({ params }: PageProps) {
               </tr>
             </thead>
             <tbody>
-              {quote.items.map((item) => {
+              {(() => {
+                // Render top-level items in sortOrder; after each SET
+                // parent, emit its children immediately below — never
+                // rely on a child's raw sortOrder for visual position,
+                // otherwise a stray parentItemId pointer would land
+                // the child between unrelated rows (which is exactly
+                // what the client reported in the view).
+                const out: React.ReactNode[] = [];
+                const renderRow = (item: typeof quote.items[number]) => {
                 // HEADER row
                 if (item.itemType === 'HEADER') {
                   return (
@@ -908,8 +994,21 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   );
                 }
 
-                // PRODUCT / CUSTOM rows
+                // PRODUCT / CUSTOM / SET rows
                 const pozNo = pozMap.get(item.id);
+                const isSubRow = !!item.parentItemId;
+                // Sub-rows render in their parent SET's currency (no
+                // conversion) — matches the editor and the PDF. Top
+                // level rows go through the convert helper so a
+                // TRY-SET line shows as e.g. €70,13 instead of its
+                // raw ₺4.000,00 face value.
+                const rowCurrency = isSubRow
+                  ? (parentSetCurrencyById.get(item.parentItemId!) ?? quote.currency)
+                  : quote.currency;
+                const formatRowPrice = (amount: number) =>
+                  isSubRow
+                    ? formatPrice(amount, rowCurrency)
+                    : formatPrice(convertRowTotalToQuote(item, amount));
 
                 // Katsayi range check
                 const k = Number(item.katsayi);
@@ -928,20 +1027,33 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     className={cn(
                       'border-b border-accent-200 hover:bg-accent-50 transition-colors',
                       kOutOfRange && 'bg-amber-50',
+                      isSubRow && 'bg-blue-50/30 text-accent-500',
                     )}
                   >
                     <td className="px-3 py-2.5 text-center tabular-nums text-primary-500 font-medium">
                       {pozNo ?? ''}
                     </td>
                     <td className="px-3 py-2.5">
-                      <div>
-                        {item.code && (
-                          <span className="font-mono text-xs text-primary-500 mr-2">{item.code}</span>
+                      <div className="flex items-start gap-1">
+                        {isSubRow && (
+                          <span className="text-accent-400 mr-1 leading-5" aria-hidden>↳</span>
                         )}
-                        <span className="text-sm text-primary-900">{item.description}</span>
-                        {item.brand && (
-                          <span className="text-xs text-primary-400 ml-2">({item.brand})</span>
-                        )}
+                        <div>
+                          {item.code && (
+                            <span className="font-mono text-xs text-primary-500 mr-2">{item.code}</span>
+                          )}
+                          <span
+                            className={cn(
+                              'text-sm',
+                              isSubRow ? 'text-accent-600' : 'text-primary-900'
+                            )}
+                          >
+                            {item.description}
+                          </span>
+                          {item.brand && (
+                            <span className="text-xs text-primary-400 ml-2">({item.brand})</span>
+                          )}
+                        </div>
                       </div>
                       {item.notes && (
                         <p className="text-xs text-primary-500 mt-0.5 italic">{item.notes}</p>
@@ -955,33 +1067,72 @@ export default function QuoteDetailPage({ params }: PageProps) {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-primary-800">
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums',
+                        isSubRow ? 'text-accent-500' : 'text-primary-800'
+                      )}
+                    >
                       {Number(item.quantity)}
                     </td>
-                    <td className="px-3 py-2.5 text-center text-primary-600 text-xs">
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-center text-xs',
+                        isSubRow ? 'text-accent-500' : 'text-primary-600'
+                      )}
+                    >
                       {item.unit}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-primary-800">
-                      {formatPrice(Number(item.unitPrice))}
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums',
+                        isSubRow ? 'text-accent-500' : 'text-primary-800'
+                      )}
+                    >
+                      {formatRowPrice(Number(item.unitPrice))}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium text-primary-900">
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums font-medium',
+                        isSubRow ? 'text-accent-500' : 'text-primary-900'
+                      )}
+                    >
                       {Number(item.discountPct) > 0 ? (
                         <div className="flex flex-col items-end">
                           <span className="text-xs text-accent-400 line-through">
-                            {formatPrice(Number(item.quantity) * Number(item.unitPrice))}
+                            {formatRowPrice(Number(item.quantity) * Number(item.unitPrice))}
                           </span>
-                          <span className="text-green-700">
-                            {formatPrice(Number(item.totalPrice))}
+                          <span className={isSubRow ? '' : 'text-green-700'}>
+                            {formatRowPrice(Number(item.totalPrice))}
                             <span className="ml-1 text-xs text-red-500 font-normal">(-{Number(item.discountPct)}%)</span>
                           </span>
                         </div>
                       ) : (
-                        formatPrice(Number(item.totalPrice))
+                        formatRowPrice(Number(item.totalPrice))
                       )}
                     </td>
                   </tr>
                 );
-              })}
+                };
+                const topLevel = quote.items.filter((i) => !i.parentItemId);
+                const rendered = new Set<string>();
+                for (const item of topLevel) {
+                  out.push(renderRow(item));
+                  rendered.add(item.id);
+                  const subs = subRowsByParent.get(item.id) ?? [];
+                  for (const sub of subs) {
+                    out.push(renderRow(sub));
+                    rendered.add(sub.id);
+                  }
+                }
+                // Orphans: children whose parentItemId doesn't match any
+                // top-level row. Shouldn't happen with onDelete:Cascade
+                // but we still render them rather than silently drop.
+                for (const item of quote.items) {
+                  if (!rendered.has(item.id)) out.push(renderRow(item));
+                }
+                return out;
+              })()}
 
               {quote.items.length === 0 && (
                 <tr>

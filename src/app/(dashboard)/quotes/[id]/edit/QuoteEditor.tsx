@@ -196,6 +196,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     subRows: item.subRows?.map(mapApiItemToLocal) ?? undefined,
     customPozNo: (item.serviceMeta as Record<string, unknown> | null)?.customPozNo as string | null ?? null,
     ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
+    currency: item.currency ?? null,
   };
 }
 
@@ -577,6 +578,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           notes: item.notes || '',
           priceLabel: item.priceLabel ?? null,
           serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
+          // Per-SET currency override — only set on top-level SET rows.
+          // Sending it always (null for non-SET rows) lets the API reset
+          // stray values when a row changes type.
+          currency: item.itemType === 'SET' && !item.parentItemId
+            ? (item.currency ?? null)
+            : null,
         }));
 
         if (bulkItems.length > 0) {
@@ -1003,21 +1010,41 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       const productCurrency = product.currency;
       const isSubItem = !!subItemParentId;
 
-      // Currency conversion: convert product price to quote currency
+      // When the new row is a sub-item of a SET with a per-SET
+      // currency override, prices must be converted into the SET's
+      // currency instead of the quote's — otherwise a TRY-based SET in
+      // an EUR quote would end up with EUR-valued children rendered
+      // as TRY. For top-level rows we still target the quote currency.
+      let targetCurrency = quoteCurrency;
+      let isSetOverride = false;
+      if (isSubItem) {
+        const parentSet = items.find((i) => i.id === subItemParentId);
+        if (parentSet && parentSet.itemType === 'SET' && parentSet.currency) {
+          targetCurrency = parentSet.currency;
+          isSetOverride = true;
+        }
+      }
+
+      // Currency conversion: convert product price to target currency
       let convertedListPrice = product.listPrice;
       let convertedCostPrice = product.costPrice ?? null;
 
-      if (productCurrency !== quoteCurrency) {
-        // Convert product price to quote currency using raw TCMB rates.
-        // Then apply per-pair protection on top of the converted price.
-        const pk = [productCurrency, quoteCurrency].sort().join('/');
-        const protectionPct = headerFields.protectionMap[pk] ?? 0;
+      if (productCurrency !== targetCurrency) {
+        // Convert product price to target currency using raw TCMB rates.
+        // Then apply per-pair protection on top of the converted price —
+        // EXCEPT when the target is a SET's currency override. The
+        // whole point of a SET override is "no FX protection applies",
+        // and the grand-total math elsewhere divides by the
+        // non-protected rate; applying protection here would make the
+        // round-trip numbers disagree.
+        const pk = [productCurrency, targetCurrency].sort().join('/');
+        const protectionPct = isSetOverride ? 0 : (headerFields.protectionMap[pk] ?? 0);
 
-        // Find raw conversion rate: productCurrency → quoteCurrency
-        let rate = exchangeRates[productCurrency]?.[quoteCurrency];
+        // Find raw conversion rate: productCurrency → targetCurrency
+        let rate = exchangeRates[productCurrency]?.[targetCurrency];
         if (!rate) {
-          // Try reverse: quoteCurrency → productCurrency, then invert
-          const reverseRate = exchangeRates[quoteCurrency]?.[productCurrency];
+          // Try reverse: targetCurrency → productCurrency, then invert
+          const reverseRate = exchangeRates[targetCurrency]?.[productCurrency];
           if (reverseRate && reverseRate !== 0) {
             rate = 1 / reverseRate;
           }
@@ -1682,6 +1709,15 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       protectionMap: Record<string, number>,
       rateMatrix: Record<string, Record<string, number>>,
     ): QuoteItemData[] => {
+      // Pre-index top-level SETs with currency overrides so sub-rows
+      // can look up their target currency in O(1) during the map.
+      const setCurrencyByParentId = new Map<string, string>();
+      for (const it of items) {
+        if (it.itemType === 'SET' && !it.parentItemId && it.currency) {
+          setCurrencyByParentId.set(it.id, it.currency);
+        }
+      }
+
       let result = items.map((item) => {
         // Skip rows the rate-update pipeline cannot derive: structural,
         // SET parents (rolled up separately below), manual-priced, and
@@ -1690,13 +1726,22 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         // stay in sync by construction.
         if (!isRateSensitiveRow(item)) return item;
 
+        // Children of a mixed-currency SET target the SET's currency,
+        // not the quote's — matches handleAddProduct so a TRY-set child
+        // keeps its TRY prices through a rate refresh.
+        const setOverrideCurrency = item.parentItemId
+          ? setCurrencyByParentId.get(item.parentItemId)
+          : undefined;
+        const targetCurrency = setOverrideCurrency || quoteCurrency;
+        const isSetOverride = !!setOverrideCurrency;
+
         // Ek maliyet delta is preserved as-is through currency changes.
         // It was applied in the previous quote currency; user can re-apply to
         // re-distribute in the new currency if needed.
         const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
 
         // Same currency → use original product price directly (no conversion)
-        if (item.productCurrency === quoteCurrency) {
+        if (item.productCurrency === targetCurrency) {
           const newListPrice = item.productListPrice;
           const effectiveListPrice = newListPrice + ekDelta;
           const newUnitPrice = roundUnitPrice(effectiveListPrice * Number(item.katsayi));
@@ -1709,13 +1754,17 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           return { ...item, listPrice: newListPrice, unitPrice: newUnitPrice, totalPrice: newTotalPrice, costPrice: newCostPrice };
         }
 
-        // Different currency → convert using rate matrix + protection
-        const pk = [item.productCurrency, quoteCurrency].sort().join('/');
-        const protectionPct = protectionMap[pk] ?? 0;
+        // Different currency → convert using rate matrix + protection.
+        // Suppress protection for SET-override children so their list
+        // price round-trips through the grand-total conversion (which
+        // divides by the non-protected base rate — applying protection
+        // here would break the identity).
+        const pk = [item.productCurrency, targetCurrency].sort().join('/');
+        const protectionPct = isSetOverride ? 0 : (protectionMap[pk] ?? 0);
 
-        let rate = rateMatrix[item.productCurrency]?.[quoteCurrency];
+        let rate = rateMatrix[item.productCurrency]?.[targetCurrency];
         if (!rate) {
-          const reverseRate = rateMatrix[quoteCurrency]?.[item.productCurrency];
+          const reverseRate = rateMatrix[targetCurrency]?.[item.productCurrency];
           if (reverseRate && reverseRate !== 0) rate = 1 / reverseRate;
         }
         if (!rate) return item;
@@ -2203,6 +2252,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       <QuoteItemsTable
         items={topLevelItems}
         currency={headerFields.currency}
+        exchangeRate={headerFields.exchangeRate}
+        protectionPct={headerFields.protectionPct}
         discountPct={headerFields.discountPct}
         discountLabel={headerFields.discountLabel}
         onDiscountLabelChange={(v) => updateHeaderField('discountLabel', v)}

@@ -348,6 +348,14 @@ model QuoteItem {
    *  in the UI, but listPrice and costPrice remain untouched in the DB. */
   ekMaliyetDelta Decimal?     @db.Decimal(12, 2)
   serviceMeta   Json?
+  /**
+   * Optional per-SET currency. NULL means "inherit the quote's currency"
+   * (existing behavior). Only SET rows are allowed to carry a non-null
+   * value, and the value must be either 'TRY' or the quote's own
+   * currency — enforcement lives in the API validation layer. Children
+   * of a SET read this off their parent; they do not carry their own.
+   */
+  currency      String?
   parentItemId  String?
   parentItem    QuoteItem?  @relation("ItemSubRows", fields: [parentItemId], references: [id], onDelete: Cascade)
   subRows       QuoteItem[] @relation("ItemSubRows")

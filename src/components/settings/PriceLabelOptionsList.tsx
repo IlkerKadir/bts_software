@@ -119,7 +119,7 @@ export function PriceLabelOptionsList() {
             <div key={o.id} className="flex items-center gap-3 p-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-accent-900 uppercase">
+                  <span className="text-sm font-semibold text-accent-900">
                     {o.label}
                   </span>
                   {!o.isActive && (
@@ -263,13 +263,10 @@ function PriceLabelForm({ initialData, onClose, onSuccess }: FormProps) {
             <label className="block text-xs font-medium text-accent-700 mb-1">Etiket Metni</label>
             <Input
               value={label}
-              onChange={(e) => setLabel(e.target.value.toLocaleUpperCase('tr-TR'))}
-              placeholder="ÖRNEK: SEVKİYATA DAHİL"
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Örnek: Sevkiyata Dahil"
               required
             />
-            <p className="mt-1 text-[11px] text-accent-500">
-              Otomatik olarak büyük harfe çevrilir.
-            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
