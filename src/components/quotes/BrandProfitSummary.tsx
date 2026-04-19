@@ -12,7 +12,6 @@ import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
 
 interface BrandProfitSummaryProps {
   items: QuoteItemData[];
-  discountPct: number;
   currency: string;
   /** Quote.exchangeRate (protected TRY rate). Used together with
    *  `protectionPct` to recover the non-protected base rate so TRY
@@ -116,7 +115,6 @@ interface BrandKatsayiSummary {
 
 export function BrandProfitSummary({
   items,
-  discountPct,
   currency,
   exchangeRate = 1,
   protectionPct = 0,
@@ -175,6 +173,27 @@ export function BrandProfitSummary({
     return amount;
   };
 
+  // Map every priced top-level item-id → its section's discount %.
+  // Walks the full `items` array (not `filteredItems`) because section
+  // boundaries are defined by SUBTOTAL rows in the global order, not
+  // by the brand/category filter. Items sitting below the last
+  // SUBTOTAL (trailing orphans) fall into a pct=0 bucket.
+  const itemIdToSectionDiscountPct = useMemo(() => {
+    const map = new Map<string, number>();
+    const pending: string[] = [];
+    for (const it of items) {
+      if (it.itemType === 'SUBTOTAL') {
+        const pct = Number(it.sectionDiscountPct ?? 0);
+        for (const id of pending) map.set(id, pct);
+        pending.length = 0;
+        continue;
+      }
+      pending.push(it.id);
+    }
+    for (const id of pending) map.set(id, 0);
+    return map;
+  }, [items]);
+
   // ---- Manager mode computation (cost-based) ----
   const managerData = useMemo(() => {
     if (canViewCosts) {
@@ -202,7 +221,8 @@ export function BrandProfitSummary({
           const qty = Number(item.quantity) || 0;
           const up = Number(item.unitPrice) || 0;
           const disc = Number(item.discountPct) || 0;
-          const itemRevenue = qty * up * (1 - disc / 100);
+          const sectionPct = itemIdToSectionDiscountPct.get(item.id) ?? 0;
+          const itemRevenue = qty * up * (1 - disc / 100) * (1 - sectionPct / 100);
           grouped[brandKey].revenue += convertRowToQuoteCurrency(item, itemRevenue);
           grouped[brandKey].count += 1;
         }
@@ -216,11 +236,9 @@ export function BrandProfitSummary({
         }
       }
 
-      const discountMult = 1 - discountPct / 100;
-
       const brandList: BrandCostSummary[] = Object.entries(grouped)
         .map(([brand, data]) => {
-          const revenue = data.revenue * discountMult;
+          const revenue = data.revenue;
           const cost = data.cost;
           const profit = revenue - cost;
           const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
@@ -240,7 +258,7 @@ export function BrandProfitSummary({
       };
     }
     return null;
-  }, [filteredItems, discountPct, canViewCosts]);
+  }, [filteredItems, canViewCosts, itemIdToSectionDiscountPct, baseForeignRate, currency, setCurrencyByParentId]);
 
   // ---- Sales mode computation (katsayi-based) ----
   const salesData = useMemo(() => {
@@ -264,7 +282,8 @@ export function BrandProfitSummary({
         const up = Number(item.unitPrice) || 0;
         const disc = Number(item.discountPct) || 0;
         const k = Number(item.katsayi) || 1;
-        const rawRevenue = qty * up * (1 - disc / 100);
+        const sectionPct = itemIdToSectionDiscountPct.get(item.id) ?? 0;
+        const rawRevenue = qty * up * (1 - disc / 100) * (1 - sectionPct / 100);
         const itemRevenue = convertRowToQuoteCurrency(item, rawRevenue);
 
         grouped[brandKey].totalRevenue += itemRevenue;
@@ -276,11 +295,9 @@ export function BrandProfitSummary({
 
       }
 
-      const discountMult = 1 - discountPct / 100;
-
       const brandList: BrandKatsayiSummary[] = Object.entries(grouped)
         .map(([brand, data]) => {
-          const totalRevenue = data.totalRevenue * discountMult;
+          const totalRevenue = data.totalRevenue;
           const avgKatsayi =
             data.revenueWeightSum > 0 ? data.katsayiWeightedSum / data.revenueWeightSum : 1;
           const markupPct = (avgKatsayi - 1) * 100;
@@ -308,7 +325,8 @@ export function BrandProfitSummary({
         const up = Number(item.unitPrice) || 0;
         const disc = Number(item.discountPct) || 0;
         const k = Number(item.katsayi) || 1;
-        const rev = convertRowToQuoteCurrency(item, qty * up * (1 - disc / 100));
+        const sectionPct = itemIdToSectionDiscountPct.get(item.id) ?? 0;
+        const rev = convertRowToQuoteCurrency(item, qty * up * (1 - disc / 100) * (1 - sectionPct / 100));
         totalWeightedK += k * rev;
         totalWeightSum += rev;
       }
@@ -326,7 +344,7 @@ export function BrandProfitSummary({
       };
     }
     return null;
-  }, [filteredItems, discountPct, canViewCosts]);
+  }, [filteredItems, canViewCosts, itemIdToSectionDiscountPct, baseForeignRate, currency, setCurrencyByParentId]);
 
   const totalItems = canViewCosts ? managerData?.totals.itemCount ?? 0 : salesData?.totals.itemCount ?? 0;
   const brandCount = canViewCosts ? managerData?.brands.length ?? 0 : salesData?.brands.length ?? 0;

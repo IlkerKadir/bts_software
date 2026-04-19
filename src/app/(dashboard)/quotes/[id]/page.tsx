@@ -917,7 +917,6 @@ export default function QuoteDetailPage({ params }: PageProps) {
             ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
             currency: item.currency ?? null,
           }))}
-          discountPct={0}
           currency={quote.currency}
           exchangeRate={Number(quote.exchangeRate) || 1}
           protectionPct={Number(quote.protectionPct) || 0}

@@ -939,7 +939,6 @@ export function QuoteItemsTable({
       {/* ---- Brand profit/sales summary ---- */}
       <BrandProfitSummary
         items={filteredItems}
-        discountPct={0}
         currency={currency}
         exchangeRate={exchangeRate}
         protectionPct={protectionPct}
