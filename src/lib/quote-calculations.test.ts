@@ -147,12 +147,12 @@ describe('Quote Calculations', () => {
       expect(result.subtotal).toBe(200);
     });
 
-    it('applies overall discount percentage', () => {
+    it('discount comes from each SUBTOTAL row, not from the second argument', () => {
       const items: QuoteItem[] = [
-        { itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
       ];
-      const result = calculateQuoteTotals(items, 10); // 10% overall discount
-      // Subtotal: 1000, Discount: 100, After discount: 900
+      const result = calculateQuoteTotals(items, 999);
       expect(result.subtotal).toBe(1000);
       expect(result.discountTotal).toBe(100);
     });
@@ -167,9 +167,10 @@ describe('Quote Calculations', () => {
 
     it('calculates grand total as net-after-discount (no VAT added)', () => {
       const items: QuoteItem[] = [
-        { itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
       ];
-      const result = calculateQuoteTotals(items, 10);
+      const result = calculateQuoteTotals(items, 0);
       // Subtotal: 1000, Discount: 100, Grand = Net: 900
       expect(result.grandTotal).toBe(900);
     });
@@ -187,11 +188,12 @@ describe('Quote Calculations', () => {
 
     it('applies item-level discounts before overall discount (no VAT)', () => {
       const items: QuoteItem[] = [
-        { itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 10, vatRate: 20 },
+        { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 10, vatRate: 20 },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 5 },
       ];
-      const result = calculateQuoteTotals(items, 5);
+      const result = calculateQuoteTotals(items, 0);
       // Item total after 10% item discount: 900
-      // Subtotal: 900, Overall 5% discount: 45, Net/Grand: 855
+      // Subtotal: 900, Section 5% discount: 45, Net/Grand: 855
       expect(result.subtotal).toBe(900);
       expect(result.discountTotal).toBe(45);
       expect(result.vatTotal).toBe(0);
@@ -220,13 +222,14 @@ describe('Quote Calculations', () => {
 
     it('applies overall discount to SET items along with other items (no VAT)', () => {
       const items: QuoteItem[] = [
-        { itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 20 },
-        { itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 10, vatRate: 20 },
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 20 },
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 10, vatRate: 20 },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
       ];
-      const result = calculateQuoteTotals(items, 10); // 10% overall discount
+      const result = calculateQuoteTotals(items, 0); // 10% section discount
       // PRODUCT: 1*1000 = 1000, SET: 1*500*(1-0.10) = 450 => subtotal = 1450
       expect(result.subtotal).toBe(1450);
-      // Overall 10% discount: 145
+      // Section 10% discount: 145
       expect(result.discountTotal).toBe(145);
       // Net/Grand: 1305 (VAT skipped)
       expect(result.vatTotal).toBe(0);
@@ -243,91 +246,135 @@ describe('Quote Calculations', () => {
       expect(result.grandTotal).toBe(2000);
     });
 
-    // ─── Scoped discount (discountScopeSubtotalId) ───────────────────
-    describe('with scoped discount', () => {
-      // Two sections: A (sum 1000) + section-A SUBTOTAL + B (sum 500) +
-      // section-B SUBTOTAL. Used across the scoped-discount tests.
-      const twoSectionItems: QuoteItem[] = [
-        { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
-        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
-        { id: 'p2', itemType: 'PRODUCT', quantity: 5, unitPrice: 100, discountPct: 0, vatRate: 20 },
-        { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
-      ];
-
-      it('applies the discount only to the targeted section when scope is set', () => {
-        const result = calculateQuoteTotals(twoSectionItems, 10, 'sub-a');
-        // subtotal is always the full sum across all sections
-        expect(result.subtotal).toBe(1500);
-        // Discount applies only to section A (1000 × 10% = 100)
-        expect(result.discountTotal).toBe(100);
-        // Grand = 1500 - 100
-        expect(result.grandTotal).toBe(1400);
-      });
-
-      it('scopes to the second section correctly', () => {
-        const result = calculateQuoteTotals(twoSectionItems, 20, 'sub-b');
-        expect(result.subtotal).toBe(1500);
-        // Section B = 500, 20% = 100
-        expect(result.discountTotal).toBe(100);
-        expect(result.grandTotal).toBe(1400);
-      });
-
-      it('falls back to whole-quote discount when scope id is missing from the list', () => {
-        const result = calculateQuoteTotals(twoSectionItems, 10, 'does-not-exist');
-        // Falls through to legacy behavior — 10% of full 1500 = 150
-        expect(result.discountTotal).toBe(150);
-        expect(result.grandTotal).toBe(1350);
-      });
-
-      it('falls back to whole-quote when scope id points at a non-SUBTOTAL item', () => {
-        // 'p1' is a PRODUCT row, not a SUBTOTAL — must not be mistaken for a section target.
-        const result = calculateQuoteTotals(twoSectionItems, 10, 'p1');
-        expect(result.discountTotal).toBe(150);
-        expect(result.grandTotal).toBe(1350);
-      });
-
-      it('behaves identically to whole-quote when scope is null', () => {
-        const scoped = calculateQuoteTotals(twoSectionItems, 10, null);
-        const unscoped = calculateQuoteTotals(twoSectionItems, 10);
-        expect(scoped).toEqual(unscoped);
-      });
-
-      it('handles a scope that targets the first SUBTOTAL with no preceding SUBTOTAL', () => {
-        // First SUBTOTAL's section is items[0..targetIdx). Verified above as 'sub-a'.
-        const result = calculateQuoteTotals(twoSectionItems, 50, 'sub-a');
-        expect(result.discountTotal).toBe(500); // 50% of 1000
-      });
-
-      it('respects price-labeled items — scoped section excludes them from the discount base', () => {
+    // ─── Per-SUBTOTAL discounts (sectionDiscountPct) ─────────────
+    describe('with per-subtotal discounts', () => {
+      it('applies a single section discount: section net = gross × (1 - pct/100)', () => {
         const items: QuoteItem[] = [
-          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 20 },
-          { id: 'p2', itemType: 'PRODUCT', quantity: 1, unitPrice: 9999, discountPct: 0, vatRate: 0, priceLabel: 'TARAFINIZCA SAĞLANACAKTIR' },
-          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 5 },
         ];
-        const result = calculateQuoteTotals(items, 10, 'sub-a');
-        // Only p1 counts in the section (p2 is a label). 10% of 1000 = 100.
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.subtotal).toBe(1000);
+        expect(result.discountTotal).toBe(50);
+        expect(result.grandTotal).toBe(950);
+      });
+
+      it('applies different discounts to different sections independently', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 5 },
+          { id: 'p2', itemType: 'PRODUCT', quantity: 5, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.subtotal).toBe(1500);
+        expect(result.discountTotal).toBe(100);
+        expect(result.grandTotal).toBe(1400);
+      });
+
+      it('section with zero or null discount contributes gross to the grand total', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 0 },
+          { id: 'p2', itemType: 'PRODUCT', quantity: 5, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.discountTotal).toBe(0);
+        expect(result.grandTotal).toBe(1500);
+      });
+
+      it('price-labeled rows are excluded from the section discount base', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'p2', itemType: 'PRODUCT', quantity: 1, unitPrice: 9999, discountPct: 0, vatRate: 0, priceLabel: 'TARAFINIZCA SAĞLANACAKTIR' },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
         expect(result.subtotal).toBe(1000);
         expect(result.discountTotal).toBe(100);
         expect(result.grandTotal).toBe(900);
       });
 
-      it('respects item-level discounts within the scoped section', () => {
+      it('orphan priced items above the first SUBTOTAL are absorbed into the first section', () => {
         const items: QuoteItem[] = [
-          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 20, vatRate: 20 },
-          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 },
+          { id: 'orphan', itemType: 'PRODUCT', quantity: 1, unitPrice: 200, discountPct: 0, vatRate: 0 },
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
         ];
-        const result = calculateQuoteTotals(items, 10, 'sub-a');
-        // p1 after item discount: 10 × 100 × 0.8 = 800
-        // Section sum = 800, overall 10% discount = 80
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.subtotal).toBe(1200);
+        expect(result.discountTotal).toBe(120);
+        expect(result.grandTotal).toBe(1080);
+      });
+
+      it('priced items BELOW the last SUBTOTAL are orphans (NOT discounted)', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
+          { id: 'orphan', itemType: 'PRODUCT', quantity: 1, unitPrice: 500, discountPct: 0, vatRate: 0 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.subtotal).toBe(1500);
+        expect(result.discountTotal).toBe(100);
+        expect(result.grandTotal).toBe(1400);
+      });
+
+      it('quote with zero SUBTOTAL rows applies no discount (grand = subtotal)', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'p2', itemType: 'PRODUCT', quantity: 5, unitPrice: 100, discountPct: 0, vatRate: 0 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.subtotal).toBe(1500);
+        expect(result.discountTotal).toBe(0);
+        expect(result.grandTotal).toBe(1500);
+      });
+
+      it('item-level discount stacks with section discount (item first, then section)', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 20, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
         expect(result.subtotal).toBe(800);
         expect(result.discountTotal).toBe(80);
         expect(result.grandTotal).toBe(720);
       });
 
-      it('zero discount percent with a scope still reports zero discount', () => {
-        const result = calculateQuoteTotals(twoSectionItems, 0, 'sub-a');
-        expect(result.discountTotal).toBe(0);
-        expect(result.grandTotal).toBe(1500);
+      it('TRY set inside a EUR section applies section discount on the converted sum', () => {
+        const ctx = { quoteCurrency: 'EUR', baseForeignRate: 50 };
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 0 },
+          { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 0, currency: 'TRY' },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 20 },
+        ];
+        const result = calculateQuoteTotals(items, 0, ctx);
+        expect(result.subtotal).toBe(500);
+        expect(result.discountTotal).toBe(100);
+        expect(result.grandTotal).toBe(400);
+      });
+
+      it('empty section (SUBTOTAL with no items before it since the previous SUBTOTAL) computes 0 discount', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 10, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 5 },
+          { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 99 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.subtotal).toBe(1000);
+        expect(result.discountTotal).toBe(50);
+        expect(result.grandTotal).toBe(950);
+      });
+
+      it('rounding: section discount rounded to 2 decimals, consistent with grand total', () => {
+        const items: QuoteItem[] = [
+          { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 100, discountPct: 0, vatRate: 0 },
+          { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 33.33 },
+        ];
+        const result = calculateQuoteTotals(items, 0);
+        expect(result.discountTotal).toBe(33.33);
+        expect(result.grandTotal).toBe(66.67);
       });
     });
   });
@@ -472,33 +519,25 @@ describe('Quote Calculations', () => {
       expect(result.subtotal).toBe(300);
     });
 
-    it('overall discount applies on the converted subtotal', () => {
+    it('per-section discount applies on the converted subtotal', () => {
       const items: QuoteItem[] = [
-        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 20 },
-        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 0 },
+        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 0, currency: 'TRY' },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 10 },
       ];
-      const result = calculateQuoteTotals(items, 10, null, ctx);
-      // Converted subtotal = 500 EUR, 10% discount = 50 EUR, net = 450 EUR
+      const result = calculateQuoteTotals(items, 0, ctx);
       expect(result.subtotal).toBe(500);
       expect(result.discountTotal).toBe(50);
       expect(result.grandTotal).toBe(450);
     });
 
-    it('scoped discount on a section containing a TRY set uses converted section sum', () => {
+    it('legacy single-currency path (no ctx) still honors section discount', () => {
       const items: QuoteItem[] = [
-        // Section A: 400 EUR product + 5000 TRY set = 500 EUR after convert
-        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 400, discountPct: 0, vatRate: 20 },
-        { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
-        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 1, unitPrice: 0, discountPct: 0, vatRate: 0 },
-        // Section B: 100 EUR product
-        { id: 'p2', itemType: 'PRODUCT', quantity: 1, unitPrice: 100, discountPct: 0, vatRate: 20 },
-        { id: 'sub-b', itemType: 'SUBTOTAL', quantity: 1, unitPrice: 0, discountPct: 0, vatRate: 0 },
+        { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 0 },
+        { id: 'sub-a', itemType: 'SUBTOTAL', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0, sectionDiscountPct: 5 },
       ];
-      // 20% scoped on section A: base = 500 EUR, discount = 100 EUR
-      const result = calculateQuoteTotals(items, 20, 'sub-a', ctx);
-      expect(result.subtotal).toBe(600);
-      expect(result.discountTotal).toBe(100);
-      expect(result.grandTotal).toBe(500);
+      const result = calculateQuoteTotals(items, 0);
+      expect(result.grandTotal).toBe(950);
     });
 
     it('TRY-quote baseline: ctx with baseForeignRate=1 behaves as identity', () => {
