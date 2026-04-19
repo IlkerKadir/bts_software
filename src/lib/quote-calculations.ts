@@ -391,9 +391,8 @@ export function calculateQuoteProfitSummary(
 // --- Recalculate & Persist Quote Totals ---
 
 export async function recalculateAndPersistQuoteTotals(quoteId: string) {
-  // Items MUST come back in `sortOrder` — the scoped-discount section
-  // walk relies on positional order to find the slice between
-  // adjacent SUBTOTAL rows.
+  // Items MUST come back in `sortOrder` — the section walker relies on
+  // positional order.
   const items = await db.quoteItem.findMany({
     where: { quoteId },
     orderBy: { sortOrder: 'asc' },
@@ -402,8 +401,6 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
   const quote = await db.quote.findUnique({
     where: { id: quoteId },
     select: {
-      discountPct: true,
-      discountScopeSubtotalId: true,
       currency: true,
       exchangeRate: true,
       protectionPct: true,
@@ -411,7 +408,7 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
   });
 
   const quoteItems = items
-    .filter(item => !item.parentItemId)  // Exclude sub-rows to avoid double-counting
+    .filter(item => !item.parentItemId) // Exclude sub-rows to avoid double-counting
     .map(item => ({
       id: item.id,
       itemType: item.itemType as QuoteItem['itemType'],
@@ -425,24 +422,9 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
       priceLabel: item.priceLabel,
       currency: item.currency ?? null,
       parentItemId: item.parentItemId ?? null,
+      sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
     }));
 
-  // Auto-heal a dangling discount scope: if the referenced id is no
-  // longer a SUBTOTAL in this quote, treat the scope as cleared and
-  // persist the null so the UI doesn't keep rendering a ghost.
-  const rawScopeId = quote?.discountScopeSubtotalId ?? null;
-  const scopeValid =
-    !!rawScopeId &&
-    quoteItems.some(
-      (i) => i.id === rawScopeId && i.itemType === 'SUBTOTAL'
-    );
-  const resolvedScopeId = scopeValid ? rawScopeId : null;
-
-  // Build a currency context only when the quote actually contains a
-  // SET with a non-null currency override. Avoids introducing any
-  // numerical drift for the 100% of existing quotes that are
-  // single-currency — they take the ctx=undefined path through the
-  // calculation and sum identically to before.
   const hasMixedCurrency = quoteItems.some(
     (i) => i.currency && i.currency !== quote?.currency
   );
@@ -455,12 +437,7 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
     ? { quoteCurrency: quote.currency, baseForeignRate }
     : undefined;
 
-  const totals = calculateQuoteTotals(
-    quoteItems,
-    Number(quote?.discountPct || 0),
-    resolvedScopeId,
-    ctx
-  );
+  const totals = calculateQuoteTotals(quoteItems, 0, ctx);
 
   await db.quote.update({
     where: { id: quoteId },
@@ -469,13 +446,6 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
       discountTotal: totals.discountTotal,
       vatTotal: totals.vatTotal,
       grandTotal: totals.grandTotal,
-      // If the referenced SUBTOTAL disappeared since the last save,
-      // clear the dangling pointer here so subsequent reads get the
-      // auto-healed null instead of the stale cuid.
-      ...(rawScopeId && !scopeValid ? { discountScopeSubtotalId: null } : {}),
-      // Invalidate any cosmetic PDF override — structured data changed so the
-      // override would show stale prices. User must re-edit the PDF to get a
-      // version that matches the new totals.
       pdfOverrideHtml: null,
       pdfOverrideAt: null,
     },
