@@ -252,7 +252,6 @@ describe('Quote Validation Schemas', () => {
         exchangeRate: 35.5,
         protectionPct: 10,
         protectionMap: { brand1: 15, brand2: 20 },
-        discountPct: 5,
         validityDays: 30,
         notes: 'Some notes',
         language: 'TR',
@@ -332,27 +331,6 @@ describe('Quote Validation Schemas', () => {
 
     it('accepts protectionPct at 100', () => {
       const result = quoteUpdateSchema.safeParse({ protectionPct: 100 });
-      expect(result.success).toBe(true);
-    });
-
-    // discountPct validation
-    it('rejects discountPct below 0', () => {
-      const result = quoteUpdateSchema.safeParse({ discountPct: -1 });
-      expect(result.success).toBe(false);
-    });
-
-    it('rejects discountPct over 100', () => {
-      const result = quoteUpdateSchema.safeParse({ discountPct: 101 });
-      expect(result.success).toBe(false);
-    });
-
-    it('accepts discountPct at 0', () => {
-      const result = quoteUpdateSchema.safeParse({ discountPct: 0 });
-      expect(result.success).toBe(true);
-    });
-
-    it('accepts discountPct at 100', () => {
-      const result = quoteUpdateSchema.safeParse({ discountPct: 100 });
       expect(result.success).toBe(true);
     });
 

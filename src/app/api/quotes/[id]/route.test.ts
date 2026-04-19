@@ -150,19 +150,6 @@ describe('PUT /api/quotes/[id] - input validation', () => {
     expect(response.status).toBe(200);
   });
 
-  // discountPct validation
-  it('rejects discountPct below 0', async () => {
-    const request = createPutRequest({ discountPct: -1 });
-    const response = await PUT(request, { params: Promise.resolve({ id: 'quote1' }) });
-    expect(response.status).toBe(400);
-  });
-
-  it('rejects discountPct over 100', async () => {
-    const request = createPutRequest({ discountPct: 101 });
-    const response = await PUT(request, { params: Promise.resolve({ id: 'quote1' }) });
-    expect(response.status).toBe(400);
-  });
-
   // validityDays validation
   it('rejects validityDays of 0', async () => {
     const request = createPutRequest({ validityDays: 0 });
@@ -228,7 +215,6 @@ describe('PUT /api/quotes/[id] - input validation', () => {
       currency: 'USD',
       exchangeRate: 32.5,
       protectionPct: 10,
-      discountPct: 5,
       validityDays: 60,
       notes: 'Updated notes',
       language: 'EN',
@@ -246,7 +232,7 @@ describe('PUT /api/quotes/[id] - input validation', () => {
 
   // Return 400 with error details for validation failure
   it('returns error details on validation failure', async () => {
-    const request = createPutRequest({ exchangeRate: -5, discountPct: 200 });
+    const request = createPutRequest({ exchangeRate: -5 });
     const response = await PUT(request, { params: Promise.resolve({ id: 'quote1' }) });
     expect(response.status).toBe(400);
     const data = await response.json();

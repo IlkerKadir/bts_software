@@ -123,7 +123,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const ctx = hasMixedCurrency
         ? { quoteCurrency: quote.currency, baseForeignRate }
         : undefined;
-      const raw = calculateQuoteProfitSummary(mapped, Number(quote.discountPct) || 0, ctx);
+      const raw = calculateQuoteProfitSummary(mapped, 0, ctx);
       profitSummary = {
         totalCost: raw.totalCost,
         totalProfit: raw.totalProfit,
@@ -227,10 +227,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ? Prisma.JsonNull
         : (body.rateSnapshot as Prisma.InputJsonValue);
     }
-    if (body.discountPct !== undefined) updateData.discountPct = body.discountPct;
-    if (body.discountScopeSubtotalId !== undefined) {
-      updateData.discountScopeSubtotalId = body.discountScopeSubtotalId;
-    }
     if (body.validityDays !== undefined) updateData.validityDays = body.validityDays;
     if (body.notes !== undefined) updateData.notes = body.notes;
     if (body.language !== undefined) updateData.language = body.language;
@@ -277,7 +273,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Build structured diff for history: { field: { from, to } }
     const trackableFields = [
       'refNo', 'currency', 'subject', 'description', 'language',
-      'projectId', 'discountPct', 'discountScopeSubtotalId', 'exchangeRate',
+      'projectId', 'exchangeRate',
       'validityDays', 'protectionPct', 'protectionMap', 'notes',
     ] as const;
 
