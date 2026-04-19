@@ -29,6 +29,12 @@ export interface QuoteItem {
    *  by the mixed-currency conversion helpers to resolve a child's
    *  effective currency by walking up to its parent. */
   parentItemId?: string | null;
+  /**
+   * Per-section discount percentage (0–100). Only meaningful on
+   * SUBTOTAL rows; the API coerces it to null on any other row. Null
+   * or 0 → this section contributes its gross sum to the grand total.
+   */
+  sectionDiscountPct?: number | null;
 }
 
 /**
