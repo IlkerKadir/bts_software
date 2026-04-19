@@ -110,6 +110,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // SET parents have unitPrice = childrenTotal — starts at 0 until children are added
     const isSetParent = data.itemType === 'SET' && !data.parentItemId;
 
+    // Per-section discount % — only meaningful on SUBTOTAL rows. Any
+    // stray value on a non-SUBTOTAL row is silently coerced to null so
+    // the DB never holds orphan state.
+    const sectionDiscountPct = isSubtotal && data.sectionDiscountPct != null
+      ? data.sectionDiscountPct
+      : null;
+
     // For non-priced items (HEADER, NOTE, SUBTOTAL, GRAND_TOTAL),
     // zero out prices. For SET parents, start at 0 (price derived from
     // children). For manual-price items, accept the client unitPrice
@@ -181,6 +188,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         costPrice: data.costPrice ?? null,
         ekMaliyetDelta: data.ekMaliyetDelta ?? null,
         currency: itemCurrency,
+        sectionDiscountPct,
       },
       include: {
         product: {
@@ -270,6 +278,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         // round2 only, no tier-round (children are already rounded).
         const isSetParent = item.itemType === 'SET' && !item.parentItemId;
 
+        // Per-section discount % — only meaningful on SUBTOTAL rows. Any
+        // stray value on a non-SUBTOTAL row is silently coerced to null so
+        // the DB never holds orphan state.
+        const isSubtotalRow = item.itemType === 'SUBTOTAL';
+        const sectionDiscountPct = isSubtotalRow && item.sectionDiscountPct != null
+          ? item.sectionDiscountPct
+          : null;
+
         // Normalize the currency override. Undefined means "don't
         // touch" (PUT omits the field → keep existing DB value); null
         // means "clear back to quote currency"; a set value on a
@@ -344,6 +360,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             ekMaliyetDelta: item.ekMaliyetDelta !== undefined ? item.ekMaliyetDelta : undefined,
             serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
             ...(currencyUpdate === undefined ? {} : { currency: currencyUpdate }),
+            sectionDiscountPct,
           },
         });
       }
