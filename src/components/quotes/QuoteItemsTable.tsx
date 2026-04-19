@@ -18,6 +18,7 @@ import {
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
 import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { calculateSectionBreakdown } from '@/lib/quote-calculations';
 import { useSettings } from '@/components/settings/SettingsProvider';
 
 // ---------------------------------------------------------------------------
@@ -36,21 +37,11 @@ export interface QuoteItemsTableProps {
    *  the non-protected base rate for TRY-set → quote-currency
    *  conversion. Defaults to 0 (no protection). */
   protectionPct?: number;
-  discountPct: number;
-  discountLabel?: string;
-  onDiscountLabelChange?: (value: string) => void;
-  /** cuid of the SUBTOTAL row the discount should apply to, or null
-   *  for "apply to the whole quote". Controls both the summary math
-   *  at the bottom of the table and which section the discount line
-   *  shows under. */
-  discountScopeSubtotalId?: string | null;
-  onDiscountScopeChange?: (subtotalId: string | null) => void;
   canViewCosts: boolean;
   onItemUpdate: (itemId: string, updates: Partial<QuoteItemData>) => void;
   onItemDelete: (itemId: string) => void;
   onItemDuplicate: (itemId: string) => void;
   onReorder: (items: QuoteItemData[]) => void;
-  onDiscountPctChange: (value: number) => void;
   onAddProduct: () => void;
   onAddHeader: () => void;
   onAddNote: () => void;
@@ -123,17 +114,11 @@ export function QuoteItemsTable({
   currency,
   exchangeRate = 1,
   protectionPct = 0,
-  discountPct,
-  discountLabel: discountLabelProp = 'İskonto',
-  onDiscountLabelChange,
-  discountScopeSubtotalId = null,
-  onDiscountScopeChange,
   canViewCosts,
   onItemUpdate,
   onItemDelete,
   onItemDuplicate,
   onReorder,
-  onDiscountPctChange,
   onAddProduct,
   onAddHeader,
   onAddNote,
@@ -231,8 +216,6 @@ export function QuoteItemsTable({
     const isNearRightEdge = e.clientX >= rect.right - 8;
     e.currentTarget.style.cursor = isNearRightEdge ? 'col-resize' : '';
   }, []);
-
-  const discountLabel = discountLabelProp;
 
   // Column visibility with localStorage persistence
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(() => {
@@ -466,58 +449,6 @@ export function QuoteItemsTable({
     return count;
   }, [columnVisibility, canViewCosts]);
 
-  // Flat list of SUBTOTAL rows in document order. Used to populate
-  // the discount-scope selector and to auto-heal a stale scope id.
-  const subtotalRows = useMemo(
-    () =>
-      items
-        .filter((item) => item.itemType === 'SUBTOTAL')
-        .map((item, idx) => ({
-          id: item.id,
-          label: item.description?.trim() || `Ara Toplam ${idx + 1}`,
-        })),
-    [items]
-  );
-
-  // Auto-heal: if the saved scope points at a SUBTOTAL that no longer
-  // exists (deleted, converted, etc.), clear it client-side so the
-  // dropdown doesn't render a ghost option and the summary math falls
-  // back to "whole quote". The server also auto-heals on save.
-  useEffect(() => {
-    if (!discountScopeSubtotalId) return;
-    const stillExists = subtotalRows.some((r) => r.id === discountScopeSubtotalId);
-    if (!stillExists) {
-      onDiscountScopeChange?.(null);
-    }
-  }, [discountScopeSubtotalId, subtotalRows, onDiscountScopeChange]);
-
-  // Set of item ids that live inside the scoped SUBTOTAL's section
-  // (including the SUBTOTAL row itself). Used to gate the visual
-  // "crossed-out raw + green after-discount" rendering on each row so
-  // that items outside the scoped section show their raw prices — the
-  // actual discount is already reflected in the bottom-of-table
-  // summary. Returns `null` when no scope is active; callers then fall
-  // back to the legacy "apply visually to everyone" behavior.
-  const scopedItemIds = useMemo<Set<string> | null>(() => {
-    if (!discountScopeSubtotalId) return null;
-    const set = new Set<string>();
-    const targetIdx = items.findIndex(
-      (i) => i.id === discountScopeSubtotalId && i.itemType === 'SUBTOTAL'
-    );
-    if (targetIdx === -1) return set; // scope target missing — nobody gets the visual
-    // Section starts just after the previous SUBTOTAL (or at index 0).
-    let startIdx = 0;
-    for (let j = targetIdx - 1; j >= 0; j--) {
-      if (items[j].itemType === 'SUBTOTAL') {
-        startIdx = j + 1;
-        break;
-      }
-    }
-    for (let j = startIdx; j <= targetIdx; j++) {
-      set.add(items[j].id);
-    }
-    return set;
-  }, [items, discountScopeSubtotalId]);
 
   // Base (non-protected) TRY rate. When the quote is TRY, or when
   // neither exchangeRate nor protectionPct have meaningful values,
@@ -530,49 +461,45 @@ export function QuoteItemsTable({
     return p > 0 ? r / (1 + p / 100) : r;
   }, [currency, exchangeRate, protectionPct]);
 
-  // Convert a priced row's raw (quantity × unitPrice × (1 - disc/100))
-  // to the quote's currency. Only top-level SET rows with a TRY
-  // override in a non-TRY quote actually convert; everything else
-  // passes through.
-  const rowTotalInQuoteCurrency = useCallback(
-    (item: QuoteItemData): number => {
-      const qty = Number(item.quantity) || 0;
-      const up = Number(item.unitPrice) || 0;
-      const disc = Number(item.discountPct) || 0;
-      const raw = qty * up * (1 - disc / 100);
-      if (
-        item.itemType === 'SET' &&
-        !item.parentItemId &&
-        item.currency === 'TRY' &&
-        currency !== 'TRY' &&
-        baseForeignRate > 0
-      ) {
-        return raw / baseForeignRate;
-      }
-      return raw;
-    },
+  // Currency context — passed to calculateSectionBreakdown so TRY-priced
+  // SET rows are converted to the quote's currency before summing.
+  const ctx = useMemo(
+    () => ({ quoteCurrency: currency, baseForeignRate }),
     [currency, baseForeignRate]
   );
 
-  // Compute section subtotal values for each SUBTOTAL row
-  const subtotalMap = useMemo(() => {
-    const map = new Map<string, number>();
-    let sectionSum = 0;
+  const breakdown = useMemo(() => {
+    return calculateSectionBreakdown(
+      items.map((it) => ({
+        id: it.id,
+        itemType: it.itemType,
+        quantity: Number(it.quantity) || 0,
+        unitPrice: Number(it.unitPrice) || 0,
+        discountPct: Number(it.discountPct) || 0,
+        vatRate: 0,
+        priceLabel: it.priceLabel ?? null,
+        currency: it.currency ?? null,
+        parentItemId: it.parentItemId ?? null,
+        sectionDiscountPct: it.sectionDiscountPct != null ? Number(it.sectionDiscountPct) : null,
+      })),
+      ctx
+    );
+  }, [items, ctx]);
 
-    for (const item of items) {
-      if (item.itemType === 'SUBTOTAL') {
-        map.set(item.id, sectionSum);
-        sectionSum = 0; // reset for next section
-      } else if (
-        (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') &&
-        !item.parentItemId &&
-        !item.priceLabel
-      ) {
-        sectionSum += rowTotalInQuoteCurrency(item);
+  const subtotalMap = useMemo(() => {
+    const map = new Map<string, { sectionSum: number; discountPct: number; discountAmount: number; sectionNet: number }>();
+    for (const b of breakdown) {
+      if (b.subtotalId) {
+        map.set(b.subtotalId, {
+          sectionSum: b.sectionSum,
+          discountPct: b.discountPct,
+          discountAmount: b.discountAmount,
+          sectionNet: b.sectionNet,
+        });
       }
     }
     return map;
-  }, [items, rowTotalInQuoteCurrency]);
+  }, [breakdown]);
 
   // Label span for summary rows: spans from first col up to (but not including) Toplam Fiyat
   // New column order: Drag | Poz | [Marka,Model,Kod] | Aciklama | Miktar | [BirimFiyat, ToplamFiyat, Katsayi, ListeFiyati] | [Maliyet,Kar,Kar%] | PB | [Gecmis x8] | Delete
@@ -605,48 +532,17 @@ export function QuoteItemsTable({
     return count;
   }, [columnVisibility, canViewCosts]);
 
-  // Summary calculations – always uses full items array
   const summary = useMemo(() => {
-    let araTotal = 0;
+    const subtotal = breakdown.reduce((s, b) => s + b.sectionSum, 0);
+    const discountAmount = breakdown.reduce((s, b) => s + b.discountAmount, 0);
+    const grandTotal = breakdown.reduce((s, b) => s + b.sectionNet, 0);
+    return { subtotal, discountAmount, grandTotal };
+  }, [breakdown]);
+
+  // Profit/cost summary – kept separate from pricing summary so the
+  // discount rewrite doesn't touch cost logic.
+  const profitSummary = useMemo(() => {
     let totalCost = 0;
-
-    const hasSubtotals = items.some((item) => item.itemType === 'SUBTOTAL');
-
-    if (hasSubtotals) {
-      // Sum all section subtotals
-      for (const [, value] of subtotalMap) {
-        araTotal += value;
-      }
-      // Add any trailing items after the last SUBTOTAL
-      let lastSubtotalIdx = -1;
-      for (let i = items.length - 1; i >= 0; i--) {
-        if (items[i].itemType === 'SUBTOTAL') { lastSubtotalIdx = i; break; }
-      }
-      if (lastSubtotalIdx < items.length - 1) {
-        for (let i = lastSubtotalIdx + 1; i < items.length; i++) {
-          const item = items[i];
-          if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
-      if (item.priceLabel) continue;
-          if (item.parentItemId) continue;
-          araTotal += rowTotalInQuoteCurrency(item);
-        }
-      }
-    } else {
-      // Original logic: sum all priced items
-      for (const item of items) {
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
-      if (item.priceLabel) continue;
-        if (item.parentItemId) continue;
-        araTotal += rowTotalInQuoteCurrency(item);
-      }
-    }
-
-    // Cost calculation – walk every row (including children of
-    // mixed-currency SETs, which carry the actual cost). The SET
-    // parent's cost is ignored (its children carry the real costs).
-    // Children of a TRY-priced SET hold TRY costs, so their cost
-    // contribution is divided by the base rate to land in quote
-    // currency — matching calculateQuoteProfitSummary on the server.
     const setCurrencyByParentId = new Map<string, string>();
     for (const it of items) {
       if (it.itemType === 'SET' && !it.parentItemId && it.currency) {
@@ -656,13 +552,10 @@ export function QuoteItemsTable({
     for (const item of items) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
       if (item.priceLabel) continue;
-      // SET parent carries no cost of its own (children do).
       if (item.itemType === 'SET' && !item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
       const effectiveCost = getEffectiveCostPrice(item);
       if (effectiveCost == null) continue;
-      // Resolve the row's effective currency — its own (unused on
-      // children today), parent SET's, or quote currency.
       const parentSetCur = item.parentItemId ? setCurrencyByParentId.get(item.parentItemId) : undefined;
       const effCurrency = item.currency || parentSetCur || currency;
       let contribution = effectiveCost * qty;
@@ -671,37 +564,10 @@ export function QuoteItemsTable({
       }
       totalCost += contribution;
     }
-
-    // Resolve the base the discount percent multiplies:
-    // - null scope  → full araTotal (legacy whole-quote behavior)
-    // - scoped      → the section sum for that SUBTOTAL
-    // - stale scope → fall back to araTotal (matches server auto-heal)
-    let discountBase = araTotal;
-    if (discountScopeSubtotalId) {
-      const sectionSum = subtotalMap.get(discountScopeSubtotalId);
-      if (typeof sectionSum === 'number') {
-        discountBase = sectionSum;
-      }
-    }
-
-    const discountAmount = discountBase * (discountPct / 100);
-    const afterDiscount = araTotal - discountAmount;
-
-    // VAT is intentionally not computed — quotes are VAT-exclusive.
-    const grandTotal = afterDiscount;
-    const totalProfit = afterDiscount - totalCost;
-    const profitMargin = afterDiscount > 0 ? (totalProfit / afterDiscount) * 100 : 0;
-
-    return {
-      araTotal,
-      discountAmount,
-      afterDiscount,
-      grandTotal,
-      totalCost,
-      totalProfit,
-      profitMargin,
-    };
-  }, [items, discountPct, subtotalMap, discountScopeSubtotalId]);
+    const totalProfit = summary.grandTotal - totalCost;
+    const profitMargin = summary.grandTotal > 0 ? (totalProfit / summary.grandTotal) * 100 : 0;
+    return { totalCost, totalProfit, profitMargin };
+  }, [items, summary.grandTotal, currency, baseForeignRate]);
 
   // Drag handlers
   const handleDragStart = useCallback(
@@ -1071,7 +937,7 @@ export function QuoteItemsTable({
       {/* ---- Brand profit/sales summary ---- */}
       <BrandProfitSummary
         items={filteredItems}
-        discountPct={discountPct}
+        discountPct={0}
         currency={currency}
         exchangeRate={exchangeRate}
         protectionPct={protectionPct}
@@ -1079,11 +945,11 @@ export function QuoteItemsTable({
       />
 
       {/* ---- Profit margin warning ---- */}
-      {canViewCosts && summary.profitMargin < 15 && summary.profitMargin > 0 && (
+      {canViewCosts && profitSummary.profitMargin < 15 && profitSummary.profitMargin > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
           <span className="text-sm text-amber-800">
-            Dikkat: Genel kar marji dusuk (%{summary.profitMargin.toFixed(1)})
+            Dikkat: Genel kar marji dusuk (%{profitSummary.profitMargin.toFixed(1)})
           </span>
         </div>
       )}
@@ -1150,22 +1016,13 @@ export function QuoteItemsTable({
                     item={item}
                     pozNo={pozMap.get(item.id) ?? null}
                     currency={rowCurrency}
-                    overallDiscountPct={
-                      // Whole-quote mode (scopedItemIds === null) → every
-                      // row shows the visual discount, matching legacy
-                      // behavior. Scoped mode → only rows inside the
-                      // targeted section show it; everything else gets 0
-                      // so its price renders raw.
-                      scopedItemIds === null || scopedItemIds.has(item.id)
-                        ? discountPct
-                        : 0
-                    }
+                    overallDiscountPct={0}
                     canViewCosts={canViewCosts}
                     isDragging={!hasActiveFilter && dragIndex === origIdx}
                     columnVisibility={columnVisibility}
                     priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
                     totalColCount={totalColCount}
-                    subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id) : undefined}
+                    subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id)?.sectionSum : undefined}
                     grandTotalValue={item.itemType === 'GRAND_TOTAL' ? summary.grandTotal : undefined}
                     onUpdate={(updates) => onItemUpdate(item.id, updates)}
                     onDelete={() => onItemDelete(item.id)}
@@ -1366,56 +1223,7 @@ export function QuoteItemsTable({
                 Toplam
               </td>
               <td className="px-2 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
-                {formatPrice(summary.araTotal, currency)}
-              </td>
-              {trailingSpan > 0 && <td colSpan={trailingSpan} />}
-            </tr>
-
-            {/* Iskonto */}
-            <tr>
-              <td colSpan={labelSpan} className="px-3 py-2 text-right font-medium text-accent-700">
-                <span className="inline-flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={discountLabel}
-                    onChange={(e) => onDiscountLabelChange?.(e.target.value)}
-                    className="w-32 rounded border border-transparent px-1 py-0.5 text-right text-sm font-medium text-accent-700 hover:border-accent-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
-                    title="İskonto etiketini düzenle"
-                  />
-                  %
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    value={discountPct}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) onDiscountPctChange(val);
-                    }}
-                    className="w-16 rounded border border-accent-300 px-2 py-0.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-                  />
-                  {subtotalRows.length > 0 && (
-                    <select
-                      value={discountScopeSubtotalId ?? ''}
-                      onChange={(e) =>
-                        onDiscountScopeChange?.(e.target.value === '' ? null : e.target.value)
-                      }
-                      className="rounded border border-accent-300 px-2 py-0.5 text-xs text-accent-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-                      title="İskontonun uygulanacağı bölüm — 'Tüm teklif' iskontoyu toplam üzerine uygular, bir ara toplam seçildiğinde yalnızca o bölüme uygulanır."
-                    >
-                      <option value="">Tüm teklif</option>
-                      {subtotalRows.map((row) => (
-                        <option key={row.id} value={row.id}>
-                          {row.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </span>
-              </td>
-              <td className="px-2 py-2 text-right tabular-nums text-red-600 whitespace-nowrap">
-                {summary.discountAmount > 0 ? `- ${formatPrice(summary.discountAmount, currency)}` : '-'}
+                {formatPrice(summary.subtotal, currency)}
               </td>
               {trailingSpan > 0 && <td colSpan={trailingSpan} />}
             </tr>

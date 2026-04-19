@@ -55,6 +55,8 @@ export interface QuoteItemData {
   /** Optional per-SET currency override. Only meaningful on top-level
    *  SET rows. null = use quote currency (legacy behavior). */
   currency?: string | null;
+  /** Per-section discount percentage. Only meaningful on SUBTOTAL rows. */
+  sectionDiscountPct?: number | null;
 }
 
 export interface PriceHistoryStats {
