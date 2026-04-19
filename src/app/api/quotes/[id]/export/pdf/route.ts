@@ -111,6 +111,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         unit: item.unit,
         unitPrice: Number(item.unitPrice),
         discountPct: Number(item.discountPct),
+        sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
         totalPrice: rawTotal,
         vatRate: Number(item.vatRate),
         headerColor,
@@ -168,12 +169,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         sortOrder: term.sortOrder,
         highlight: term.highlight,
       })),
-      discountPct: Number(quote.discountPct),
-      discountLabel: (() => {
-        const pm = quote.protectionMap as Record<string, unknown> | null;
-        return typeof pm?.__discountLabel === 'string' ? pm.__discountLabel : 'İskonto';
-      })(),
-      discountScopeSubtotalId: quote.discountScopeSubtotalId ?? null,
       headerBase64,
       logoBase64,
     };

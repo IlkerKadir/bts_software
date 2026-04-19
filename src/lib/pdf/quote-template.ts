@@ -7,6 +7,8 @@
 // Commercial terms and NOTLAR render inside the main table <tbody>.
 // ---------------------------------------------------------------------------
 
+import { round2 } from '../quote-rounding';
+
 export interface QuoteDataForPdf {
   quote: {
     quoteNumber: string;
@@ -45,21 +47,11 @@ export interface QuoteDataForPdf {
     sortOrder: number;
     highlight: boolean;
   }[];
-  discountPct?: number;
-  discountLabel?: string;
-  /** cuid of the SUBTOTAL item the discount is scoped to, or null/undefined
-   *  for "apply to whole quote" (legacy behavior). When scoped, discount /
-   *  net lines render only under the targeted SUBTOTAL; the others show
-   *  only their raw section sum. */
-  discountScopeSubtotalId?: string | null;
   headerBase64?: string;
   logoBase64?: string;
 }
 
 export interface QuoteItemForPdf {
-  /** Optional DB id. Required on SUBTOTAL rows when the quote has a
-   *  scoped discount — the template matches the scope target by id to
-   *  decide which section gets the visual discount / net lines. */
   id?: string;
   itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   code?: string | null;
@@ -69,6 +61,10 @@ export interface QuoteItemForPdf {
   unit?: string | null;
   unitPrice: number;
   discountPct: number;
+  /** Per-SUBTOTAL section discount percentage (0–100). When > 0, the
+   *  template renders an İskonto row above the SUBTOTAL and shows the
+   *  net (post-discount) amount on the SUBTOTAL row itself. */
+  sectionDiscountPct?: number | null;
   totalPrice: number;
   vatRate: number;
   /** Optional background color for HEADER items (CSS color value, e.g. '#FF0000') */
@@ -205,22 +201,13 @@ function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): nu
 // ---------------------------------------------------------------------------
 
 export function generateQuoteHtml(data: QuoteDataForPdf): string {
-  const { quote, company, project, items, totals, commercialTerms, notes, discountPct: pdfDiscountPct, discountLabel: pdfDiscountLabel, discountScopeSubtotalId, headerBase64, logoBase64 } = data;
+  const { quote, company, project, items, totals, commercialTerms, notes, headerBase64, logoBase64 } = data;
   const safeTerms = commercialTerms || [];
   const safeNotes = notes || [];
   const currency = quote.currency;
   const lang = quote.language || 'TR';
   const isTR = lang === 'TR';
   const currencyName = CURRENCY_NAMES[currency] || currency;
-  const overallDiscountPct = pdfDiscountPct || 0;
-  const overallDiscountLabel = pdfDiscountLabel || 'İskonto';
-  // Resolve once whether the scope target is actually present. If the
-  // id is stale (shouldn't happen after the server auto-heal runs, but
-  // treat as safe fallback) we treat the quote as unscoped.
-  const scopeItemExists =
-    !!discountScopeSubtotalId &&
-    items.some((i) => i.id === discountScopeSubtotalId && i.itemType === 'SUBTOTAL');
-  const hasScope = scopeItemExists;
 
   const proformaTitle = isTR ? 'PROFORMA FATURA' : 'PROFORMA INVOICE';
   const dateLabel = isTR ? 'Tarih' : 'Date';
@@ -260,35 +247,25 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 
     if (item.itemType === 'SUBTOTAL') {
       const sectionSum = computeSubtotalSum(items, index);
+      const pct = Number(item.sectionDiscountPct ?? 0);
+      const discAmt = pct > 0 ? round2(sectionSum * (pct / 100)) : 0;
+      const net = sectionSum - discAmt;
       const subtotalLabel = escapeHtml(item.description || 'Ara Toplam');
-      let subtotalRows = `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>
-      <tr style="height:12pt">
-        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${subtotalLabel} (${currencyName})</p></td>
-        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
-      </tr>`;
-      // Decide whether to render the discount/net lines under this SUBTOTAL.
-      // - Scoped mode: show them only under the targeted SUBTOTAL; every
-      //   other section displays only its raw sum.
-      // - Unscoped (legacy whole-quote mode): show them under every section
-      //   — per-section splits sum to the full discount so the math stays
-      //   consistent with the GRAND_TOTAL rendered at the bottom.
-      const isScopeTarget = hasScope && item.id === discountScopeSubtotalId;
-      const showDiscountHere = overallDiscountPct > 0 && (hasScope ? isScopeTarget : true);
-      if (showDiscountHere) {
-        const discountAmount = sectionSum * (overallDiscountPct / 100);
-        const netAmount = sectionSum - discountAmount;
-        const discLabel = escapeHtml(overallDiscountLabel);
-        const netLabel = escapeHtml((item.description || 'Ara Toplam').replace(/TOPLAMI?/i, 'NET TOPLAMI'));
+      let subtotalRows = `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>`;
+      // Render the İskonto row above the SUBTOTAL when this section has a discount.
+      if (pct > 0) {
         subtotalRows += `
-      <tr style="height:12pt">
-        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${discLabel} (${currencyName})</p></td>
-        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(discountAmount, currency)}</p></td>
-      </tr>
-      <tr style="height:12pt">
-        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${netLabel} (${currencyName})</p></td>
-        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(netAmount, currency)}</p></td>
+      <tr style="height:12pt" class="discount-row">
+        <td class="sys-total-label discount-label" colspan="4"><p class="s1" style="text-align:right;">İskonto (%${pct}) (${currencyName})</p></td>
+        <td class="sys-total-val discount-amount"><p class="s1" style="text-align:right; color:#dc2626;">- ${formatCurrency(discAmt, currency)}</p></td>
       </tr>`;
       }
+      // SUBTOTAL row shows the net (post-discount) amount.
+      subtotalRows += `
+      <tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${subtotalLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(net, currency)}</p></td>
+      </tr>`;
       // Omit the trailing 4pt spacer if the next row is a GRAND_TOTAL,
       // so the grand total sits flush against the subtotal card.
       const nextIsGrandTotal = items[index + 1]?.itemType === 'GRAND_TOTAL';
@@ -486,6 +463,11 @@ table.main tbody td:nth-child(5) {
 .last-row td {
   border-bottom: none !important;
 }
+
+/* Per-section İskonto row */
+.discount-row td { padding: 4px 8px; }
+.discount-label { text-align: right; color: #555; }
+.discount-amount { text-align: right; white-space: nowrap; }
 
 /* Yellow highlight */
 .highlight-yellow {
