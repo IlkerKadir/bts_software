@@ -249,19 +249,23 @@ export function calculateSectionBreakdown(
  * 4th arg is a QuoteCurrencyContext, the 4th arg is used as the
  * currency context.
  */
+/**
+ * Calculate quote totals from per-section discounts living on the
+ * SUBTOTAL rows themselves (`sectionDiscountPct`). The legacy
+ * `_deprecatedDiscountPct` argument is kept for API stability during
+ * migration — callers should pass 0. It's unused inside the function.
+ *
+ * - `subtotal` = Σ sectionSum (pre-discount, including orphans).
+ * - `discountTotal` = Σ sectionDiscountAmount.
+ * - `grandTotal` = Σ sectionNet (orphan sections contribute their
+ *   full sum because their discount is always 0).
+ * - `vatTotal` is always 0 — VAT is outside the quote.
+ */
 export function calculateQuoteTotals(
   items: QuoteItem[],
   _deprecatedDiscountPct: number = 0,
-  ctxOrLegacyScopeId?: QuoteCurrencyContext | string | null,
-  legacyCtx?: QuoteCurrencyContext
+  ctx?: QuoteCurrencyContext
 ): QuoteTotals {
-  // Resolve currency context — supports both old (items, pct, null, ctx)
-  // and new (items, pct, ctx) call patterns.
-  const ctx: QuoteCurrencyContext | undefined =
-    ctxOrLegacyScopeId && typeof ctxOrLegacyScopeId === 'object'
-      ? ctxOrLegacyScopeId
-      : legacyCtx;
-
   if (items.length === 0 || !items.some(isPricedItem)) {
     return { subtotal: 0, discountTotal: 0, vatTotal: 0, grandTotal: 0 };
   }

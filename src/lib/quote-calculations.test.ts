@@ -493,7 +493,7 @@ describe('Quote Calculations', () => {
         // TRY set: 1 × 5000 TRY = 100 EUR at rate 50
         { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 5000, discountPct: 0, vatRate: 20, currency: 'TRY' },
       ];
-      const result = calculateQuoteTotals(items, 0, null, ctx);
+      const result = calculateQuoteTotals(items, 0, ctx);
       // subtotal = 400 EUR + 100 EUR (converted from 5000 TRY) = 500
       expect(result.subtotal).toBe(500);
       expect(result.grandTotal).toBe(500);
@@ -505,7 +505,7 @@ describe('Quote Calculations', () => {
         // EUR set (matches quote): stays at face value
         { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 200, discountPct: 0, vatRate: 20, currency: 'EUR' },
       ];
-      const result = calculateQuoteTotals(items, 0, null, ctx);
+      const result = calculateQuoteTotals(items, 0, ctx);
       expect(result.subtotal).toBe(600);
     });
 
@@ -514,7 +514,7 @@ describe('Quote Calculations', () => {
         // Legacy set with no override — treated as EUR
         { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 300, discountPct: 0, vatRate: 20 },
       ];
-      const result = calculateQuoteTotals(items, 0, null, ctx);
+      const result = calculateQuoteTotals(items, 0, ctx);
       expect(result.subtotal).toBe(300);
     });
 
@@ -545,7 +545,7 @@ describe('Quote Calculations', () => {
         { id: 'p1', itemType: 'PRODUCT', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 20 },
         { id: 'set1', itemType: 'SET', quantity: 1, unitPrice: 500, discountPct: 0, vatRate: 20, currency: 'TRY' },
       ];
-      const result = calculateQuoteTotals(items, 0, null, tryCtx);
+      const result = calculateQuoteTotals(items, 0, tryCtx);
       expect(result.subtotal).toBe(1500);
     });
 
