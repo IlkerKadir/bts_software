@@ -156,93 +156,54 @@ function isPricedItem(item: QuoteItem): boolean {
   );
 }
 
-/**
- * Sum the priced items that belong to the section ending at the given
- * SUBTOTAL item. A "section" is the slice of items from the previous
- * SUBTOTAL (exclusive) up to — but not including — the target SUBTOTAL.
- * Walks the caller-supplied ORDER of `items`, so the caller is
- * responsible for passing them sorted by `sortOrder`.
- *
- * Returns `null` when the target id either isn't in the list or isn't
- * actually a SUBTOTAL row. Callers interpret `null` as "auto-heal to
- * whole-quote discount".
- */
-function sumSectionForSubtotal(
-  items: QuoteItem[],
-  subtotalId: string,
-  ctx?: QuoteCurrencyContext
-): number | null {
-  const targetIdx = items.findIndex(
-    (i) => i.id === subtotalId && i.itemType === 'SUBTOTAL'
-  );
-  if (targetIdx === -1) return null;
-
-  // Walk backward to find the start of this section — the slot after
-  // the previous SUBTOTAL, or 0 if none.
-  let startIdx = 0;
-  for (let j = targetIdx - 1; j >= 0; j--) {
-    if (items[j].itemType === 'SUBTOTAL') {
-      startIdx = j + 1;
-      break;
-    }
-  }
-
-  let sum = 0;
-  for (let j = startIdx; j < targetIdx; j++) {
-    const item = items[j];
-    if (isPricedItem(item)) {
-      const raw = calculateItemTotal({
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        discountPct: item.discountPct,
-      });
-      if (ctx) {
-        const cur = effectiveItemCurrency(item, items, ctx.quoteCurrency);
-        sum += convertToQuoteCurrency(raw, cur, ctx);
-      } else {
-        sum += raw;
-      }
-    }
-  }
-  return sum;
+export interface SectionBreakdown {
+  /** SUBTOTAL row id this section ends at, or null for the trailing
+   *  orphan group (items that sit after the last SUBTOTAL). */
+  subtotalId: string | null;
+  /** Sum of priced items in this section, in quote currency. */
+  sectionSum: number;
+  /** Discount % pulled off the SUBTOTAL row (0 when subtotalId is null). */
+  discountPct: number;
+  /** sectionSum × discountPct / 100, rounded to 2 decimals. */
+  discountAmount: number;
+  /** sectionSum − discountAmount. */
+  sectionNet: number;
 }
 
 /**
- * Calculate quote totals including subtotal, discount, VAT, and grand total.
+ * Walk the items array and return one entry per section. A section
+ * ends at each SUBTOTAL row; items below the last SUBTOTAL form a
+ * trailing orphan group (subtotalId = null, discount always 0).
  *
- * When `discountScopeSubtotalId` is null/undefined the discount is
- * applied to the entire subtotal (legacy behavior). When set, it is
- * applied only to the sum of priced items in that SUBTOTAL's section;
- * items outside the section contribute to `subtotal` at full price.
- * If the id points at a missing or non-SUBTOTAL item, the scope is
- * silently treated as "whole quote" so stale pointers self-heal.
- *
- * The caller should pass `items` in `sortOrder` order when using a
- * scoped discount — the section walk relies on positional order.
+ * Items must be in sortOrder. Price-labeled rows and SET children
+ * contribute 0 to the section sum — the SET parent already carries
+ * its children's combined totalPrice.
  */
-export function calculateQuoteTotals(
+export function calculateSectionBreakdown(
   items: QuoteItem[],
-  overallDiscountPct: number,
-  discountScopeSubtotalId?: string | null,
   ctx?: QuoteCurrencyContext
-): QuoteTotals {
-  const productItems = items.filter(isPricedItem);
+): SectionBreakdown[] {
+  const breakdown: SectionBreakdown[] = [];
+  let sectionSum = 0;
 
-  if (productItems.length === 0) {
-    return {
-      subtotal: 0,
-      discountTotal: 0,
-      vatTotal: 0,
-      grandTotal: 0,
-    };
-  }
+  for (const item of items) {
+    if (item.itemType === 'SUBTOTAL') {
+      const discountPct = Number(item.sectionDiscountPct ?? 0);
+      const discountAmount = round2(sectionSum * (discountPct / 100));
+      breakdown.push({
+        subtotalId: item.id ?? null,
+        sectionSum: round2(sectionSum),
+        discountPct,
+        discountAmount,
+        sectionNet: round2(sectionSum - discountAmount),
+      });
+      sectionSum = 0;
+      continue;
+    }
+    if (!isPricedItem(item)) continue;
+    // Exclude SET children — parent's totalPrice already includes them.
+    if (item.parentItemId) continue;
 
-  // Subtotal is always the full sum, regardless of scope — scoping only
-  // changes which portion gets the discount applied. When a currency
-  // context is supplied, each item is converted to the quote's currency
-  // before summing (a TRY-priced SET in an EUR quote contributes its
-  // EUR-equivalent at the base, non-protected rate).
-  const subtotal = productItems.reduce((sum, item) => {
     const raw = calculateItemTotal({
       quantity: item.quantity,
       unitPrice: item.unitPrice,
@@ -250,35 +211,70 @@ export function calculateQuoteTotals(
     });
     if (ctx) {
       const cur = effectiveItemCurrency(item, items, ctx.quoteCurrency);
-      return sum + convertToQuoteCurrency(raw, cur, ctx);
+      sectionSum += convertToQuoteCurrency(raw, cur, ctx);
+    } else {
+      sectionSum += raw;
     }
-    return sum + raw;
-  }, 0);
-
-  // Determine the base that the discount percent multiplies.
-  let discountBase = subtotal;
-  if (discountScopeSubtotalId) {
-    const sectionSum = sumSectionForSubtotal(items, discountScopeSubtotalId, ctx);
-    if (sectionSum !== null) {
-      discountBase = sectionSum;
-    }
-    // sectionSum === null → auto-heal: fall through to whole-quote base.
   }
 
-  const discountTotal = discountBase * (overallDiscountPct / 100);
-  const netAfterDiscount = subtotal - discountTotal;
+  // Trailing orphans (no discount ever).
+  if (sectionSum > 0) {
+    breakdown.push({
+      subtotalId: null,
+      sectionSum: round2(sectionSum),
+      discountPct: 0,
+      discountAmount: 0,
+      sectionNet: round2(sectionSum),
+    });
+  }
 
-  // VAT is intentionally NOT added to quote totals. Prices shown in
-  // the proforma and Excel export are VAT-exclusive; the client handles
-  // VAT outside the quote. The `vatTotal` field is kept at zero purely
-  // to preserve the Prisma schema shape without requiring a migration.
-  const vatTotal = 0;
-  const grandTotal = netAfterDiscount;
+  return breakdown;
+}
+
+/**
+ * Calculate quote totals from per-section discounts living on the
+ * SUBTOTAL rows themselves (`sectionDiscountPct`). The legacy
+ * `_deprecatedDiscountPct` argument is kept for API stability during
+ * migration — callers should pass 0. It's unused inside the function.
+ *
+ * - `subtotal` = Σ sectionSum (pre-discount, including orphans).
+ * - `discountTotal` = Σ sectionDiscountAmount.
+ * - `grandTotal` = Σ sectionNet (orphan sections contribute their
+ *   full sum because their discount is always 0).
+ * - `vatTotal` is always 0 — VAT is outside the quote.
+ *
+ * For backward compatibility the function also accepts the old 4-arg
+ * call pattern `(items, pct, null, ctx)` where the 3rd arg was a
+ * discountScopeSubtotalId. When the 3rd arg is null/string and the
+ * 4th arg is a QuoteCurrencyContext, the 4th arg is used as the
+ * currency context.
+ */
+export function calculateQuoteTotals(
+  items: QuoteItem[],
+  _deprecatedDiscountPct: number = 0,
+  ctxOrLegacyScopeId?: QuoteCurrencyContext | string | null,
+  legacyCtx?: QuoteCurrencyContext
+): QuoteTotals {
+  // Resolve currency context — supports both old (items, pct, null, ctx)
+  // and new (items, pct, ctx) call patterns.
+  const ctx: QuoteCurrencyContext | undefined =
+    ctxOrLegacyScopeId && typeof ctxOrLegacyScopeId === 'object'
+      ? ctxOrLegacyScopeId
+      : legacyCtx;
+
+  if (items.length === 0 || !items.some(isPricedItem)) {
+    return { subtotal: 0, discountTotal: 0, vatTotal: 0, grandTotal: 0 };
+  }
+
+  const breakdown = calculateSectionBreakdown(items, ctx);
+  const subtotal = breakdown.reduce((s, b) => s + b.sectionSum, 0);
+  const discountTotal = breakdown.reduce((s, b) => s + b.discountAmount, 0);
+  const grandTotal = breakdown.reduce((s, b) => s + b.sectionNet, 0);
 
   return {
     subtotal: round2(subtotal),
     discountTotal: round2(discountTotal),
-    vatTotal,
+    vatTotal: 0,
     grandTotal: round2(grandTotal),
   };
 }
