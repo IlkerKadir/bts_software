@@ -27,6 +27,10 @@ export interface QuoteItemForExcel {
   currency?: string | null;
   /** Row total converted to quote currency for SUBTOTAL aggregation. */
   totalPriceInQuoteCurrency?: number;
+  /** Per-section discount percentage (0–100). When > 0 an İskonto row is
+   *  rendered above the SUBTOTAL row and the net (post-discount) amount
+   *  is shown in the SUBTOTAL row instead of the gross section sum. */
+  sectionDiscountPct?: number | null;
 }
 
 export interface CommercialTermForExcel {
@@ -460,6 +464,31 @@ export class ExcelService {
         sheet.getRow(currentRow).height = 16;
       } else if (item.itemType === 'SUBTOTAL') {
         const sectionSum = computeExcelSubtotalSum(items, index);
+        const pct = Number(item.sectionDiscountPct ?? 0);
+        const discAmt = pct > 0 ? Math.round(sectionSum * (pct / 100) * 100) / 100 : 0;
+        const net = sectionSum - discAmt;
+
+        // İskonto row — emitted above the SUBTOTAL row when a discount applies.
+        if (pct > 0) {
+          sheet.mergeCells(currentRow, 1, currentRow, 4);
+          const discLabelCell = sheet.getCell(currentRow, 1);
+          discLabelCell.value = `İskonto (%${pct})`;
+          discLabelCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
+          discLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+          styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+
+          const discAmtCell = sheet.getCell(currentRow, 5);
+          discAmtCell.value = -discAmt;
+          discAmtCell.numFmt = '#,##0.00';
+          discAmtCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
+          discAmtCell.alignment = { horizontal: 'right', vertical: 'middle' };
+          discAmtCell.border = blackBoxBorder();
+          discAmtCell.fill = grayFill();
+
+          sheet.getRow(currentRow).height = 16;
+          currentRow++;
+        }
+
         const currencyName = CURRENCY_NAMES[currency] || currency;
         const label = `${item.description || 'Ara Toplam'} (${currencyName})`;
 
@@ -471,7 +500,7 @@ export class ExcelService {
         styleMergedRange(sheet, currentRow, 1, 4, grayFill());
 
         const sumCell = sheet.getCell(currentRow, 5);
-        sumCell.value = formatTurkishCurrency(sectionSum, currency);
+        sumCell.value = formatTurkishCurrency(net, currency);
         sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
         sumCell.border = blackBoxBorder();

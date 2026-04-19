@@ -107,8 +107,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const itemType = item.itemType as QuoteItemForExcel['itemType'];
         const description = getItemDescription(item, quote.language);
 
-        if (itemType === 'HEADER' || itemType === 'NOTE' || itemType === 'SUBTOTAL' || itemType === 'GRAND_TOTAL') {
+        if (itemType === 'HEADER' || itemType === 'NOTE' || itemType === 'GRAND_TOTAL') {
           return { itemType, description };
+        }
+
+        if (itemType === 'SUBTOTAL') {
+          return {
+            itemType,
+            description,
+            sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
+          };
         }
 
         const rawTotal = Number(item.totalPrice);
