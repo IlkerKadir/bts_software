@@ -88,12 +88,6 @@ interface HeaderFields {
   tcmbRateType: 'forexSelling' | 'banknoteSelling';
   language: string;
   validityDays: number;
-  discountPct: number;
-  discountLabel: string;
-  /** When set, the quote-level discount applies only to the items in
-   *  the SUBTOTAL section whose id matches. `null` means "apply to the
-   *  entire quote" (legacy behavior and default for new quotes). */
-  discountScopeSubtotalId: string | null;
   notes: string;
   projectId: string | null;
 }
@@ -197,6 +191,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     customPozNo: (item.serviceMeta as Record<string, unknown> | null)?.customPozNo as string | null ?? null,
     ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
     currency: item.currency ?? null,
+    sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
   };
 }
 
@@ -238,9 +233,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     tcmbRateType: 'forexSelling',
     language: 'TR',
     validityDays: 30,
-    discountPct: 0,
-    discountLabel: 'İskonto',
-    discountScopeSubtotalId: null,
     notes: '',
     projectId: null,
   });
@@ -331,7 +323,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // Extract persisted meta fields from the protection map JSON
       const rawMap = (q.protectionMap && typeof q.protectionMap === 'object') ? q.protectionMap as Record<string, unknown> : {};
       const savedRateType = rawMap.__rateType === 'banknoteSelling' ? 'banknoteSelling' as const : 'forexSelling' as const;
-      const savedDiscountLabel = typeof rawMap.__discountLabel === 'string' ? rawMap.__discountLabel : 'İskonto';
       const { __rateType: _rt, __discountLabel: _dl, ...cleanMap } = rawMap;
 
       // Build exchange rate matrices. Two matrices matter here:
@@ -392,9 +383,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         tcmbRateType: savedRateType,
         language: q.language,
         validityDays: q.validityDays,
-        discountPct: Number(q.discountPct),
-        discountLabel: savedDiscountLabel,
-        discountScopeSubtotalId: q.discountScopeSubtotalId ?? null,
         notes: q.notes || '',
         projectId: q.project?.id || null,
       };
@@ -433,9 +421,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       fields.tcmbRateType !== saved.tcmbRateType ||
       fields.language !== saved.language ||
       fields.validityDays !== saved.validityDays ||
-      fields.discountPct !== saved.discountPct ||
-      fields.discountLabel !== saved.discountLabel ||
-      fields.discountScopeSubtotalId !== saved.discountScopeSubtotalId ||
       fields.notes !== saved.notes ||
       fields.projectId !== saved.projectId
     );
@@ -519,11 +504,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             currency: headerFields.currency,
             exchangeRate: headerFields.exchangeRate,
             protectionPct: headerFields.protectionPct,
-            protectionMap: { ...headerFields.protectionMap, __rateType: headerFields.tcmbRateType, __discountLabel: headerFields.discountLabel },
+            protectionMap: { ...headerFields.protectionMap, __rateType: headerFields.tcmbRateType },
             language: headerFields.language,
             validityDays: headerFields.validityDays,
-            discountPct: headerFields.discountPct,
-            discountScopeSubtotalId: headerFields.discountScopeSubtotalId,
             notes: headerFields.notes,
             projectId: headerFields.projectId,
             // Only include rateSnapshot when we have a fresh one queued
@@ -578,6 +561,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           notes: item.notes || '',
           priceLabel: item.priceLabel ?? null,
           serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
+          sectionDiscountPct: item.sectionDiscountPct ?? null,
           // Per-SET currency override — only set on top-level SET rows.
           // Sending it always (null for non-SET rows) lets the API reset
           // stray values when a row changes type.
@@ -993,12 +977,17 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     [quoteId]
   );
 
-  const handleDiscountPctChange = useCallback(
-    (value: number) => {
-      updateHeaderField('discountPct', value);
-    },
-    [updateHeaderField]
-  );
+  const handleSectionDiscountPctChange = useCallback((subtotalItemId: string, pct: number) => {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === subtotalItemId && it.itemType === 'SUBTOTAL'
+          ? { ...it, sectionDiscountPct: Math.min(100, Math.max(0, pct)) }
+          : it
+      )
+    );
+    itemsDirtyRef.current = true;
+    setHasChanges(true);
+  }, []);
 
   // ── Add product from catalog ───────────────────────────────────────────────
 
@@ -2254,11 +2243,6 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         currency={headerFields.currency}
         exchangeRate={headerFields.exchangeRate}
         protectionPct={headerFields.protectionPct}
-        discountPct={headerFields.discountPct}
-        discountLabel={headerFields.discountLabel}
-        onDiscountLabelChange={(v) => updateHeaderField('discountLabel', v)}
-        discountScopeSubtotalId={headerFields.discountScopeSubtotalId}
-        onDiscountScopeChange={(id) => updateHeaderField('discountScopeSubtotalId', id)}
         canViewCosts={user.role.canViewCosts}
         canOverrideKatsayi={user.role.canOverrideKatsayi}
         priceHistoryBatch={priceHistoryBatch}
@@ -2266,7 +2250,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onItemDelete={handleItemDelete}
         onItemDuplicate={handleItemDuplicate}
         onReorder={handleReorder}
-        onDiscountPctChange={handleDiscountPctChange}
+        onSectionDiscountPctChange={handleSectionDiscountPctChange}
         onAddProduct={() => setCatalogOpen(true)}
         onAddHeader={handleAddHeader}
         onAddNote={handleAddNote}
