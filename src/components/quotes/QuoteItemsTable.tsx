@@ -55,6 +55,7 @@ export interface QuoteItemsTableProps {
   onShowPriceHistory?: (productId: string) => void;
   canOverrideKatsayi?: boolean;
   priceHistoryBatch?: Record<string, PriceHistoryStats>;
+  onSectionDiscountPctChange?: (subtotalItemId: string, pct: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +133,7 @@ export function QuoteItemsTable({
   onShowPriceHistory,
   canOverrideKatsayi,
   priceHistoryBatch,
+  onSectionDiscountPctChange,
 }: QuoteItemsTableProps) {
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -1001,7 +1003,7 @@ export function QuoteItemsTable({
               </tr>
             )}
 
-            {filteredItems.map((item) => {
+            {filteredItems.map((item, idx) => {
               const origIdx = itemIndexMap.get(item.id) ?? 0;
               // Effective currency for pricing cells in this row. Only
               // top-level SET rows may override — everything else falls
@@ -1010,8 +1012,48 @@ export function QuoteItemsTable({
               const rowCurrency = (item.itemType === 'SET' && !item.parentItemId && item.currency)
                 ? item.currency
                 : currency;
+              const isSubtotal = item.itemType === 'SUBTOTAL';
+              const info = isSubtotal && item.id ? subtotalMap.get(item.id) : null;
+              const hasDiscount = isSubtotal && (Number(item.sectionDiscountPct) || 0) > 0;
               return (
-                <React.Fragment key={item.id}>
+                <React.Fragment key={item.id ?? idx}>
+                  {hasDiscount && info && (
+                    <tr className="bg-white">
+                      <td colSpan={labelSpan} className="px-3 py-1.5 text-right text-sm text-accent-700">
+                        <span className="inline-flex items-center gap-2">
+                          İskonto
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.5}
+                            value={info.discountPct}
+                            aria-label="Bu bölümün iskonto yüzdesi"
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val) && item.id) {
+                                onSectionDiscountPctChange?.(item.id, val);
+                              }
+                            }}
+                            className="w-16 rounded border border-accent-300 px-2 py-0.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                          />
+                          %
+                          <button
+                            type="button"
+                            onClick={() => item.id && onSectionDiscountPctChange?.(item.id, 0)}
+                            className="text-xs text-accent-400 hover:text-red-600"
+                            title="İskontoyu kaldır"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-red-600 whitespace-nowrap">
+                        - {formatPrice(info.discountAmount, currency)}
+                      </td>
+                      {trailingSpan > 0 && <td colSpan={trailingSpan} />}
+                    </tr>
+                  )}
                   <QuoteItemRow
                     item={item}
                     pozNo={pozMap.get(item.id) ?? null}
@@ -1022,7 +1064,7 @@ export function QuoteItemsTable({
                     columnVisibility={columnVisibility}
                     priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
                     totalColCount={totalColCount}
-                    subtotalValue={item.itemType === 'SUBTOTAL' ? subtotalMap.get(item.id)?.sectionSum : undefined}
+                    subtotalValue={isSubtotal && item.id ? subtotalMap.get(item.id)?.sectionNet : undefined}
                     grandTotalValue={item.itemType === 'GRAND_TOTAL' ? summary.grandTotal : undefined}
                     onUpdate={(updates) => onItemUpdate(item.id, updates)}
                     onDelete={() => onItemDelete(item.id)}
@@ -1039,6 +1081,11 @@ export function QuoteItemsTable({
                     onInsertHeaderAbove={onAddHeader}
                     priceLabelOptions={priceLabelCatalog}
                     unitOptions={unitCatalog}
+                    onAddSectionDiscount={
+                      onSectionDiscountPctChange
+                        ? (itemId: string) => onSectionDiscountPctChange(itemId, 5)
+                        : undefined
+                    }
                   />
                   {/* Render sub-rows for SET parents */}
                   {(() => {

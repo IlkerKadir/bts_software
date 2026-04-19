@@ -101,6 +101,9 @@ export interface QuoteItemRowProps {
   /** Admin-managed list of unit options. Falls back to the legacy four
    *  (Adet / Metre / Set / Kişi/Gün) when omitted. */
   unitOptions?: ReadonlyArray<string>;
+  /** Called when the user clicks "+ İskonto" on a zero-discount SUBTOTAL row.
+   *  The parent seeds the new discount at 5% by default. */
+  onAddSectionDiscount?: (itemId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +322,7 @@ export function QuoteItemRow({
   onInsertHeaderAbove,
   priceLabelOptions,
   unitOptions,
+  onAddSectionDiscount,
 }: QuoteItemRowProps) {
   // Fallback list if the admin catalog hasn't loaded yet.
   const DEFAULT_UNITS = ['Adet', 'Metre', 'Set', 'Kişi/Gün'] as const;
@@ -534,11 +538,23 @@ export function QuoteItemRow({
             colSpan={subtotalLabelSpan}
             className="border border-accent-200 bg-accent-100 px-3 py-2 text-right font-bold text-accent-800 text-sm"
           >
-            <EditableCell
-              value={item.description || 'Ara Toplam'}
-              onChange={(v) => onUpdate({ description: String(v) })}
-              className="font-bold text-right"
-            />
+            <span className="inline-flex items-center justify-end gap-2 w-full">
+              {item.itemType === 'SUBTOTAL' && (Number(item.sectionDiscountPct) || 0) === 0 && onAddSectionDiscount && item.id && (
+                <button
+                  type="button"
+                  onClick={() => onAddSectionDiscount(item.id!)}
+                  className="ml-2 inline-flex items-center gap-1 rounded border border-dashed border-accent-300 px-2 py-0.5 text-xs text-accent-600 hover:border-primary-400 hover:text-primary-600"
+                  title="Bu bölüme iskonto ekle"
+                >
+                  + İskonto
+                </button>
+              )}
+              <EditableCell
+                value={item.description || 'Ara Toplam'}
+                onChange={(v) => onUpdate({ description: String(v) })}
+                className="font-bold text-right"
+              />
+            </span>
           </td>
           {columnVisibility.fiyat && (() => {
             const sv = subtotalValue ?? 0;
