@@ -58,6 +58,10 @@ export const quoteItemSchema = z.object({
    *  rows. Semantic enforcement (value must match quote currency or be
    *  'TRY') is done at the route level where we know the parent quote. */
   currency: currencyEnum.nullish(),
+  /** Per-section discount %. Only meaningful on SUBTOTAL rows; the API
+   *  coerces it to null on non-SUBTOTAL rows so the DB never holds a
+   *  stale value on a PRODUCT/CUSTOM/SET row. */
+  sectionDiscountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').nullish(),
 });
 
 export const quoteItemUpdateSchema = quoteItemSchema.extend({
@@ -92,10 +96,6 @@ export const quoteUpdateSchema = z.object({
    *  client when the user applies new rates via the exchange-rate
    *  modal; persisted as-is. Shape: `{ from: { to: rate } }`. */
   rateSnapshot: z.record(z.string(), z.record(z.string(), z.number())).nullable().optional(),
-  discountPct: z.number().gte(0, 'Discount % must be at least 0').lte(100, 'Discount % must be at most 100').optional(),
-  /** Optional cuid of the SUBTOTAL QuoteItem the discount should apply
-   *  to. `null` means "apply to whole quote" (legacy behavior). */
-  discountScopeSubtotalId: z.string().nullable().optional(),
   validityDays: z.number().gt(0, 'Validity days must be greater than 0').lte(365, 'Validity days must be at most 365').optional(),
   notes: z.string().nullable().optional(),
   language: languageEnum.optional(),
