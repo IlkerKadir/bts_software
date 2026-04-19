@@ -313,6 +313,18 @@ export interface QuoteProfitSummary {
   overallMarginPct: number;
 }
 
+/**
+ * Calculate quote-level profit summary.
+ *
+ * Per-section discounts live on SUBTOTAL rows via `sectionDiscountPct`.
+ * The function walks the items once to build an item-id → section-pct
+ * map, then applies that section's discount to revenue (cost is never
+ * discounted). Items below the last SUBTOTAL form a trailing orphan
+ * group with pct = 0.
+ *
+ * `_legacyOverallDiscountPct` is kept in the signature for source
+ * compatibility with pre-migration callers. It's ignored.
+ */
 export function calculateQuoteProfitSummary(
   items: Array<{
     id?: string;
@@ -323,17 +335,12 @@ export function calculateQuoteProfitSummary(
     parentItemId?: string | null;
     priceLabel?: string | null;
     currency?: string | null;
+    sectionDiscountPct?: number | null;
   }>,
-  overallDiscountPct: number = 0,
+  _legacyOverallDiscountPct: number = 0,
   ctx?: QuoteCurrencyContext
 ): QuoteProfitSummary {
-  let itemRevenue = 0;
-  let totalCost = 0;
-
-  // Pre-resolve each item's effective currency once so children of a
-  // mixed-currency SET find their parent's currency in O(1) inside the
-  // loop. Without a ctx this map stays empty and everything flows
-  // through unchanged (legacy single-currency path).
+  // Currency map — unchanged from prior version.
   const currencyById = new Map<string, string>();
   if (ctx) {
     const parentCurrency = new Map<string, string>();
@@ -356,17 +363,41 @@ export function calculateQuoteProfitSummary(
     return convertToQuoteCurrency(amount, cur, ctx);
   };
 
+  // Walk sections: accumulate item-ids → which section they belong to,
+  // and remember each section's discount. Items below the last
+  // SUBTOTAL belong to a trailing orphan section (pct = 0).
+  //
+  // Id-less items (test fixtures / legacy shapes) are intentionally
+  // skipped here: they can never be mapped to a section, so their
+  // revenue lookup below falls through to 0% discount — which is the
+  // conservative right answer (better to show 0 than to apply a
+  // random section's discount to an unidentifiable row).
+  const itemIdToSectionDiscountPct = new Map<string, number>();
+  const pendingIds: string[] = [];
+  for (const it of items) {
+    if (it.itemType === 'SUBTOTAL') {
+      const sectionPct = Number(it.sectionDiscountPct ?? 0);
+      for (const id of pendingIds) itemIdToSectionDiscountPct.set(id, sectionPct);
+      pendingIds.length = 0;
+      continue;
+    }
+    if (it.id) pendingIds.push(it.id);
+  }
+  // Leftover ids are trailing orphans → pct 0.
+  for (const id of pendingIds) itemIdToSectionDiscountPct.set(id, 0);
+
+  let itemRevenue = 0;
+  let totalCost = 0;
+
   for (const item of items) {
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
-      // Price-labeled rows (e.g. "TARAFINIZCA SAĞLANACAKTIR") contribute
-      // 0 to both revenue and cost — the label replaces the price and
-      // the client does not charge for them.
       if (item.priceLabel) continue;
-      // Revenue: only top-level items (SET parent totalPrice includes children)
+
       if (!item.parentItemId) {
-        itemRevenue += convert(item.totalPrice, item.id);
+        const sectionPct = item.id ? (itemIdToSectionDiscountPct.get(item.id) ?? 0) : 0;
+        const revenueConverted = convert(item.totalPrice, item.id);
+        itemRevenue += revenueConverted * (1 - sectionPct / 100);
       }
-      // Cost: all items except SET parents (sub-items carry the actual costs)
       const isSetParent = item.itemType === 'SET' && !item.parentItemId;
       if (!isSetParent) {
         const rawCost = (item.costPrice || 0) * item.quantity;
@@ -375,8 +406,7 @@ export function calculateQuoteProfitSummary(
     }
   }
 
-  // Apply overall quote discount to revenue
-  const totalRevenue = itemRevenue * (1 - overallDiscountPct / 100);
+  const totalRevenue = itemRevenue;
   const totalProfit = totalRevenue - totalCost;
   const overallMarginPct = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 

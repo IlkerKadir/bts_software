@@ -446,16 +446,15 @@ describe('Quote Calculations', () => {
       expect(result.totalProfit).toBe(600);
     });
 
-    it('applies overall discount to revenue', () => {
+    it('applies per-section discount to revenue (items inside a discounted section are discounted)', () => {
       const items = [
-        { totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT' },
+        { id: 'p1', totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT' },
+        { id: 'sub-a', totalPrice: 0, costPrice: null, quantity: 0, itemType: 'SUBTOTAL', sectionDiscountPct: 10 },
       ];
-      const result = calculateQuoteProfitSummary(items, 10); // 10% overall discount
-      // Revenue after 10% discount: 1000 * 0.9 = 900
+      const result = calculateQuoteProfitSummary(items);
       expect(result.totalRevenue).toBe(900);
       expect(result.totalCost).toBe(600);
       expect(result.totalProfit).toBe(300);
-      // 300 / 900 * 100 = 33.33
       expect(result.overallMarginPct).toBe(33.33);
     });
 
