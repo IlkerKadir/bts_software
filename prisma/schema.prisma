@@ -356,6 +356,16 @@ model QuoteItem {
    * of a SET read this off their parent; they do not carry their own.
    */
   currency      String?
+  /**
+   * Per-section discount percentage (0–100). Only meaningful on
+   * SUBTOTAL rows; null/0 means "no discount on this section".
+   * Non-SUBTOTAL rows are coerced to null at the API layer.
+   * When set, `calculateQuoteTotals` reduces this section's sum by
+   * (sectionSum × sectionDiscountPct / 100) before adding into the
+   * grand total. Price-labeled rows and children of SETs are still
+   * excluded from the section sum, identical to pre-change behavior.
+   */
+  sectionDiscountPct Decimal?      @db.Decimal(5, 2)
   parentItemId  String?
   parentItem    QuoteItem?  @relation("ItemSubRows", fields: [parentItemId], references: [id], onDelete: Cascade)
   subRows       QuoteItem[] @relation("ItemSubRows")
