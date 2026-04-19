@@ -1,6 +1,6 @@
 'use client';
 
-import { use } from 'react';
+import React, { use } from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -38,6 +38,7 @@ import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
+import { calculateSectionBreakdown, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -71,6 +72,7 @@ interface QuoteItem {
   katsayi: number;
   unitPrice: number;
   discountPct: number;
+  sectionDiscountPct?: number | null;
   vatRate: number;
   totalPrice: number;
   notes?: string | null;
@@ -102,7 +104,6 @@ interface Quote {
   currency: string;
   exchangeRate: number;
   protectionPct: number;
-  discountPct: number;
   subtotal: number;
   discountTotal: number;
   vatTotal: number;
@@ -389,17 +390,40 @@ export default function QuoteDetailPage({ params }: PageProps) {
     return map;
   }, [quote, convertRowTotalToQuote]);
 
+  // Per-section breakdown using sectionDiscountPct on SUBTOTAL rows
+  const breakdown = useMemo(() => {
+    if (!quote) return [];
+    const ctx: QuoteCurrencyContext = {
+      quoteCurrency: quote.currency,
+      baseForeignRate: baseForeignRate,
+    };
+    return calculateSectionBreakdown(quote.items, ctx);
+  }, [quote, baseForeignRate]);
+
+  const sectionBreakdownById = useMemo(() => {
+    const m = new Map<string, { discountAmount: number; sectionNet: number; discountPct: number }>();
+    for (const b of breakdown) {
+      if (b.subtotalId) {
+        m.set(b.subtotalId, {
+          discountAmount: b.discountAmount,
+          sectionNet: b.sectionNet,
+          discountPct: b.discountPct,
+        });
+      }
+    }
+    return m;
+  }, [breakdown]);
+
   // Summary calculations
   const summary = useMemo(() => {
     if (!quote) return null;
-    const subtotal = Number(quote.subtotal) || 0;
-    const discountPct = Number(quote.discountPct) || 0;
-    const discountTotal = Number(quote.discountTotal) || 0;
+    const subtotal = breakdown.reduce((s, b) => s + b.sectionSum, 0);
+    const discountTotal = breakdown.reduce((s, b) => s + b.discountAmount, 0);
+    const grandTotal = breakdown.reduce((s, b) => s + b.sectionNet, 0);
     const vatTotal = Number(quote.vatTotal) || 0;
-    const grandTotal = Number(quote.grandTotal) || 0;
 
-    return { subtotal, discountPct, discountTotal, vatTotal, grandTotal };
-  }, [quote]);
+    return { subtotal, discountTotal, vatTotal, grandTotal };
+  }, [quote, breakdown]);
 
   // Skip the default tfoot summary when the user has placed inline
   // SUBTOTAL / GRAND_TOTAL rows, otherwise we'd duplicate the totals.
@@ -893,7 +917,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
             ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
             currency: item.currency ?? null,
           }))}
-          discountPct={Number(quote.discountPct) || 0}
+          discountPct={0}
           currency={quote.currency}
           exchangeRate={Number(quote.exchangeRate) || 1}
           protectionPct={Number(quote.protectionPct) || 0}
@@ -967,16 +991,30 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
                 // SUBTOTAL row — inline section total band
                 if (item.itemType === 'SUBTOTAL') {
-                  const sectionSum = subtotalSumMap.get(item.id) ?? 0;
+                  const info = sectionBreakdownById.get(item.id);
+                  const hasDiscount = Number(item.sectionDiscountPct ?? 0) > 0 && !!info;
+                  const displayAmount = info ? info.sectionNet : (subtotalSumMap.get(item.id) ?? 0);
                   return (
-                    <tr key={item.id} className="bg-accent-50 border-t-2 border-accent-300">
-                      <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
-                        {item.description || 'Ara Toplam'}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
-                        {formatPrice(sectionSum)}
-                      </td>
-                    </tr>
+                    <React.Fragment key={item.id}>
+                      {hasDiscount && info && (
+                        <tr className="bg-accent-50/50">
+                          <td colSpan={5} className="px-3 py-1 text-right text-sm text-accent-700">
+                            İskonto (%{info.discountPct})
+                          </td>
+                          <td className="px-2 py-1 text-right tabular-nums text-red-600 whitespace-nowrap">
+                            - {formatPrice(info.discountAmount)}
+                          </td>
+                        </tr>
+                      )}
+                      <tr className="bg-accent-50 border-t-2 border-accent-300">
+                        <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
+                          {item.description || 'Ara Toplam'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
+                          {formatPrice(displayAmount)}
+                        </td>
+                      </tr>
+                    </React.Fragment>
                   );
                 }
 
@@ -1156,17 +1194,6 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
                       {formatPrice(summary.subtotal)}
-                    </td>
-                  </tr>
-                )}
-
-                {!hasInlineSubtotal && summary.discountPct > 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
-                      İskonto ({summary.discountPct}%)
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-red-600 whitespace-nowrap">
-                      -{formatPrice(summary.discountTotal)}
                     </td>
                   </tr>
                 )}
