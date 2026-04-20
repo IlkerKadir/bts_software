@@ -767,13 +767,16 @@ export function QuoteItemRow({
         )}
 
         {/* ACIKLAMA */}
-        <td className="border border-accent-200 px-2 py-1.5 max-w-[300px]">
-          <div className="flex items-center gap-1">
+        <td className="border border-accent-200 px-2 py-1.5 align-top">
+          <div className="flex items-start gap-1">
             {isSubRow && <span className="text-accent-400 mr-1">↳</span>}
             <EditableCell
               value={item.description}
               onChange={(v) => onUpdate({ description: String(v) })}
-              className={cn('text-sm truncate', isSubRow ? 'text-accent-500' : 'text-accent-900')}
+              className={cn(
+                'text-sm whitespace-normal break-words block',
+                isSubRow ? 'text-accent-500' : 'text-accent-900',
+              )}
             />
             {item.productId && onShowPriceHistory && (
               <button
