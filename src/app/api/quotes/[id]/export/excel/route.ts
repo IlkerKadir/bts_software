@@ -116,6 +116,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             itemType,
             description,
             sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
+            sectionDiscountLabel: item.sectionDiscountLabel ?? null,
           };
         }
 

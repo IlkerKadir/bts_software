@@ -27,10 +27,11 @@ export interface QuoteItemForExcel {
   currency?: string | null;
   /** Row total converted to quote currency for SUBTOTAL aggregation. */
   totalPriceInQuoteCurrency?: number;
-  /** Per-section discount percentage (0–100). When > 0 an İskonto row is
-   *  rendered above the SUBTOTAL row and the net (post-discount) amount
-   *  is shown in the SUBTOTAL row instead of the gross section sum. */
+  /** Per-section discount percentage (0–100). When > 0 a three-row
+   *  block is rendered: gross SUBTOTAL → İskonto line → NET SUBTOTAL. */
   sectionDiscountPct?: number | null;
+  /** Optional custom label for the İskonto line. Falls back to "İskonto". */
+  sectionDiscountLabel?: string | null;
 }
 
 export interface CommercialTermForExcel {
@@ -467,12 +468,32 @@ export class ExcelService {
         const pct = Number(item.sectionDiscountPct ?? 0);
         const discAmt = pct > 0 ? Math.round(sectionSum * (pct / 100) * 100) / 100 : 0;
         const net = sectionSum - discAmt;
+        const currencyName = CURRENCY_NAMES[currency] || currency;
+        const baseLabel = item.description || 'Ara Toplam';
+        const customDiscountLabel = item.sectionDiscountLabel?.trim() || 'İskonto';
 
-        // İskonto row — emitted above the SUBTOTAL row when a discount applies.
+        // Row 1 — gross SUBTOTAL (always emitted).
+        sheet.mergeCells(currentRow, 1, currentRow, 4);
+        const labelCell = sheet.getCell(currentRow, 1);
+        labelCell.value = `${baseLabel} (${currencyName})`;
+        labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
+        labelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+        styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+
+        const sumCell = sheet.getCell(currentRow, 5);
+        sumCell.value = formatTurkishCurrency(sectionSum, currency);
+        sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
+        sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        sumCell.border = blackBoxBorder();
+        sumCell.fill = grayFill();
+        sheet.getRow(currentRow).height = 16;
+
         if (pct > 0) {
+          // Row 2 — İskonto line.
+          currentRow++;
           sheet.mergeCells(currentRow, 1, currentRow, 4);
           const discLabelCell = sheet.getCell(currentRow, 1);
-          discLabelCell.value = `İskonto (%${pct})`;
+          discLabelCell.value = `${customDiscountLabel} (%${pct})`;
           discLabelCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
           discLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
           styleMergedRange(sheet, currentRow, 1, 4, grayFill());
@@ -484,29 +505,25 @@ export class ExcelService {
           discAmtCell.alignment = { horizontal: 'right', vertical: 'middle' };
           discAmtCell.border = blackBoxBorder();
           discAmtCell.fill = grayFill();
-
           sheet.getRow(currentRow).height = 16;
+
+          // Row 3 — NET SUBTOTAL.
           currentRow++;
+          sheet.mergeCells(currentRow, 1, currentRow, 4);
+          const netLabelCell = sheet.getCell(currentRow, 1);
+          netLabelCell.value = `NET ${baseLabel} (${currencyName})`;
+          netLabelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
+          netLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+          styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+
+          const netSumCell = sheet.getCell(currentRow, 5);
+          netSumCell.value = formatTurkishCurrency(net, currency);
+          netSumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
+          netSumCell.alignment = { horizontal: 'right', vertical: 'middle' };
+          netSumCell.border = blackBoxBorder();
+          netSumCell.fill = grayFill();
+          sheet.getRow(currentRow).height = 16;
         }
-
-        const currencyName = CURRENCY_NAMES[currency] || currency;
-        const label = `${item.description || 'Ara Toplam'} (${currencyName})`;
-
-        sheet.mergeCells(currentRow, 1, currentRow, 4);
-        const labelCell = sheet.getCell(currentRow, 1);
-        labelCell.value = label;
-        labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
-        labelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-        styleMergedRange(sheet, currentRow, 1, 4, grayFill());
-
-        const sumCell = sheet.getCell(currentRow, 5);
-        sumCell.value = formatTurkishCurrency(net, currency);
-        sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
-        sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
-        sumCell.border = blackBoxBorder();
-        sumCell.fill = grayFill();
-
-        sheet.getRow(currentRow).height = 16;
       } else {
         // PRODUCT / CUSTOM / SET
         pozCounter++;
