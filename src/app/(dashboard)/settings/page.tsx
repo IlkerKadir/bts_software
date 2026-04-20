@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { FileText, Tag, Settings as SettingsIcon, Users, Image } from 'lucide-react';
+import { FileText, Tag, Settings as SettingsIcon, Users } from 'lucide-react';
 import { getSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -44,13 +44,6 @@ export default async function SettingsHubPage() {
       title: 'Fiyat Etiketleri',
       description: '"Tarafınızca sağlanacaktır" gibi fiyat yerine kullanılan etiket seçeneklerini yönetin.',
       icon: Tag,
-      visible: user.role.canManageSettings,
-    },
-    {
-      href: '/settings/templates',
-      title: 'Belge Şablonu',
-      description: 'Teklif PDF\'inde kullanılan firma bilgileri, logo ve üst bilgi görselini düzenleyin.',
-      icon: Image,
       visible: user.role.canManageSettings,
     },
     {
