@@ -278,13 +278,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         // round2 only, no tier-round (children are already rounded).
         const isSetParent = item.itemType === 'SET' && !item.parentItemId;
 
-        // Per-section discount % — only meaningful on SUBTOTAL rows. Any
-        // stray value on a non-SUBTOTAL row is silently coerced to null so
-        // the DB never holds orphan state.
+        // Per-section discount % — only meaningful on SUBTOTAL rows.
+        // Undefined means "don't touch" (payload omitted the field);
+        // null or an explicit value on a non-SUBTOTAL row gets coerced
+        // to null so the DB never holds orphan state on a PRODUCT/CUSTOM/SET
+        // row. Mirrors the `currency` normalization pattern above.
         const isSubtotalRow = item.itemType === 'SUBTOTAL';
-        const sectionDiscountPct = isSubtotalRow && item.sectionDiscountPct != null
-          ? item.sectionDiscountPct
-          : null;
+        let sectionDiscountPctUpdate: number | null | undefined;
+        if (item.sectionDiscountPct === undefined) {
+          sectionDiscountPctUpdate = undefined;
+        } else if (!isSubtotalRow || item.sectionDiscountPct === null) {
+          sectionDiscountPctUpdate = null;
+        } else {
+          sectionDiscountPctUpdate = item.sectionDiscountPct;
+        }
 
         // Normalize the currency override. Undefined means "don't
         // touch" (PUT omits the field → keep existing DB value); null
@@ -360,7 +367,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             ekMaliyetDelta: item.ekMaliyetDelta !== undefined ? item.ekMaliyetDelta : undefined,
             serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
             ...(currencyUpdate === undefined ? {} : { currency: currencyUpdate }),
-            sectionDiscountPct,
+            ...(sectionDiscountPctUpdate === undefined ? {} : { sectionDiscountPct: sectionDiscountPctUpdate }),
           },
         });
       }

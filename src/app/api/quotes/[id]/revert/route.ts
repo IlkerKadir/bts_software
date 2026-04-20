@@ -96,8 +96,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           exchangeRate: sourceQuote.exchangeRate,
           protectionPct: sourceQuote.protectionPct,
           subtotal: sourceQuote.subtotal,
-          discountTotal: sourceQuote.discountTotal,
-          discountPct: sourceQuote.discountPct,
           vatTotal: sourceQuote.vatTotal,
           grandTotal: sourceQuote.grandTotal,
           status: 'TASLAK', // New revision starts as draft
@@ -180,19 +178,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
           });
           oldToNewId.set(item.id, created.id);
-        }
-      }
-
-      // Remap discountScopeSubtotalId onto the reverted-into SUBTOTAL's
-      // new id. Mirror of the clone route logic — dangling pointers
-      // stay null and the recalc path auto-heals.
-      if (sourceQuote.discountScopeSubtotalId) {
-        const remappedScopeId = oldToNewId.get(sourceQuote.discountScopeSubtotalId);
-        if (remappedScopeId) {
-          await tx.quote.update({
-            where: { id: quote.id },
-            data: { discountScopeSubtotalId: remappedScopeId },
-          });
         }
       }
 

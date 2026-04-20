@@ -172,8 +172,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           protectionPct: sourceQuote.protectionPct,
           protectionMap: sourceQuote.protectionMap ?? Prisma.JsonNull,
           subtotal: sourceQuote.subtotal,
-          discountTotal: sourceQuote.discountTotal,
-          discountPct: sourceQuote.discountPct,
           vatTotal: sourceQuote.vatTotal,
           grandTotal: sourceQuote.grandTotal,
           status: 'TASLAK',
@@ -259,21 +257,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
           });
           oldToNewId.set(item.id, created.id);
-        }
-      }
-
-      // Remap discountScopeSubtotalId onto the cloned SUBTOTAL's new id.
-      // The clone quote was created with scope=null (schema default);
-      // we fill it in here now that the new item ids exist. If the
-      // source pointer is stale (dangling cuid), we just leave the
-      // clone at null and the recalc path auto-heals on next save.
-      if (sourceQuote.discountScopeSubtotalId) {
-        const remappedScopeId = oldToNewId.get(sourceQuote.discountScopeSubtotalId);
-        if (remappedScopeId) {
-          await tx.quote.update({
-            where: { id: quote.id },
-            data: { discountScopeSubtotalId: remappedScopeId },
-          });
         }
       }
 

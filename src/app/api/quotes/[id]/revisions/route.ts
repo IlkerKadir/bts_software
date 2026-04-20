@@ -120,8 +120,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         exchangeRate: sourceQuote.exchangeRate,
         protectionPct: sourceQuote.protectionPct,
         subtotal: sourceQuote.subtotal,
-        discountTotal: sourceQuote.discountTotal,
-        discountPct: sourceQuote.discountPct,
         vatTotal: sourceQuote.vatTotal,
         grandTotal: sourceQuote.grandTotal,
         status: 'TASLAK',
@@ -211,20 +209,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         });
         oldToNewId.set(item.id, created.id);
-      }
-    }
-
-    // Remap discountScopeSubtotalId onto the new revision's SUBTOTAL id.
-    // The revision quote was created with scope=null (schema default);
-    // we fill it in here after items exist. Dangling pointers stay null
-    // and the recalc path auto-heals on next save.
-    if (sourceQuote.discountScopeSubtotalId) {
-      const remappedScopeId = oldToNewId.get(sourceQuote.discountScopeSubtotalId);
-      if (remappedScopeId) {
-        await db.quote.update({
-          where: { id: newQuote.id },
-          data: { discountScopeSubtotalId: remappedScopeId },
-        });
       }
     }
 
