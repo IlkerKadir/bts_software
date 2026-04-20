@@ -41,6 +41,7 @@ export interface ApiQuoteItem {
    *  means "use quote currency" (all existing data). */
   currency?: string | null;
   sectionDiscountPct?: number | null;
+  sectionDiscountLabel?: string | null;
   product?: { model?: string | null; currency?: string | null; listPrice?: number | string | null; costPrice?: number | string | null; minKatsayi?: number | string | null; maxKatsayi?: number | string | null; [key: string]: unknown };
 }
 

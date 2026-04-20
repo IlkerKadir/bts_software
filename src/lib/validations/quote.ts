@@ -62,6 +62,10 @@ export const quoteItemSchema = z.object({
    *  coerces it to null on non-SUBTOTAL rows so the DB never holds a
    *  stale value on a PRODUCT/CUSTOM/SET row. */
   sectionDiscountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').nullish(),
+  /** Optional custom label for the section's İskonto line on PDF/Excel.
+   *  Null → renderers fall back to "İskonto". Only meaningful on
+   *  SUBTOTAL rows; coerced to null on other rows. */
+  sectionDiscountLabel: z.string().max(50).nullish(),
 });
 
 export const quoteItemUpdateSchema = quoteItemSchema.extend({

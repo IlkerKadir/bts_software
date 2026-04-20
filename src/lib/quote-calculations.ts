@@ -35,6 +35,12 @@ export interface QuoteItem {
    * or 0 → this section contributes its gross sum to the grand total.
    */
   sectionDiscountPct?: number | null;
+  /**
+   * Optional custom label for the section's İskonto line on PDF/Excel.
+   * Null → renderers fall back to "İskonto". Only meaningful on
+   * SUBTOTAL rows.
+   */
+  sectionDiscountLabel?: string | null;
 }
 
 /**
@@ -164,6 +170,10 @@ export interface SectionBreakdown {
   sectionSum: number;
   /** Discount % pulled off the SUBTOTAL row (0 when subtotalId is null). */
   discountPct: number;
+  /** Custom discount-line label pulled off the SUBTOTAL row; null when
+   *  there's no discount or the SUBTOTAL didn't specify a custom label.
+   *  Renderers fall back to "İskonto" on null. */
+  discountLabel: string | null;
   /** sectionSum × discountPct / 100, rounded to 2 decimals. */
   discountAmount: number;
   /** sectionSum − discountAmount. */
@@ -194,6 +204,7 @@ export function calculateSectionBreakdown(
         subtotalId: item.id ?? null,
         sectionSum: round2(sectionSum),
         discountPct,
+        discountLabel: item.sectionDiscountLabel ?? null,
         discountAmount,
         sectionNet: round2(sectionSum - discountAmount),
       });
@@ -223,6 +234,7 @@ export function calculateSectionBreakdown(
       subtotalId: null,
       sectionSum: round2(sectionSum),
       discountPct: 0,
+      discountLabel: null,
       discountAmount: 0,
       sectionNet: round2(sectionSum),
     });
@@ -457,6 +469,7 @@ export async function recalculateAndPersistQuoteTotals(quoteId: string) {
       currency: item.currency ?? null,
       parentItemId: item.parentItemId ?? null,
       sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
+      sectionDiscountLabel: item.sectionDiscountLabel ?? null,
     }));
 
   const hasMixedCurrency = quoteItems.some(
