@@ -181,9 +181,9 @@ describe('ExcelService', () => {
       expect(sheetContains(sheet, 'TYCO ZETTLER')).toBe(true);
     });
 
-    // --- 5-Column Table Header (matching PDF) ---
+    // --- 8-Column Table Header ---
 
-    it('has 5-column header matching the PDF layout', async () => {
+    it('has 8-column header (POZ NO / KOD / MARKA / MODEL / AÇIKLAMA / MİKTAR / BİRİM FİYAT / TOPLAM FİYAT)', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
@@ -193,7 +193,7 @@ describe('ExcelService', () => {
       // Column header is at row 7 (row 1 banner, rows 2-6 customer block:
       // name, address, subject, description spanning 2 rows).
       const headerRow = sheet.getRow(7);
-      const expectedHeaders = ['POZ NO', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
+      const expectedHeaders = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
 
       const actualHeaders: string[] = [];
       headerRow.eachCell({ includeEmpty: false }, (cell) => {
@@ -203,7 +203,7 @@ describe('ExcelService', () => {
       expectedHeaders.forEach(header => {
         expect(actualHeaders).toContain(header);
       });
-      expect(actualHeaders.length).toBe(5);
+      expect(actualHeaders.length).toBe(8);
     });
 
     it('does NOT include internal KATSAYI / LİSTE FİYATI columns or group headers', async () => {
@@ -607,14 +607,16 @@ describe('ExcelService', () => {
       const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       // SET item should appear at row 8 (row 1 banner, rows 2-6
-      // customer block, row 7 column headers).
+      // customer block, row 7 column headers). With the 8-column
+      // layout: A=POZ, B/C/D=KOD/MARKA/MODEL (empty here), E=AÇIKLAMA,
+      // F=MİKTAR, G=BİRİM FİYAT, H=TOPLAM.
       expect(sheet.getCell(8, 1).value).toBe(1); // POZ NO = 1
-      expect(sheet.getCell(8, 2).value).toBe('Muhendislik Hizmeti');
+      expect(sheet.getCell(8, 5).value).toBe('Muhendislik Hizmeti');
       // Combined miktar cell, e.g. "5 ad."
-      expect(String(sheet.getCell(8, 3).value).toLowerCase()).toContain('5');
-      expect(String(sheet.getCell(8, 3).value).toLowerCase()).toContain('ad.');
-      expect(String(sheet.getCell(8, 4).value)).toContain('200');
-      expect(String(sheet.getCell(8, 5).value)).toContain('1.000');
+      expect(String(sheet.getCell(8, 6).value).toLowerCase()).toContain('5');
+      expect(String(sheet.getCell(8, 6).value).toLowerCase()).toContain('ad.');
+      expect(String(sheet.getCell(8, 7).value)).toContain('200');
+      expect(String(sheet.getCell(8, 8).value)).toContain('1.000');
     });
 
     // --- Print Setup ---

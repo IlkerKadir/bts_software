@@ -13,6 +13,12 @@ import sharp from 'sharp';
 export interface QuoteItemForExcel {
   itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
   description: string;
+  /** Product code column (B). Empty string for rows without one. */
+  code?: string | null;
+  /** Brand column (C). Empty string for rows without one. */
+  brand?: string | null;
+  /** Model column (D). Empty string for rows without one. */
+  model?: string | null;
   quantity?: number;
   unit?: string | null;
   unitPrice?: number;
@@ -86,20 +92,24 @@ export interface CompanyInfo {
 
 // ==================== Template Constants ====================
 
-const TOTAL_COLUMNS = 5;
+const TOTAL_COLUMNS = 8;
 
 /**
- * Column widths copied from the user's reference template
- * `proforma_fatura.xlsx` (rounded to 2 decimals):
+ * Column widths. POZ NO stays narrow. KOD/MARKA/MODEL get moderate
+ * widths sized for typical product codes. AÇIKLAMA takes the remaining
+ * space. MIKTAR/BIRIM FIYAT/TOPLAM FIYAT preserve their original widths.
  *   A  POZ NO       7.33
- *   B  AÇIKLAMA    50.66
- *   C  MİKTAR       8.50
- *   D  BİRİM FİYAT 10.66
- *   E  TOPLAM      11.33
+ *   B  KOD          14.00
+ *   C  MARKA        14.00
+ *   D  MODEL        14.00
+ *   E  AÇIKLAMA    40.00
+ *   F  MİKTAR       8.50
+ *   G  BİRİM FİYAT 10.66
+ *   H  TOPLAM      11.33
  */
-const COLUMN_WIDTHS = [7.33, 50.66, 8.5, 10.66, 11.33];
+const COLUMN_WIDTHS = [7.33, 14, 14, 14, 40, 8.5, 10.66, 11.33];
 
-const TABLE_HEADERS = ['POZ NO', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
+const TABLE_HEADERS = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
 
 const FONT_FAMILY = 'Arial';
 const BASE_FONT_SIZE = 8;
@@ -310,50 +320,52 @@ export class ExcelService {
       sheet.getRow(r).height = 12;
     }
 
-    // --- LEFT SIDE ---
+    // --- LEFT SIDE (A:F) ---
+    // With the 8-column table, the left-side company block spans A:F
+    // (6 cols) and the right-side info panel sits in G:H (2 cols).
     // Row 2: company name
-    sheet.mergeCells(START, 1, START, 3);
+    sheet.mergeCells(START, 1, START, 6);
     const nameCell = sheet.getCell(START, 1);
     nameCell.value = data.company.name;
     nameCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
     nameCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-    styleMergedRange(sheet, START, 1, 3);
+    styleMergedRange(sheet, START, 1, 6);
 
     // Row 3: company address
-    sheet.mergeCells(START + 1, 1, START + 1, 3);
+    sheet.mergeCells(START + 1, 1, START + 1, 6);
     const addrCell = sheet.getCell(START + 1, 1);
     addrCell.value = data.company.address || '';
     addrCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
     addrCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
-    styleMergedRange(sheet, START + 1, 1, 3);
+    styleMergedRange(sheet, START + 1, 1, 6);
 
     // Row 4: subject (single row)
-    sheet.mergeCells(START + 2, 1, START + 2, 3);
+    sheet.mergeCells(START + 2, 1, START + 2, 6);
     const subjCell = sheet.getCell(START + 2, 1);
     subjCell.value = data.subject || '';
     subjCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
     subjCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-    styleMergedRange(sheet, START + 2, 1, 3);
+    styleMergedRange(sheet, START + 2, 1, 6);
 
     // Rows 5-6: description (spans 2 rows for longer text)
-    sheet.mergeCells(START + 3, 1, START + 4, 3);
+    sheet.mergeCells(START + 3, 1, START + 4, 6);
     const descCell = sheet.getCell(START + 3, 1);
     descCell.value = data.description || '';
     descCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
     descCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
     for (let r = START + 3; r <= START + 4; r++) {
-      styleMergedRange(sheet, r, 1, 3);
+      styleMergedRange(sheet, r, 1, 6);
     }
 
-    // --- RIGHT SIDE ---
-    // D2:E3 "PROFORMA FATURA" (gray fill, centered, spans 2 rows)
-    sheet.mergeCells(START, 4, START + 1, 5);
-    const proforma = sheet.getCell(START, 4);
+    // --- RIGHT SIDE (G:H) ---
+    // G2:H3 "PROFORMA FATURA" (gray fill, centered, spans 2 rows)
+    sheet.mergeCells(START, 7, START + 1, 8);
+    const proforma = sheet.getCell(START, 7);
     proforma.value = 'PROFORMA FATURA';
     proforma.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
     proforma.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     for (let r = START; r <= START + 1; r++) {
-      styleMergedRange(sheet, r, 4, 5, grayFill());
+      styleMergedRange(sheet, r, 7, 8, grayFill());
     }
 
     // Rows 4-6: Tarih / Ref.No / Teklif No
@@ -363,13 +375,13 @@ export class ExcelService {
       { row: START + 4, label: 'Teklif No', value: data.quoteNumber },
     ];
     for (const { row, label, value } of detailRows) {
-      const l = sheet.getCell(row, 4);
+      const l = sheet.getCell(row, 7);
       l.value = label;
       l.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
       l.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
       l.border = blackBoxBorder();
 
-      const v = sheet.getCell(row, 5);
+      const v = sheet.getCell(row, 8);
       v.value = `: ${value}`;
       v.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
       v.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -444,18 +456,18 @@ export class ExcelService {
         const lineCount = Math.max(1, Math.ceil(item.description.length / 85));
         sheet.getRow(currentRow).height = 12 * lineCount + 2;
       } else if (item.itemType === 'GRAND_TOTAL') {
-        // A:D merged label, E value. Gray fill like the template's row 25.
+        // A:G merged label, H value. Gray fill like the template's row 25.
         const currencyName = CURRENCY_NAMES[currency] || currency;
         const label = `${item.description || 'GENEL TOPLAM'} (${currencyName})`;
 
-        sheet.mergeCells(currentRow, 1, currentRow, 4);
+        sheet.mergeCells(currentRow, 1, currentRow, 7);
         const labelCell = sheet.getCell(currentRow, 1);
         labelCell.value = label;
         labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         labelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-        styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+        styleMergedRange(sheet, currentRow, 1, 7, grayFill());
 
-        const sumCell = sheet.getCell(currentRow, 5);
+        const sumCell = sheet.getCell(currentRow, 8);
         sumCell.value = formatTurkishCurrency(grandTotal, currency);
         sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -472,15 +484,15 @@ export class ExcelService {
         const baseLabel = item.description || 'Ara Toplam';
         const customDiscountLabel = item.sectionDiscountLabel?.trim() || 'İskonto';
 
-        // Row 1 — gross SUBTOTAL (always emitted).
-        sheet.mergeCells(currentRow, 1, currentRow, 4);
+        // Row 1 — gross SUBTOTAL (always emitted). Label A:G, value H.
+        sheet.mergeCells(currentRow, 1, currentRow, 7);
         const labelCell = sheet.getCell(currentRow, 1);
         labelCell.value = `${baseLabel} (${currencyName})`;
         labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         labelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-        styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+        styleMergedRange(sheet, currentRow, 1, 7, grayFill());
 
-        const sumCell = sheet.getCell(currentRow, 5);
+        const sumCell = sheet.getCell(currentRow, 8);
         sumCell.value = formatTurkishCurrency(sectionSum, currency);
         sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -491,14 +503,14 @@ export class ExcelService {
         if (pct > 0) {
           // Row 2 — İskonto line.
           currentRow++;
-          sheet.mergeCells(currentRow, 1, currentRow, 4);
+          sheet.mergeCells(currentRow, 1, currentRow, 7);
           const discLabelCell = sheet.getCell(currentRow, 1);
           discLabelCell.value = `${customDiscountLabel} (%${pct})`;
           discLabelCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
           discLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-          styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+          styleMergedRange(sheet, currentRow, 1, 7, grayFill());
 
-          const discAmtCell = sheet.getCell(currentRow, 5);
+          const discAmtCell = sheet.getCell(currentRow, 8);
           discAmtCell.value = -discAmt;
           discAmtCell.numFmt = '#,##0.00';
           discAmtCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
@@ -509,14 +521,14 @@ export class ExcelService {
 
           // Row 3 — NET SUBTOTAL.
           currentRow++;
-          sheet.mergeCells(currentRow, 1, currentRow, 4);
+          sheet.mergeCells(currentRow, 1, currentRow, 7);
           const netLabelCell = sheet.getCell(currentRow, 1);
           netLabelCell.value = `NET ${baseLabel} (${currencyName})`;
           netLabelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           netLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-          styleMergedRange(sheet, currentRow, 1, 4, grayFill());
+          styleMergedRange(sheet, currentRow, 1, 7, grayFill());
 
-          const netSumCell = sheet.getCell(currentRow, 5);
+          const netSumCell = sheet.getCell(currentRow, 8);
           netSumCell.value = formatTurkishCurrency(net, currency);
           netSumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           netSumCell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -534,35 +546,50 @@ export class ExcelService {
         pozCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         pozCell.border = blackBoxBorder();
 
-        const descCell = sheet.getCell(currentRow, 2);
+        // KOD (B), MARKA (C), MODEL (D) — empty for CUSTOM rows that
+        // have none. All three use the same left-aligned, wrapped style.
+        const metaCells: Array<{ col: number; value: string }> = [
+          { col: 2, value: item.code ?? '' },
+          { col: 3, value: item.brand ?? '' },
+          { col: 4, value: item.model ?? '' },
+        ];
+        for (const { col, value } of metaCells) {
+          const c = sheet.getCell(currentRow, col);
+          c.value = value;
+          c.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
+          c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
+          c.border = blackBoxBorder();
+        }
+
+        const descCell = sheet.getCell(currentRow, 5);
         descCell.value = item.description;
         descCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
         descCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
         descCell.border = blackBoxBorder();
 
         if (item.priceLabel) {
-          // Keep MIKTAR (col C) with the quantity; merge only BIRIM
-          // FIYAT + TOPLAM FIYAT (D:E) for the literal label text.
+          // Keep MIKTAR (col F) with the quantity; merge only BIRIM
+          // FIYAT + TOPLAM FIYAT (G:H) for the literal label text.
           // Client still needs the "adet" information on rows like
           // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR".
           const qty = item.quantity ?? 0;
           const unit = unitAbbr(item.unit || 'Adet');
-          const qtyCell = sheet.getCell(currentRow, 3);
+          const qtyCell = sheet.getCell(currentRow, 6);
           qtyCell.value = `${qty} ${unit}`;
           qtyCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           qtyCell.border = blackBoxBorder();
 
-          sheet.mergeCells(currentRow, 4, currentRow, 5);
-          const labelCell = sheet.getCell(currentRow, 4);
+          sheet.mergeCells(currentRow, 7, currentRow, 8);
+          const labelCell = sheet.getCell(currentRow, 7);
           labelCell.value = item.priceLabel;
           labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           labelCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          styleMergedRange(sheet, currentRow, 4, 5);
+          styleMergedRange(sheet, currentRow, 7, 8);
         } else {
           const qty = item.quantity ?? 0;
           const unit = unitAbbr(item.unit || 'Adet');
-          const qtyCell = sheet.getCell(currentRow, 3);
+          const qtyCell = sheet.getCell(currentRow, 6);
           qtyCell.value = `${qty} ${unit}`;
           qtyCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -573,22 +600,22 @@ export class ExcelService {
           // the quote's currency. Subtotals/grand total below use the
           // quote currency.
           const rowCurrency = (item.itemType === 'SET' && item.currency) ? item.currency : currency;
-          const unitPriceCell = sheet.getCell(currentRow, 4);
+          const unitPriceCell = sheet.getCell(currentRow, 7);
           unitPriceCell.value = formatTurkishCurrency(item.unitPrice ?? 0, rowCurrency);
           unitPriceCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           unitPriceCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           unitPriceCell.border = blackBoxBorder();
 
-          const totalCell = sheet.getCell(currentRow, 5);
+          const totalCell = sheet.getCell(currentRow, 8);
           totalCell.value = formatTurkishCurrency(item.totalPrice ?? 0, rowCurrency);
           totalCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           totalCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           totalCell.border = blackBoxBorder();
         }
 
-        // Roughly fit long descriptions into a taller row. Column B
-        // holds ~85 chars per line at Arial 8pt in width 50.66.
-        const lineCount = Math.max(1, Math.ceil(item.description.length / 85));
+        // Roughly fit long descriptions into a taller row. Column E
+        // (AÇIKLAMA) at width ~40 holds about 65 chars per line.
+        const lineCount = Math.max(1, Math.ceil(item.description.length / 65));
         sheet.getRow(currentRow).height = lineCount > 1 ? 13 * lineCount : 14;
       }
 

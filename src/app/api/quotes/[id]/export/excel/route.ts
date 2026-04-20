@@ -130,6 +130,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return {
           itemType,
           description,
+          code: item.code ?? '',
+          brand: item.brand ?? '',
+          model: item.model ?? '',
           quantity: Number(item.quantity),
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
