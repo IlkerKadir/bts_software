@@ -366,6 +366,13 @@ model QuoteItem {
    * excluded from the section sum, identical to pre-change behavior.
    */
   sectionDiscountPct Decimal?      @db.Decimal(5, 2)
+  /**
+   * Optional custom label for the section's discount line on PDF/Excel
+   * exports — e.g. "İskonto" (default), "Ek İndirim", "Ozel İskonto".
+   * Only meaningful on SUBTOTAL rows that carry a non-null
+   * sectionDiscountPct. Null → renderers fall back to "İskonto".
+   */
+  sectionDiscountLabel String?
   parentItemId  String?
   parentItem    QuoteItem?  @relation("ItemSubRows", fields: [parentItemId], references: [id], onDelete: Cascade)
   subRows       QuoteItem[] @relation("ItemSubRows")
