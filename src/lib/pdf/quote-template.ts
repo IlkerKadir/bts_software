@@ -62,9 +62,11 @@ export interface QuoteItemForPdf {
   unitPrice: number;
   discountPct: number;
   /** Per-SUBTOTAL section discount percentage (0–100). When > 0, the
-   *  template renders an İskonto row above the SUBTOTAL and shows the
-   *  net (post-discount) amount on the SUBTOTAL row itself. */
+   *  template renders a three-row block: gross SUBTOTAL → İskonto line
+   *  → NET SUBTOTAL row. */
   sectionDiscountPct?: number | null;
+  /** Optional custom label for the İskonto line. Falls back to "İskonto". */
+  sectionDiscountLabel?: string | null;
   totalPrice: number;
   vatRate: number;
   /** Optional background color for HEADER items (CSS color value, e.g. '#FF0000') */
@@ -251,21 +253,31 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       const discAmt = pct > 0 ? round2(sectionSum * (pct / 100)) : 0;
       const net = sectionSum - discAmt;
       const subtotalLabel = escapeHtml(item.description || 'Ara Toplam');
+      const discountLabel = escapeHtml(item.sectionDiscountLabel?.trim() || 'İskonto');
       let subtotalRows = `<tr><td colspan="5" style="height:4pt; border:none; padding:0;"></td></tr>`;
-      // Render the İskonto row above the SUBTOTAL when this section has a discount.
       if (pct > 0) {
+        // Three-row layout: gross SUBTOTAL → İskonto line → NET SUBTOTAL
         subtotalRows += `
-      <tr style="height:12pt" class="discount-row">
-        <td class="sys-total-label discount-label" colspan="4"><p class="s1" style="text-align:right;">İskonto (%${pct}) (${currencyName})</p></td>
-        <td class="sys-total-val discount-amount"><p class="s1" style="text-align:right; color:#dc2626;">- ${formatCurrency(discAmt, currency)}</p></td>
-      </tr>`;
-      }
-      // SUBTOTAL row shows the net (post-discount) amount.
-      subtotalRows += `
       <tr style="height:12pt">
         <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${subtotalLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
+      </tr>
+      <tr style="height:12pt" class="discount-row">
+        <td class="sys-total-label discount-label" colspan="4"><p class="s1" style="text-align:right;">${discountLabel} (%${pct}) (${currencyName})</p></td>
+        <td class="sys-total-val discount-amount"><p class="s1" style="text-align:right; color:#dc2626;">- ${formatCurrency(discAmt, currency)}</p></td>
+      </tr>
+      <tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">NET ${subtotalLabel} (${currencyName})</p></td>
         <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(net, currency)}</p></td>
       </tr>`;
+      } else {
+        // No discount: single SUBTOTAL row at gross (which equals net).
+        subtotalRows += `
+      <tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${subtotalLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(sectionSum, currency)}</p></td>
+      </tr>`;
+      }
       // Omit the trailing 4pt spacer if the next row is a GRAND_TOTAL,
       // so the grand total sits flush against the subtotal card.
       const nextIsGrandTotal = items[index + 1]?.itemType === 'GRAND_TOTAL';

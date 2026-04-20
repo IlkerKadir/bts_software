@@ -96,6 +96,7 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
       unitPrice: Number(item.unitPrice),
       discountPct: Number(item.discountPct),
       sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
+      sectionDiscountLabel: item.sectionDiscountLabel ?? null,
       totalPrice: rawTotal,
       vatRate: Number(item.vatRate),
       headerColor,
