@@ -116,6 +116,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const sectionDiscountPct = isSubtotal && data.sectionDiscountPct != null
       ? data.sectionDiscountPct
       : null;
+    const sectionDiscountLabel = isSubtotal && data.sectionDiscountLabel
+      ? data.sectionDiscountLabel.trim() || null
+      : null;
 
     // For non-priced items (HEADER, NOTE, SUBTOTAL, GRAND_TOTAL),
     // zero out prices. For SET parents, start at 0 (price derived from
@@ -189,6 +192,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ekMaliyetDelta: data.ekMaliyetDelta ?? null,
         currency: itemCurrency,
         sectionDiscountPct,
+        sectionDiscountLabel,
       },
       include: {
         product: {
@@ -293,6 +297,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           sectionDiscountPctUpdate = item.sectionDiscountPct;
         }
 
+        // Same undef=no-touch pattern for the custom discount label.
+        let sectionDiscountLabelUpdate: string | null | undefined;
+        if (item.sectionDiscountLabel === undefined) {
+          sectionDiscountLabelUpdate = undefined;
+        } else if (!isSubtotalRow || !item.sectionDiscountLabel) {
+          sectionDiscountLabelUpdate = null;
+        } else {
+          const trimmed = item.sectionDiscountLabel.trim();
+          sectionDiscountLabelUpdate = trimmed || null;
+        }
+
         // Normalize the currency override. Undefined means "don't
         // touch" (PUT omits the field → keep existing DB value); null
         // means "clear back to quote currency"; a set value on a
@@ -368,6 +383,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
             ...(currencyUpdate === undefined ? {} : { currency: currencyUpdate }),
             ...(sectionDiscountPctUpdate === undefined ? {} : { sectionDiscountPct: sectionDiscountPctUpdate }),
+            ...(sectionDiscountLabelUpdate === undefined ? {} : { sectionDiscountLabel: sectionDiscountLabelUpdate }),
           },
         });
       }

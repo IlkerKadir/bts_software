@@ -219,6 +219,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               serviceMeta: item.serviceMeta ?? undefined,
               currency: item.currency,
               sectionDiscountPct: item.sectionDiscountPct,
+              sectionDiscountLabel: item.sectionDiscountLabel,
             },
           });
           oldToNewId.set(item.id, created.id);
@@ -253,6 +254,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               serviceMeta: item.serviceMeta ?? undefined,
               currency: item.currency,
               sectionDiscountPct: item.sectionDiscountPct,
+              sectionDiscountLabel: item.sectionDiscountLabel,
               parentItemId: newParentId ?? null,
             },
           });
