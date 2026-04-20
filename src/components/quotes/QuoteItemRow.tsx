@@ -57,6 +57,8 @@ export interface QuoteItemData {
   currency?: string | null;
   /** Per-section discount percentage. Only meaningful on SUBTOTAL rows. */
   sectionDiscountPct?: number | null;
+  /** Optional custom label for the section's İskonto line. */
+  sectionDiscountLabel?: string | null;
 }
 
 export interface PriceHistoryStats {

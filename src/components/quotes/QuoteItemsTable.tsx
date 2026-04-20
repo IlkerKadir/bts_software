@@ -56,6 +56,7 @@ export interface QuoteItemsTableProps {
   canOverrideKatsayi?: boolean;
   priceHistoryBatch?: Record<string, PriceHistoryStats>;
   onSectionDiscountPctChange?: (subtotalItemId: string, pct: number) => void;
+  onSectionDiscountLabelChange?: (subtotalItemId: string, label: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,7 @@ export function QuoteItemsTable({
   canOverrideKatsayi,
   priceHistoryBatch,
   onSectionDiscountPctChange,
+  onSectionDiscountLabelChange,
 }: QuoteItemsTableProps) {
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -1020,7 +1022,18 @@ export function QuoteItemsTable({
                     <tr className="bg-white">
                       <td colSpan={labelSpan} className="px-3 py-1.5 text-right text-sm text-accent-700">
                         <span className="inline-flex items-center gap-2">
-                          İskonto
+                          <input
+                            type="text"
+                            value={item.sectionDiscountLabel ?? ''}
+                            placeholder="İskonto"
+                            aria-label="İskonto etiketini düzenle"
+                            onChange={(e) => {
+                              if (item.id) {
+                                onSectionDiscountLabelChange?.(item.id, e.target.value);
+                              }
+                            }}
+                            className="w-32 rounded border border-transparent px-1 py-0.5 text-right text-sm text-accent-700 hover:border-accent-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                          />
                           <input
                             type="number"
                             min={0}

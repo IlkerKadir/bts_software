@@ -192,6 +192,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
     currency: item.currency ?? null,
     sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
+    sectionDiscountLabel: item.sectionDiscountLabel ?? null,
   };
 }
 
@@ -562,6 +563,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           priceLabel: item.priceLabel ?? null,
           serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
           sectionDiscountPct: item.sectionDiscountPct ?? null,
+          sectionDiscountLabel: item.sectionDiscountLabel ?? null,
           // Per-SET currency override — only set on top-level SET rows.
           // Sending it always (null for non-SET rows) lets the API reset
           // stray values when a row changes type.
@@ -982,6 +984,18 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       prev.map((it) =>
         it.id === subtotalItemId && it.itemType === 'SUBTOTAL'
           ? { ...it, sectionDiscountPct: Math.min(100, Math.max(0, pct)) }
+          : it
+      )
+    );
+    itemsDirtyRef.current = true;
+    setHasChanges(true);
+  }, []);
+
+  const handleSectionDiscountLabelChange = useCallback((subtotalItemId: string, label: string) => {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === subtotalItemId && it.itemType === 'SUBTOTAL'
+          ? { ...it, sectionDiscountLabel: label.length > 0 ? label : null }
           : it
       )
     );
@@ -2251,6 +2265,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onItemDuplicate={handleItemDuplicate}
         onReorder={handleReorder}
         onSectionDiscountPctChange={handleSectionDiscountPctChange}
+        onSectionDiscountLabelChange={handleSectionDiscountLabelChange}
         onAddProduct={() => setCatalogOpen(true)}
         onAddHeader={handleAddHeader}
         onAddNote={handleAddNote}
