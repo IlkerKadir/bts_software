@@ -133,8 +133,7 @@ export function QuoteDefaultsForm() {
       <div>
         <h1 className="text-2xl font-bold text-accent-900">Teklif Varsayılanları</h1>
         <p className="text-sm text-accent-600 mt-1">
-          Yeni teklif kalemlerinde kullanılan birim listesi, varsayılan KDV oranı ve
-          seçilebilir para birimleri.
+          Yeni teklif kalemlerinde kullanılan birim listesi ve seçilebilir para birimleri.
         </p>
       </div>
 
@@ -185,25 +184,6 @@ export function QuoteDefaultsForm() {
           <Button type="button" variant="secondary" size="sm" onClick={addUnit}>
             <Plus className="h-4 w-4" /> Ekle
           </Button>
-        </div>
-      </section>
-
-      {/* Default VAT */}
-      <section className="rounded-lg border border-accent-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-accent-900 mb-1">Varsayılan KDV Oranı (%)</h2>
-        <p className="text-xs text-accent-500 mb-3">
-          Yeni eklenen kalemlere otomatik olarak bu oran uygulanır. (Not: teklif genel toplamları
-          KDV hariç hesaplanır; bu oran yalnızca kalem meta verisi olarak saklanır.)
-        </p>
-        <div className="max-w-xs">
-          <Input
-            type="number"
-            min={0}
-            max={100}
-            step={0.5}
-            value={defaults.defaultVatRate}
-            onChange={(e) => setDefaults({ ...defaults, defaultVatRate: Number(e.target.value) || 0 })}
-          />
         </div>
       </section>
 

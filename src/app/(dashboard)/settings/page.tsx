@@ -28,7 +28,7 @@ export default async function SettingsHubPage() {
     {
       href: '/settings/quote-defaults',
       title: 'Teklif Varsayılanları',
-      description: 'Miktar birimleri (Adet, kg, m² vb.), varsayılan KDV oranı ve kullanılacak para birimlerini yönetin.',
+      description: 'Miktar birimleri (Adet, kg, m² vb.) ve kullanılacak para birimlerini yönetin.',
       icon: SettingsIcon,
       visible: user.role.canManageSettings,
     },
