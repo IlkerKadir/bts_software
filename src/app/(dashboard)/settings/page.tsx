@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { FileText, Tag } from 'lucide-react';
+import { FileText, Tag, Settings as SettingsIcon, Users, Image } from 'lucide-react';
 import { getSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +26,13 @@ export default async function SettingsHubPage() {
     visible: boolean;
   }> = [
     {
+      href: '/settings/quote-defaults',
+      title: 'Teklif Varsayılanları',
+      description: 'Miktar birimleri (Adet, kg, m² vb.), varsayılan KDV oranı ve kullanılacak para birimlerini yönetin.',
+      icon: SettingsIcon,
+      visible: user.role.canManageSettings,
+    },
+    {
       href: '/settings/commercial-terms',
       title: 'Ticari Şart Şablonları',
       description: 'Garanti, ödeme, teslimat gibi kategorilerde tekrar kullanılabilir şart metinlerini yönetin.',
@@ -38,6 +45,20 @@ export default async function SettingsHubPage() {
       description: '"Tarafınızca sağlanacaktır" gibi fiyat yerine kullanılan etiket seçeneklerini yönetin.',
       icon: Tag,
       visible: user.role.canManageSettings,
+    },
+    {
+      href: '/settings/templates',
+      title: 'Belge Şablonu',
+      description: 'Teklif PDF\'inde kullanılan firma bilgileri, logo ve üst bilgi görselini düzenleyin.',
+      icon: Image,
+      visible: user.role.canManageSettings,
+    },
+    {
+      href: '/settings/roles',
+      title: 'Roller ve İzinler',
+      description: 'Kullanıcı rollerini ve onlara tanımlı yetki bayraklarını yönetin.',
+      icon: Users,
+      visible: user.role.canManageUsers,
     },
   ];
 
