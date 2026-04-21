@@ -159,6 +159,10 @@ export function QuoteItemsTable({
   const tableRef = useRef<HTMLTableElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const stickyHeaderInnerRef = useRef<HTMLDivElement>(null);
+  const stickyBottomScrollRef = useRef<HTMLDivElement>(null);
+  // Breaks the two-way scroll-sync loop between mainScrollRef and
+  // stickyBottomScrollRef — cleared on the next animation frame.
+  const isSyncingRef = useRef(false);
 
   // Sync sticky header horizontal scroll with main table via direct DOM manipulation
   // (avoids React re-render on every scroll pixel for performance on large quotes)
@@ -266,6 +270,7 @@ export function QuoteItemsTable({
   const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
   const [textFilter, setTextFilter] = useState('');
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  const [needsHScroll, setNeedsHScroll] = useState(false);
   const brandDropdownRef = useRef<HTMLDivElement>(null);
 
   // Admin-managed catalogs come from the dashboard-boundary SettingsProvider,
