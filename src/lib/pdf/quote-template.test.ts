@@ -615,7 +615,8 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       // The mid-quote GRAND_TOTAL shows 90 (only section 1 net: 100 - 10% = 90), not 590.
       const gtRowMatch = html.match(/ARA GENEL TOPLAM[\s\S]*?sys-total-val[\s\S]*?>([^<]+)</);
       expect(gtRowMatch).not.toBeNull();
-      expect(gtRowMatch![1]).toContain('90');
+      expect(gtRowMatch![1]).toContain('90,00');
+      expect(gtRowMatch![1]).not.toContain('590');
     });
   });
 
