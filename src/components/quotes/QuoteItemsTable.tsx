@@ -732,8 +732,25 @@ export function QuoteItemsTable({
       setDragIndex(index);
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', String(index));
+
+      // Install auto-scroll — tracks pointer Y at document level and
+      // runs a rAF loop until the drag ends. Cleanup attaches to the
+      // same listeners so they self-remove on dragend regardless of
+      // whether the drop succeeded or was cancelled.
+      const onDragOverDoc = (ev: DragEvent) => {
+        pointerYRef.current = ev.clientY;
+      };
+      const onDragEndDoc = () => {
+        document.removeEventListener('dragover', onDragOverDoc);
+        document.removeEventListener('dragend', onDragEndDoc);
+        stopAutoScrollLoop();
+      };
+      document.addEventListener('dragover', onDragOverDoc);
+      document.addEventListener('dragend', onDragEndDoc);
+      pointerYRef.current = e.clientY; // seed so first tick is correct
+      startAutoScrollLoop();
     },
-    [],
+    [startAutoScrollLoop, stopAutoScrollLoop],
   );
 
   const handleDragOver = useCallback(
@@ -747,6 +764,7 @@ export function QuoteItemsTable({
   const handleDrop = useCallback(
     (targetIndex: number) => (e: React.DragEvent) => {
       e.preventDefault();
+      stopAutoScrollLoop(); // belt & suspenders — dragend may not fire on all browsers after drop
       const sourceIndex = dragIndex;
       setDragIndex(null);
       if (sourceIndex === null || sourceIndex === targetIndex) return;
@@ -760,8 +778,15 @@ export function QuoteItemsTable({
       }));
       onReorder(reordered);
     },
-    [dragIndex, items, onReorder],
+    [dragIndex, items, onReorder, stopAutoScrollLoop],
   );
+
+  // Belt-and-suspenders teardown on unmount: if the component
+  // unmounts mid-drag (rare — navigation during drag), cancel the
+  // loop so no orphan rAF keeps firing.
+  useEffect(() => {
+    return () => stopAutoScrollLoop();
+  }, [stopAutoScrollLoop]);
 
   // Count of filtered product items vs total
   const productItemCount = items.filter(
