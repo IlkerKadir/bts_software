@@ -354,6 +354,14 @@ export function QuoteItemsTable({
     };
   }, [syncThumb]);
 
+  // ── Filter state ──────────────────────────────────────────────────────────
+
+  const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
+  const [textFilter, setTextFilter] = useState('');
+  const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  const [needsHScroll, setNeedsHScroll] = useState(false);
+  const brandDropdownRef = useRef<HTMLDivElement>(null);
+
   // When needsHScroll flips to true, the sticky-bottom track has just
   // been revealed (display: block). Its clientWidth was 0 until this
   // render, so syncThumb's first call in the ResizeObserver effect
@@ -364,14 +372,6 @@ export function QuoteItemsTable({
     const raf = requestAnimationFrame(syncThumb);
     return () => cancelAnimationFrame(raf);
   }, [needsHScroll, syncThumb]);
-
-  // ── Filter state ──────────────────────────────────────────────────────────
-
-  const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
-  const [textFilter, setTextFilter] = useState('');
-  const [showBrandDropdown, setShowBrandDropdown] = useState(false);
-  const [needsHScroll, setNeedsHScroll] = useState(false);
-  const brandDropdownRef = useRef<HTMLDivElement>(null);
 
   // Admin-managed catalogs come from the dashboard-boundary SettingsProvider,
   // preloaded on the server so every QuoteItemRow reads synchronously with
