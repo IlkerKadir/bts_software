@@ -594,11 +594,11 @@ export function QuoteEditorHeader({
             size="sm"
             onClick={onReject}
             disabled={hasChanges}
-            title={hasChanges ? 'Önce değişiklikleri kaydedin' : 'Revizyona Gönder'}
+            title={hasChanges ? 'Önce değişiklikleri kaydedin' : 'Düzenleme talebini gönder — teklif taslağa geri döner'}
             className="text-red-600 hover:bg-red-50"
           >
             <XCircle className="h-4 w-4" />
-            Revizyon
+            Düzenleme Talep Et
           </Button>
         )}
         {onApprove && (
