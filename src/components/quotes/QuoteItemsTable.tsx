@@ -18,7 +18,7 @@ import {
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
 import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
-import { calculateSectionBreakdown } from '@/lib/quote-calculations';
+import { calculateSectionBreakdown, calculateGrandTotalAtIndex, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 import { useSettings } from '@/components/settings/SettingsProvider';
 
 // ---------------------------------------------------------------------------
@@ -504,6 +504,17 @@ export function QuoteItemsTable({
     }
     return map;
   }, [breakdown]);
+
+  const grandTotalMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const ctx: QuoteCurrencyContext = { quoteCurrency: currency, baseForeignRate };
+    items.forEach((item, index) => {
+      if (item.itemType === 'GRAND_TOTAL' && item.id) {
+        map.set(item.id, calculateGrandTotalAtIndex(items, index, ctx));
+      }
+    });
+    return map;
+  }, [items, currency, baseForeignRate]);
 
   // Label span for summary rows: spans from first col up to (but not including) Toplam Fiyat
   // New column order: Drag | Poz | [Marka,Model,Kod] | Aciklama | Miktar | [BirimFiyat, ToplamFiyat, Katsayi, ListeFiyati] | [Maliyet,Kar,Kar%] | PB | [Gecmis x8] | Delete
@@ -1077,7 +1088,7 @@ export function QuoteItemsTable({
                     priceHistory={item.productId ? priceHistoryBatch?.[item.productId] : undefined}
                     totalColCount={totalColCount}
                     subtotalValue={isSubtotal && item.id ? subtotalMap.get(item.id)?.sectionNet : undefined}
-                    grandTotalValue={item.itemType === 'GRAND_TOTAL' ? summary.grandTotal : undefined}
+                    grandTotalValue={item.itemType === 'GRAND_TOTAL' && item.id ? grandTotalMap.get(item.id) : undefined}
                     onUpdate={(updates) => onItemUpdate(item.id, updates)}
                     onDelete={() => onItemDelete(item.id)}
                     onDuplicate={() => onItemDuplicate(item.id)}
