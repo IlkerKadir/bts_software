@@ -38,7 +38,7 @@ import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
-import { calculateSectionBreakdown, type QuoteCurrencyContext } from '@/lib/quote-calculations';
+import { calculateSectionBreakdown, calculateGrandTotalAtIndex, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -398,6 +398,22 @@ export default function QuoteDetailPage({ params }: PageProps) {
       baseForeignRate: baseForeignRate,
     };
     return calculateSectionBreakdown(quote.items, ctx);
+  }, [quote, baseForeignRate]);
+
+  // Per-GRAND_TOTAL-row running net values, keyed by item id.
+  const grandTotalByItemId = useMemo(() => {
+    if (!quote) return new Map<string, number>();
+    const ctx: QuoteCurrencyContext = {
+      quoteCurrency: quote.currency,
+      baseForeignRate,
+    };
+    const m = new Map<string, number>();
+    quote.items.forEach((item, index) => {
+      if (item.itemType === 'GRAND_TOTAL' && item.id) {
+        m.set(item.id, calculateGrandTotalAtIndex(quote.items, index, ctx));
+      }
+    });
+    return m;
   }, [quote, baseForeignRate]);
 
   const sectionBreakdownById = useMemo(() => {
@@ -1025,7 +1041,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                         {item.description || 'GENEL TOPLAM'}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums font-bold text-primary-900 whitespace-nowrap">
-                        {formatPrice(summary?.grandTotal ?? 0)}
+                        {formatPrice(grandTotalByItemId.get(item.id) ?? 0)}
                       </td>
                     </tr>
                   );
