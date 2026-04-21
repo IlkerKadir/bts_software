@@ -289,6 +289,9 @@ export function QuoteItemsTable({
   // Re-sync sticky header when table width or visibility changes
   useEffect(() => {
     syncScrollLeft();
+    if (mainScrollRef.current) {
+      setNeedsHScroll(mainScrollRef.current.scrollWidth > mainScrollRef.current.clientWidth + 1);
+    }
   }, [tableWidth, columnVisibility, canViewCosts, syncScrollLeft]);
 
   // Sync on window resize
