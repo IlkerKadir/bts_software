@@ -25,8 +25,8 @@ describe('Quote Status Transitions', () => {
       expect(canTransitionTo('ONAY_BEKLIYOR', 'ONAYLANDI')).toBe(true);
     });
 
-    it('allows ONAY_BEKLIYOR to REVIZYON (rejection)', () => {
-      expect(canTransitionTo('ONAY_BEKLIYOR', 'REVIZYON')).toBe(true);
+    it('does NOT allow ONAY_BEKLIYOR to REVIZYON (approver rejection now routes to TASLAK)', () => {
+      expect(canTransitionTo('ONAY_BEKLIYOR', 'REVIZYON')).toBe(false);
     });
 
     it('allows ONAY_BEKLIYOR to TASLAK (retract approval)', () => {
@@ -47,6 +47,10 @@ describe('Quote Status Transitions', () => {
 
     it('allows GONDERILDI to KAYBEDILDI', () => {
       expect(canTransitionTo('GONDERILDI', 'KAYBEDILDI')).toBe(true);
+    });
+
+    it('still allows GONDERILDI to REVIZYON (customer-driven revision)', () => {
+      expect(canTransitionTo('GONDERILDI', 'REVIZYON')).toBe(true);
     });
 
     it('allows TAKIPTE to KAZANILDI', () => {
@@ -96,8 +100,9 @@ describe('Quote Status Transitions', () => {
     it('returns correct transitions for ONAY_BEKLIYOR', () => {
       const transitions = getAvailableTransitions('ONAY_BEKLIYOR');
       expect(transitions).toContain('ONAYLANDI');
-      expect(transitions).toContain('REVIZYON');
       expect(transitions).toContain('IPTAL');
+      expect(transitions).toContain('TASLAK');
+      expect(transitions).not.toContain('REVIZYON');
     });
 
     it('returns correct transitions for GONDERILDI', () => {

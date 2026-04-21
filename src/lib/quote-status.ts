@@ -20,7 +20,7 @@ export type QuoteStatus =
  */
 const statusTransitions: Record<QuoteStatus, QuoteStatus[]> = {
   TASLAK: ['ONAY_BEKLIYOR', 'IPTAL'],
-  ONAY_BEKLIYOR: ['ONAYLANDI', 'REVIZYON', 'IPTAL', 'TASLAK'],
+  ONAY_BEKLIYOR: ['ONAYLANDI', 'IPTAL', 'TASLAK'],
   ONAYLANDI: ['GONDERILDI', 'IPTAL'],
   GONDERILDI: ['TAKIPTE', 'KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   TAKIPTE: ['KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
