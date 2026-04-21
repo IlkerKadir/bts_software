@@ -279,22 +279,31 @@ body {
 /* Force always-visible scrollbar for the quote editor's sticky-bottom
    scroll proxy. macOS with trackpad hides overlay scrollbars by default;
    we need the user to see and drag this strip without guessing it exists. */
+/* Give the scroll track vertical room so the ::-webkit-scrollbar below
+   can draw into it. The inner spacer is only 1px tall by itself. We
+   intentionally omit `scrollbar-width` here — setting it to `thin` on
+   macOS Chrome triggers the system overlay scrollbar that auto-hides
+   when idle, which is exactly what we want to avoid. Omitting the
+   property lets the explicit ::-webkit-scrollbar rules draw a
+   persistent, always-visible track. */
 .sticky-bottom-hscroll {
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: #9ca3af #f3f4f6; /* Firefox */
-  /* The inner spacer is only 1px tall, but the ::-webkit-scrollbar
-     track needs vertical space to render into. Pin a minimum height
-     so the 12px scrollbar is visible on macOS Chrome / Safari. */
+  scrollbar-color: #9ca3af #f3f4f6; /* Firefox (harmless in Chrome) */
   min-height: 16px;
 }
 .sticky-bottom-hscroll::-webkit-scrollbar {
+  -webkit-appearance: none;
   height: 12px;
   background: #f3f4f6;
+}
+.sticky-bottom-hscroll::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 0;
 }
 .sticky-bottom-hscroll::-webkit-scrollbar-thumb {
   background: #9ca3af;
   border-radius: 6px;
   border: 2px solid #f3f4f6;
+  min-width: 40px;
 }
 .sticky-bottom-hscroll::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
