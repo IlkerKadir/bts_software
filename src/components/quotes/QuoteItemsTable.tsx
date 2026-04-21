@@ -354,6 +354,17 @@ export function QuoteItemsTable({
     };
   }, [syncThumb]);
 
+  // When needsHScroll flips to true, the sticky-bottom track has just
+  // been revealed (display: block). Its clientWidth was 0 until this
+  // render, so syncThumb's first call in the ResizeObserver effect
+  // couldn't size the thumb. Re-run it now on the next frame so the
+  // thumb appears without requiring a user scroll to trigger it.
+  useEffect(() => {
+    if (!needsHScroll) return;
+    const raf = requestAnimationFrame(syncThumb);
+    return () => cancelAnimationFrame(raf);
+  }, [needsHScroll, syncThumb]);
+
   // ── Filter state ──────────────────────────────────────────────────────────
 
   const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
