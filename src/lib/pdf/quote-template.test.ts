@@ -552,6 +552,71 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       expect(html).toContain('Highlighted note');
       expect(html).toContain('Normal note');
     });
+
+    it('GRAND_TOTAL displays running net, not whole-quote total, when placed mid-quote', () => {
+      const html = generateQuoteHtml({
+        ...mockQuoteData,
+        items: [
+          {
+            itemType: 'PRODUCT',
+            description: 'A',
+            quantity: 1,
+            unit: 'Adet',
+            unitPrice: 100,
+            totalPrice: 100,
+            discountPct: 0,
+            vatRate: 0,
+          },
+          {
+            itemType: 'SUBTOTAL',
+            description: 'Ara Toplam 1',
+            quantity: 0,
+            unit: '',
+            unitPrice: 0,
+            totalPrice: 0,
+            discountPct: 0,
+            vatRate: 0,
+            sectionDiscountPct: 10,
+          },
+          {
+            itemType: 'GRAND_TOTAL',
+            description: 'ARA GENEL TOPLAM',
+            quantity: 0,
+            unit: '',
+            unitPrice: 0,
+            totalPrice: 0,
+            discountPct: 0,
+            vatRate: 0,
+          },
+          {
+            itemType: 'PRODUCT',
+            description: 'B',
+            quantity: 1,
+            unit: 'Adet',
+            unitPrice: 500,
+            totalPrice: 500,
+            discountPct: 0,
+            vatRate: 0,
+          },
+          {
+            itemType: 'SUBTOTAL',
+            description: 'Ara Toplam 2',
+            quantity: 0,
+            unit: '',
+            unitPrice: 0,
+            totalPrice: 0,
+            discountPct: 0,
+            vatRate: 0,
+            sectionDiscountPct: 0,
+          },
+        ],
+        totals: { subtotal: 600, totalDiscount: 10, totalVat: 0, grandTotal: 590 },
+      });
+      // The mid-quote GRAND_TOTAL shows 90 (only section 1 net: 100 - 10% = 90), not 590.
+      const gtRowMatch = html.match(/ARA GENEL TOPLAM[\s\S]*?sys-total-val[\s\S]*?>([^<]+)</);
+      expect(gtRowMatch).not.toBeNull();
+      expect(gtRowMatch![1]).toContain('90');
+    });
   });
 
   describe('formatCurrency', () => {

@@ -198,6 +198,34 @@ function computeSubtotalSum(items: QuoteItemForPdf[], subtotalIndex: number): nu
   return sum;
 }
 
+/**
+ * Running net total of priced items strictly above `grandTotalIndex`,
+ * using the pre-converted per-row totals already stamped on the PDF
+ * items (so no currency context needed here). Mirrors
+ * `calculateGrandTotalAtIndex` from quote-calculations.ts but consumes
+ * the flattened `QuoteItemForPdf` shape.
+ */
+function computeGrandTotalAtIndex(items: QuoteItemForPdf[], grandTotalIndex: number): number {
+  if (grandTotalIndex <= 0) return 0;
+  let runningNet = 0;
+  let openTail = 0;
+  for (let i = 0; i < grandTotalIndex; i++) {
+    const item = items[i];
+    if (item.itemType === 'SUBTOTAL') {
+      const pct = Number(item.sectionDiscountPct ?? 0);
+      const discountAmount = round2(openTail * (pct / 100));
+      runningNet = round2(runningNet + openTail - discountAmount);
+      openTail = 0;
+      continue;
+    }
+    if (item.priceLabel) continue;
+    if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
+      openTail += item.totalPriceInQuoteCurrency ?? item.totalPrice ?? 0;
+    }
+  }
+  return round2(runningNet + openTail);
+}
+
 // ---------------------------------------------------------------------------
 // Main HTML generator
 // ---------------------------------------------------------------------------
@@ -241,9 +269,10 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 
     if (item.itemType === 'GRAND_TOTAL') {
       const grandTotalLabel = escapeHtml(item.description || 'GENEL TOPLAM');
+      const runningTotal = computeGrandTotalAtIndex(items, index);
       return `<tr style="height:14pt">
         <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${grandTotalLabel} (${currencyName})</p></td>
-        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(totals.grandTotal, currency)}</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(runningTotal, currency)}</p></td>
       </tr>`;
     }
 
