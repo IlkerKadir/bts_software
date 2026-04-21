@@ -160,45 +160,47 @@ export function QuoteItemsTable({
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const stickyHeaderInnerRef = useRef<HTMLDivElement>(null);
   const stickyBottomScrollRef = useRef<HTMLDivElement>(null);
-  // Breaks the two-way scroll-sync loop between mainScrollRef and
-  // stickyBottomScrollRef — cleared on the next animation frame.
-  const isSyncingRef = useRef(false);
+  const thumbRef = useRef<HTMLDivElement>(null);
+  // Drag state for the custom scrollbar thumb. Null when not dragging.
+  const thumbDragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
 
-  // Sync sticky header + sticky bottom scrollbar horizontal scroll with
-  // main table via direct DOM manipulation (avoids React re-render on
+  // Recompute thumb width + position from the main table's scroll
+  // state. Called on scroll, resize, column toggle, etc. Direct DOM
+  // writes avoid React re-renders on every scroll pixel.
+  const MIN_THUMB_PX = 32;
+  const syncThumb = useCallback(() => {
+    const main = mainScrollRef.current;
+    const thumb = thumbRef.current;
+    const track = stickyBottomScrollRef.current;
+    if (!main || !thumb || !track) return;
+    const trackWidth = track.clientWidth;
+    const { scrollLeft, scrollWidth, clientWidth } = main;
+    if (scrollWidth <= clientWidth || trackWidth <= 0) {
+      thumb.style.width = '0px';
+      thumb.style.transform = 'translateX(0px)';
+      return;
+    }
+    const ratio = clientWidth / scrollWidth;
+    const thumbWidth = Math.max(MIN_THUMB_PX, Math.round(ratio * trackWidth));
+    const maxScroll = scrollWidth - clientWidth;
+    const maxThumbLeft = trackWidth - thumbWidth;
+    const thumbLeft = maxScroll > 0 ? (scrollLeft / maxScroll) * maxThumbLeft : 0;
+    thumb.style.width = `${thumbWidth}px`;
+    thumb.style.transform = `translateX(${thumbLeft}px)`;
+  }, []);
+
+  // Sync sticky header + custom thumb horizontal scroll with main
+  // table via direct DOM manipulation (avoids React re-render on
   // every scroll pixel for performance on large quotes).
-  //
-  // The two-way sync with stickyBottomScrollRef is guarded by
-  // isSyncingRef so programmatic scrollLeft assignment does not trigger
-  // a feedback loop.
   const handleMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const sl = e.currentTarget.scrollLeft;
     if (stickyHeaderInnerRef.current) {
       stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
     }
-    if (!isSyncingRef.current && stickyBottomScrollRef.current) {
-      isSyncingRef.current = true;
-      stickyBottomScrollRef.current.scrollLeft = sl;
-      requestAnimationFrame(() => { isSyncingRef.current = false; });
-    }
-  }, []);
+    syncThumb();
+  }, [syncThumb]);
 
-  // Sync main table + sticky header horizontal scroll with the
-  // sticky-bottom proxy scrollbar. Same isSyncingRef guard so we don't
-  // loop back into handleMainScroll.
-  const handleStickyBottomScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const sl = e.currentTarget.scrollLeft;
-    if (!isSyncingRef.current && mainScrollRef.current) {
-      isSyncingRef.current = true;
-      mainScrollRef.current.scrollLeft = sl;
-      requestAnimationFrame(() => { isSyncingRef.current = false; });
-    }
-    if (stickyHeaderInnerRef.current) {
-      stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
-    }
-  }, []);
-
-  // Re-sync sticky header + sticky bottom after column visibility or
+  // Re-sync sticky header + custom thumb after column visibility or
   // table width changes (browser may auto-clamp scrollLeft when the
   // table gets narrower).
   const syncScrollLeft = useCallback(() => {
@@ -207,11 +209,41 @@ export function QuoteItemsTable({
     if (stickyHeaderInnerRef.current) {
       stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
     }
-    if (stickyBottomScrollRef.current) {
-      isSyncingRef.current = true;
-      stickyBottomScrollRef.current.scrollLeft = sl;
-      requestAnimationFrame(() => { isSyncingRef.current = false; });
-    }
+    syncThumb();
+  }, [syncThumb]);
+
+  // Thumb drag handlers. On mousedown, capture start offset. On move,
+  // translate delta-X into mainScrollRef.scrollLeft. On up, release.
+  const handleThumbMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const main = mainScrollRef.current;
+    const track = stickyBottomScrollRef.current;
+    if (!main || !track) return;
+    thumbDragRef.current = { startX: e.clientX, startScrollLeft: main.scrollLeft };
+
+    const onMove = (ev: MouseEvent) => {
+      const state = thumbDragRef.current;
+      if (!state || !mainScrollRef.current || !stickyBottomScrollRef.current) return;
+      const { scrollWidth, clientWidth } = mainScrollRef.current;
+      const maxScroll = scrollWidth - clientWidth;
+      if (maxScroll <= 0) return;
+      const trackWidth = stickyBottomScrollRef.current.clientWidth;
+      const ratio = clientWidth / scrollWidth;
+      const thumbWidth = Math.max(MIN_THUMB_PX, Math.round(ratio * trackWidth));
+      const maxThumbLeft = trackWidth - thumbWidth;
+      if (maxThumbLeft <= 0) return;
+      const dx = ev.clientX - state.startX;
+      const scrollDelta = (dx / maxThumbLeft) * maxScroll;
+      const next = Math.max(0, Math.min(maxScroll, state.startScrollLeft + scrollDelta));
+      mainScrollRef.current.scrollLeft = next;
+    };
+    const onUp = () => {
+      thumbDragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }, []);
 
   const handleThMouseDown = useCallback((e: React.MouseEvent<HTMLTableCellElement>, colKey: string) => {
@@ -309,6 +341,7 @@ export function QuoteItemsTable({
     if (!node) return;
     const update = () => {
       setNeedsHScroll(node.scrollWidth > node.clientWidth + 1);
+      syncThumb();
     };
     // Defer the initial check until layout is settled — otherwise on
     // first mount `scrollWidth` may read 0 before the table paints.
@@ -319,7 +352,7 @@ export function QuoteItemsTable({
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, []);
+  }, [syncThumb]);
 
   // ── Filter state ──────────────────────────────────────────────────────────
 
@@ -1379,14 +1412,23 @@ export function QuoteItemsTable({
             a long quote. Width-matched inner div drives the native
             scrollbar; handleStickyBottomScroll mirrors into the main
             table. */}
+        {/* Sticky-bottom custom scrollbar — always-visible track and
+            draggable thumb. Uses absolute positioning rather than the
+            native scrollbar (which macOS Chrome auto-hides even with
+            custom ::-webkit-scrollbar styles), so mouse-only users
+            can click and drag the thumb to pan the wide table. */}
         <div
           ref={stickyBottomScrollRef}
-          className="sticky bottom-0 z-30 overflow-x-scroll bg-white border-x border-b border-accent-200 rounded-b-lg sticky-bottom-hscroll"
-          style={{ display: needsHScroll ? 'block' : 'none' }}
-          onScroll={handleStickyBottomScroll}
+          className="sticky bottom-0 z-30 bg-accent-100 border-x border-b border-accent-200 rounded-b-lg relative"
+          style={{ display: needsHScroll ? 'block' : 'none', height: '14px' }}
           aria-hidden="true"
         >
-          <div style={{ width: tableWidth, height: 1 }} />
+          <div
+            ref={thumbRef}
+            className="absolute top-0.5 bottom-0.5 left-0 bg-accent-400 hover:bg-accent-500 active:bg-accent-600 rounded cursor-grab active:cursor-grabbing transition-colors"
+            style={{ width: 0, willChange: 'transform' }}
+            onMouseDown={handleThumbMouseDown}
+          />
         </div>
       </div>
     </div>
