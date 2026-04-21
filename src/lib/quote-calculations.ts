@@ -244,6 +244,67 @@ export function calculateSectionBreakdown(
 }
 
 /**
+ * Running net total of all priced items strictly above `grandTotalIndex`.
+ *
+ * Rules:
+ * - Closed sections above (ending in SUBTOTAL with index < grandTotalIndex)
+ *   contribute `sectionNet` (= sectionSum − section's İskonto).
+ * - Priced items past the last SUBTOTAL above `grandTotalIndex` are an
+ *   "open tail" and contribute their gross totalPrice. No İskonto is
+ *   applied to them — no İskonto has been declared yet for that unclosed
+ *   section.
+ * - Non-priced rows (HEADER, NOTE, other GRAND_TOTAL, SET children with
+ *   `parentItemId`, price-labeled rows) contribute 0 and do not act as
+ *   section boundaries.
+ *
+ * When `grandTotalIndex` is at the end of the array and every section
+ * above is closed, the return value equals
+ * `calculateQuoteTotals(items, 0, ctx).grandTotal`. Unit-tested as an
+ * invariant.
+ *
+ * Pure. O(grandTotalIndex). Safe to call once per GRAND_TOTAL row.
+ */
+export function calculateGrandTotalAtIndex(
+  items: QuoteItem[],
+  grandTotalIndex: number,
+  ctx?: QuoteCurrencyContext
+): number {
+  if (grandTotalIndex <= 0) return 0;
+
+  let runningNet = 0;
+  let openTailSum = 0;
+
+  for (let i = 0; i < grandTotalIndex; i++) {
+    const item = items[i];
+    if (item.itemType === 'SUBTOTAL') {
+      const pct = Number(item.sectionDiscountPct ?? 0);
+      const discountAmount = round2(openTailSum * (pct / 100));
+      runningNet = round2(runningNet + openTailSum - discountAmount);
+      openTailSum = 0;
+      continue;
+    }
+    if (!isPricedItem(item)) continue;
+    if (item.parentItemId) continue;
+
+    const raw = calculateItemTotal({
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountPct: item.discountPct,
+    });
+    if (ctx) {
+      const cur = effectiveItemCurrency(item, items, ctx.quoteCurrency);
+      openTailSum += convertToQuoteCurrency(raw, cur, ctx);
+    } else {
+      openTailSum += raw;
+    }
+  }
+
+  // Open tail (items after the last SUBTOTAL above grandTotalIndex) is
+  // added at gross — no İskonto has been declared for an unclosed section.
+  return round2(runningNet + openTailSum);
+}
+
+/**
  * Calculate quote totals from per-section discounts living on the
  * SUBTOTAL rows themselves (`sectionDiscountPct`). The legacy
  * `_deprecatedDiscountPct` argument is kept for API stability during

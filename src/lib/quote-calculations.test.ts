@@ -4,6 +4,7 @@ import {
   calculateItemTotal,
   calculateItemTotalWithVat,
   calculateQuoteTotals,
+  calculateGrandTotalAtIndex,
   calculateItemProfit,
   calculateQuoteProfitSummary,
   type QuoteItem,
@@ -575,5 +576,126 @@ describe('Quote Calculations', () => {
       expect(result.totalCost).toBe(110);
       expect(result.totalProfit).toBe(90);
     });
+  });
+});
+
+// ─── calculateGrandTotalAtIndex ──────────────────────────────────────────────
+
+// Helper — minimal priced item
+const priced = (over: Partial<QuoteItem> = {}): QuoteItem => ({
+  itemType: 'PRODUCT',
+  quantity: 1,
+  unitPrice: 100,
+  discountPct: 0,
+  vatRate: 0,
+  ...over,
+});
+
+const subtotal = (over: Partial<QuoteItem> = {}): QuoteItem => ({
+  itemType: 'SUBTOTAL',
+  quantity: 0,
+  unitPrice: 0,
+  discountPct: 0,
+  vatRate: 0,
+  ...over,
+});
+
+const grandTotal: QuoteItem = {
+  itemType: 'GRAND_TOTAL',
+  quantity: 0,
+  unitPrice: 0,
+  discountPct: 0,
+  vatRate: 0,
+};
+
+describe('calculateGrandTotalAtIndex', () => {
+  it('returns 0 when index is 0 (GRAND_TOTAL at very start)', () => {
+    const items = [grandTotal, priced()];
+    expect(calculateGrandTotalAtIndex(items, 0)).toBe(0);
+  });
+
+  it('returns 0 when no priced items above', () => {
+    const items: QuoteItem[] = [
+      { itemType: 'HEADER', description: 'X', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 } as QuoteItem,
+      grandTotal,
+    ];
+    expect(calculateGrandTotalAtIndex(items, 1)).toBe(0);
+  });
+
+  it('one closed section above returns sectionNet', () => {
+    // 100 + 100 items, %10 İskonto → 180
+    const items = [
+      priced(), priced(),
+      subtotal({ sectionDiscountPct: 10 }),
+      grandTotal,
+    ];
+    expect(calculateGrandTotalAtIndex(items, 3)).toBe(180);
+  });
+
+  it('two closed sections above returns sum of sectionNets', () => {
+    const items = [
+      priced(),                                  // 100
+      subtotal({ sectionDiscountPct: 10 }),      // net 90
+      priced({ unitPrice: 200 }),                // 200
+      subtotal({ sectionDiscountPct: 0 }),       // net 200
+      grandTotal,
+    ];
+    expect(calculateGrandTotalAtIndex(items, 4)).toBe(290);
+  });
+
+  it('closed section + open tail: closed net + open tail gross', () => {
+    // closed: 100 at İskonto 10 = 90; open: 50 gross → 140
+    const items = [
+      priced(),                              // 100
+      subtotal({ sectionDiscountPct: 10 }),  // closes
+      priced({ unitPrice: 50 }),             // 50 open tail
+      grandTotal,
+    ];
+    expect(calculateGrandTotalAtIndex(items, 3)).toBe(140);
+  });
+
+  it('HEADER / NOTE rows above contribute 0 and do not terminate open tail', () => {
+    const items: QuoteItem[] = [
+      priced({ unitPrice: 30 }),
+      { itemType: 'HEADER', quantity: 0, unitPrice: 0, discountPct: 0, vatRate: 0 } as QuoteItem,
+      priced({ unitPrice: 70 }),
+      grandTotal,
+    ];
+    // Both items are in an open tail (no SUBTOTAL above) → 30 + 70 = 100 gross
+    expect(calculateGrandTotalAtIndex(items, 3)).toBe(100);
+  });
+
+  it('another GRAND_TOTAL above is ignored (no double-counting, no reset)', () => {
+    const items = [
+      priced({ unitPrice: 100 }),
+      grandTotal, // first GT (index 1)
+      priced({ unitPrice: 50 }),
+      grandTotal, // second GT (index 3)
+    ];
+    // For the second GT, we sum both priced items at gross → 150
+    expect(calculateGrandTotalAtIndex(items, 3)).toBe(150);
+  });
+
+  it('end-of-quote invariant: equals calculateQuoteTotals().grandTotal', () => {
+    const items = [
+      priced({ unitPrice: 100 }),
+      priced({ unitPrice: 50 }),
+      subtotal({ sectionDiscountPct: 10 }),
+      priced({ unitPrice: 200 }),
+      subtotal({ sectionDiscountPct: 5 }),
+      grandTotal,
+    ];
+    const expected = calculateQuoteTotals(items, 0).grandTotal;
+    expect(calculateGrandTotalAtIndex(items, items.length - 1)).toBe(expected);
+  });
+
+  it('respects ctx.baseForeignRate for TRY items in EUR quote', () => {
+    const items: QuoteItem[] = [
+      // TRY item, 1000 TRY, quote is EUR, rate 40 TRY / EUR → 25 EUR
+      { itemType: 'SET', quantity: 1, unitPrice: 1000, discountPct: 0, vatRate: 0, currency: 'TRY' },
+      grandTotal,
+    ];
+    const ctx = { quoteCurrency: 'EUR', baseForeignRate: 40 };
+    expect(calculateGrandTotalAtIndex(items, 1, ctx)).toBe(25);
   });
 });
