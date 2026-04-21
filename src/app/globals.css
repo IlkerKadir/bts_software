@@ -282,6 +282,10 @@ body {
 .sticky-bottom-hscroll {
   scrollbar-width: thin; /* Firefox */
   scrollbar-color: #9ca3af #f3f4f6; /* Firefox */
+  /* The inner spacer is only 1px tall, but the ::-webkit-scrollbar
+     track needs vertical space to render into. Pin a minimum height
+     so the 12px scrollbar is visible on macOS Chrome / Safari. */
+  min-height: 16px;
 }
 .sticky-bottom-hscroll::-webkit-scrollbar {
   height: 12px;
