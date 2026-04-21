@@ -1052,7 +1052,7 @@ export function QuoteItemsTable({
         {/* Main scrolling table */}
         <div
           ref={mainScrollRef}
-          className="rounded-b-lg border border-t-0 border-accent-200 bg-white overflow-x-auto"
+          className={`border border-t-0 border-accent-200 bg-white overflow-x-auto ${needsHScroll ? '' : 'rounded-b-lg'}`}
           onScroll={handleMainScroll}
         >
         <table ref={tableRef} className="text-sm border-separate border-spacing-0" style={{ tableLayout: 'fixed', width: tableWidth }}>
@@ -1367,6 +1367,21 @@ export function QuoteItemsTable({
 
           </tfoot>
         </table>
+        </div>
+        {/* Sticky-bottom horizontal scrollbar proxy — keeps a scroll
+            strip pinned to the bottom of the viewport so users can pan
+            right-side columns into view without scrolling to the end of
+            a long quote. Width-matched inner div drives the native
+            scrollbar; handleStickyBottomScroll mirrors into the main
+            table. */}
+        <div
+          ref={stickyBottomScrollRef}
+          className="sticky bottom-0 z-30 overflow-x-auto bg-white border-x border-b border-accent-200 rounded-b-lg"
+          style={{ display: needsHScroll ? 'block' : 'none' }}
+          onScroll={handleStickyBottomScroll}
+          aria-hidden="true"
+        >
+          <div style={{ width: tableWidth, height: 1 }} />
         </div>
       </div>
     </div>
