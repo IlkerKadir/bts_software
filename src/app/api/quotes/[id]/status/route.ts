@@ -76,6 +76,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Retract approval request (ONAY_BEKLIYOR → TASLAK) is scoped to
+    // the quote's own creator. Approvers use Approve / Reject; any
+    // other path is blocked.
+    if (
+      currentStatus === 'ONAY_BEKLIYOR' &&
+      newStatus === 'TASLAK' &&
+      user.id !== quote.createdById
+    ) {
+      return NextResponse.json(
+        { error: 'Sadece teklifi oluşturan kullanıcı onayı geri çekebilir.' },
+        { status: 403 }
+      );
+    }
+
     // Run approval check when transitioning to ONAYLANDI
     let approvalCheckResult = null;
     if (newStatus === 'ONAYLANDI') {
@@ -268,6 +282,25 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         });
       } catch (notificationError) {
         console.error('Notification creation error (REVIZYON) for userId:', creatorId, notificationError);
+      }
+    } else if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK') {
+      // Retraction — notify approvers so they don't review a withdrawn quote.
+      try {
+        const approvers = await db.user.findMany({
+          where: { role: { canApprove: true }, isActive: true },
+          select: { id: true },
+        });
+        for (const approver of approvers) {
+          await createNotification({
+            userId: approver.id,
+            type: 'SYSTEM',
+            title: 'Onay talebi geri çekildi',
+            message: `${user.fullName} kullanıcısı ${updatedQuote.quoteNumber} numaralı teklifin onay talebini geri çekti. Teklif taslak durumuna geri döndü.`,
+            link: `/quotes/${quoteId}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error('Notification creation error (retract):', notificationError);
       }
     } else {
       // Generic status change notification for the quote creator
