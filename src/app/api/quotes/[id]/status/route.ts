@@ -76,18 +76,29 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Retract approval request (ONAY_BEKLIYOR → TASLAK) is scoped to
-    // the quote's own creator. Approvers use Approve / Reject; any
-    // other path is blocked.
-    if (
-      currentStatus === 'ONAY_BEKLIYOR' &&
-      newStatus === 'TASLAK' &&
-      user.id !== quote.createdById
-    ) {
-      return NextResponse.json(
-        { error: 'Sadece teklifi oluşturan kullanıcı onayı geri çekebilir.' },
-        { status: 403 }
-      );
+    // ONAY_BEKLIYOR → TASLAK covers two paths:
+    //   1. Creator retracts their own submission ("Onayı Geri Çek").
+    //   2. Approver requests edits ("Düzenleme Talep Et"); a note is
+    //      required so the salesperson knows what to fix.
+    // Anyone else is blocked.
+    if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK') {
+      const isCreator = user.id === quote.createdById;
+      const isApprover = !!user.role.canApprove;
+      if (!isCreator && !isApprover) {
+        return NextResponse.json(
+          { error: 'Bu işlem için yetkiniz yok' },
+          { status: 403 }
+        );
+      }
+      if (!isCreator && isApprover) {
+        const note = typeof body.note === 'string' ? body.note.trim() : '';
+        if (!note) {
+          return NextResponse.json(
+            { error: 'Düzenleme talebi için not gereklidir' },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Run approval check when transitioning to ONAYLANDI
@@ -270,21 +281,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       } catch (notificationError) {
         console.error('Notification creation error (ONAYLANDI) for userId:', creatorId, notificationError);
       }
-    } else if (newStatus === 'REVIZYON') {
-      // Notify quote creator about revision request
-      try {
-        await createNotification({
-          userId: creatorId,
-          type: 'QUOTE_REJECTED',
-          title: 'Revizyon Gerekli',
-          message: `${updatedQuote.quoteNumber} numaralı teklif için revizyon istendi`,
-          link: `/quotes/${quoteId}`,
-        });
-      } catch (notificationError) {
-        console.error('Notification creation error (REVIZYON) for userId:', creatorId, notificationError);
-      }
-    } else if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK') {
-      // Retraction — notify approvers so they don't review a withdrawn quote.
+    } else if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK' && user.id === quote.createdById) {
+      // Creator retraction — notify approvers so they don't review a
+      // withdrawn quote.
       try {
         const approvers = await db.user.findMany({
           where: { role: { canApprove: true }, isActive: true },
@@ -301,6 +300,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }
       } catch (notificationError) {
         console.error('Notification creation error (retract):', notificationError);
+      }
+    } else if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK' && user.role.canApprove) {
+      // Approver edit request — notify creator with the note.
+      try {
+        const note = typeof body.note === 'string' ? body.note.trim() : '';
+        await createNotification({
+          userId: creatorId,
+          type: 'QUOTE_REJECTED',
+          title: 'Düzenleme talep edildi',
+          message: `${user.fullName} ${updatedQuote.quoteNumber} numaralı teklif için düzenleme talep etti: ${note}`,
+          link: `/quotes/${quoteId}`,
+        });
+      } catch (notificationError) {
+        console.error('Notification creation error (edit-request) for userId:', creatorId, notificationError);
       }
     } else {
       // Generic status change notification for the quote creator
