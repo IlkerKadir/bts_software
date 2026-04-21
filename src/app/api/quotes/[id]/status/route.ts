@@ -350,7 +350,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const quote = await db.quote.findUnique({
       where: { id: quoteId },
-      select: { status: true },
+      select: { status: true, createdById: true },
     });
 
     if (!quote) {
@@ -363,6 +363,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Filter out ONAYLANDI if user can't approve
     if (!user.role.canApprove) {
       allowedTransitions = allowedTransitions.filter(s => s !== 'ONAYLANDI');
+    }
+
+    // Retract (ONAY_BEKLIYOR → TASLAK) is creator-only — hide it
+    // from everyone else so the status dropdown stays clean.
+    if (currentStatus === 'ONAY_BEKLIYOR' && user.id !== quote.createdById) {
+      allowedTransitions = allowedTransitions.filter(s => s !== 'TASLAK');
     }
 
     // Get approval check result for current quote items
