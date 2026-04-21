@@ -127,22 +127,22 @@ export default function ApprovalsPage() {
   };
 
   const handleReject = async (quoteId: string) => {
-    const note = prompt('Revizyon nedeni:');
-    if (!note) return;
+    const note = prompt('Düzenleme talebi notu:');
+    if (!note || !note.trim()) return;
 
     setProcessingId(quoteId);
     try {
       const response = await fetch(`/api/quotes/${quoteId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'REVIZYON', note }),
+        body: JSON.stringify({ status: 'TASLAK', note: note.trim() }),
       });
 
       if (response.ok) {
         setQuotes((prev) => prev.filter((q) => q.id !== quoteId));
       } else {
         const data = await response.json();
-        alert(data.error || 'Reddetme işlemi başarısız');
+        alert(data.error || 'Düzenleme talebi gönderilemedi');
       }
     } catch (error) {
       console.error('Reject error:', error);
@@ -271,9 +271,10 @@ export default function ApprovalsPage() {
                       onClick={() => handleReject(quote.id)}
                       disabled={processingId === quote.id}
                       className="text-red-600 hover:bg-red-50"
+                      title="Düzenleme talebini gönder — teklif taslağa geri döner"
                     >
                       <XCircle className="w-4 h-4 mr-1" />
-                      Revizyon
+                      Düzenleme Talep Et
                     </Button>
                     <Button
                       onClick={() => handleApprove(quote.id)}
