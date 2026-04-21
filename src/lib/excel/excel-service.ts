@@ -224,6 +224,33 @@ function computeExcelSubtotalSum(items: QuoteItemForExcel[], subtotalIndex: numb
   return sum;
 }
 
+/**
+ * Running net total of priced items strictly above `grandTotalIndex`,
+ * using the pre-converted per-row totals already stamped on the Excel
+ * items. Mirrors `computeGrandTotalAtIndex` in the PDF template (same
+ * algorithm, same shape).
+ */
+function computeExcelGrandTotalAtIndex(items: QuoteItemForExcel[], grandTotalIndex: number): number {
+  if (grandTotalIndex <= 0) return 0;
+  let runningNet = 0;
+  let openTail = 0;
+  for (let i = 0; i < grandTotalIndex; i++) {
+    const item = items[i];
+    if (item.itemType === 'SUBTOTAL') {
+      const pct = Number(item.sectionDiscountPct ?? 0);
+      const discountAmount = Math.round(openTail * (pct / 100) * 100) / 100;
+      runningNet = Math.round((runningNet + openTail - discountAmount) * 100) / 100;
+      openTail = 0;
+      continue;
+    }
+    if (item.priceLabel) continue;
+    if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
+      openTail += item.totalPriceInQuoteCurrency ?? item.totalPrice ?? 0;
+    }
+  }
+  return Math.round((runningNet + openTail) * 100) / 100;
+}
+
 // ==================== ExcelService ====================
 
 export class ExcelService {
@@ -420,6 +447,7 @@ export class ExcelService {
     currency: string,
     grandTotal: number
   ): number {
+    void grandTotal; // kept for API compat; no longer read — GRAND_TOTAL is now per-row
     let currentRow = startRow;
     let pozCounter = 0;
 
@@ -468,7 +496,8 @@ export class ExcelService {
         styleMergedRange(sheet, currentRow, 1, 7, grayFill());
 
         const sumCell = sheet.getCell(currentRow, 8);
-        sumCell.value = formatTurkishCurrency(grandTotal, currency);
+        const runningTotal = computeExcelGrandTotalAtIndex(items, index);
+        sumCell.value = formatTurkishCurrency(runningTotal, currency);
         sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
         sumCell.border = blackBoxBorder();

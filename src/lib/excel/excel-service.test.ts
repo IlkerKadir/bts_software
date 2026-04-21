@@ -341,10 +341,75 @@ describe('ExcelService', () => {
       const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       expect(sheetContains(sheet, 'GENEL TOPLAM')).toBe(true);
-      // Grand total from mockQuoteData (6330 before VAT removal, now whatever
-      // calculateQuoteTotals returns). We just check the sheet includes a
-      // Turkish-formatted number, not the specific value.
-      expect(sheetContains(sheet, '6.330,00')).toBe(true);
+      // Running net at the GRAND_TOTAL position: PRODUCT 4275 + SET 500 +
+      // CUSTOM 500 = 5275 (no SUBTOTAL above, so no section discount applied).
+      // The legacy `grandTotal: 6330` param is no longer read by the renderer.
+      expect(sheetContains(sheet, '5.275,00')).toBe(true);
+    });
+
+    it('GRAND_TOTAL shows running net at its position, not whole-quote total', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel({
+        ...mockQuoteData,
+        items: [
+          // PRODUCT A: totalPrice 100
+          {
+            itemType: 'PRODUCT',
+            description: 'A',
+            quantity: 1,
+            unit: 'Adet',
+            unitPrice: 100,
+            totalPrice: 100,
+          },
+          // SUBTOTAL with 10% discount → net = 100 - 10 = 90
+          {
+            itemType: 'SUBTOTAL',
+            description: 'Ara Toplam',
+            quantity: 0,
+            unit: '',
+            unitPrice: 0,
+            totalPrice: 0,
+            sectionDiscountPct: 10,
+          },
+          // GRAND_TOTAL mid-quote — should display 90, NOT 590
+          {
+            itemType: 'GRAND_TOTAL',
+            description: 'ARA GENEL TOPLAM',
+            quantity: 0,
+            unit: '',
+            unitPrice: 0,
+            totalPrice: 0,
+          },
+          // PRODUCT B: totalPrice 500 (after the GRAND_TOTAL — should not be included)
+          {
+            itemType: 'PRODUCT',
+            description: 'B',
+            quantity: 1,
+            unit: 'Adet',
+            unitPrice: 500,
+            totalPrice: 500,
+          },
+        ],
+        totals: { subtotal: 600, totalVat: 0, grandTotal: 590 },
+      });
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // Find the GRAND_TOTAL row by its description
+      let gtRow = -1;
+      sheet.eachRow((row, rowIdx) => {
+        const a = row.getCell(1).value;
+        if (typeof a === 'string' && a.startsWith('ARA GENEL TOPLAM')) gtRow = rowIdx;
+      });
+      expect(gtRow).toBeGreaterThan(0);
+
+      // Col 8 (H) holds the formatted amount
+      const amount = String(sheet.getRow(gtRow).getCell(8).value);
+      // Running net above GRAND_TOTAL: 100 - 10% = 90
+      expect(amount).toContain('90');
+      // Must NOT contain 590 (the whole-quote total regression)
+      expect(amount).not.toContain('590');
     });
 
     // --- Commercial Terms ---
