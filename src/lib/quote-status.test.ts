@@ -29,6 +29,10 @@ describe('Quote Status Transitions', () => {
       expect(canTransitionTo('ONAY_BEKLIYOR', 'REVIZYON')).toBe(true);
     });
 
+    it('allows ONAY_BEKLIYOR to TASLAK (retract approval)', () => {
+      expect(canTransitionTo('ONAY_BEKLIYOR', 'TASLAK')).toBe(true);
+    });
+
     it('allows ONAYLANDI to GONDERILDI', () => {
       expect(canTransitionTo('ONAYLANDI', 'GONDERILDI')).toBe(true);
     });
