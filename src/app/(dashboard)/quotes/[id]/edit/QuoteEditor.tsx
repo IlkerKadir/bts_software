@@ -1653,30 +1653,30 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const handleRejectFromEditor = useCallback(async () => {
     if (!quote || hasChanges) return;
 
-    const note = prompt('Revizyon nedeni:');
-    if (!note) return;
+    const note = prompt('Düzenleme talebi notu:');
+    if (!note || !note.trim()) return;
 
     try {
       const res = await fetch(`/api/quotes/${quoteId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'REVIZYON', note }),
+        body: JSON.stringify({ status: 'TASLAK', note: note.trim() }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Reddetme işlemi başarısız');
+        throw new Error(data.error || 'Düzenleme talebi gönderilemedi');
       }
 
-      setQuote((prev) => (prev ? { ...prev, status: 'REVIZYON' } : prev));
-      setSuccessMessage('Teklif revizyona gönderildi');
+      setQuote((prev) => (prev ? { ...prev, status: 'TASLAK' } : prev));
+      setSuccessMessage('Düzenleme talebi gönderildi');
 
       setTimeout(() => {
         router.push(`/quotes/${quoteId}`);
       }, 1500);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Reddetme sırasında bir hata oluştu'
+        err instanceof Error ? err.message : 'Düzenleme talebi sırasında bir hata oluştu'
       );
     }
   }, [quote, quoteId, hasChanges, router]);
