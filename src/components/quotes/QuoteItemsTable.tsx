@@ -164,21 +164,53 @@ export function QuoteItemsTable({
   // stickyBottomScrollRef — cleared on the next animation frame.
   const isSyncingRef = useRef(false);
 
-  // Sync sticky header horizontal scroll with main table via direct DOM manipulation
-  // (avoids React re-render on every scroll pixel for performance on large quotes)
+  // Sync sticky header + sticky bottom scrollbar horizontal scroll with
+  // main table via direct DOM manipulation (avoids React re-render on
+  // every scroll pixel for performance on large quotes).
+  //
+  // The two-way sync with stickyBottomScrollRef is guarded by
+  // isSyncingRef so programmatic scrollLeft assignment does not trigger
+  // a feedback loop.
   const handleMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const sl = e.currentTarget.scrollLeft;
     if (stickyHeaderInnerRef.current) {
       stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
     }
+    if (!isSyncingRef.current && stickyBottomScrollRef.current) {
+      isSyncingRef.current = true;
+      stickyBottomScrollRef.current.scrollLeft = sl;
+      requestAnimationFrame(() => { isSyncingRef.current = false; });
+    }
   }, []);
 
-  // Re-sync sticky header after column visibility or table width changes
-  // (browser may auto-clamp scrollLeft when table gets narrower)
-  const syncScrollLeft = useCallback(() => {
-    if (mainScrollRef.current && stickyHeaderInnerRef.current) {
-      const sl = mainScrollRef.current.scrollLeft;
+  // Sync main table + sticky header horizontal scroll with the
+  // sticky-bottom proxy scrollbar. Same isSyncingRef guard so we don't
+  // loop back into handleMainScroll.
+  const handleStickyBottomScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const sl = e.currentTarget.scrollLeft;
+    if (!isSyncingRef.current && mainScrollRef.current) {
+      isSyncingRef.current = true;
+      mainScrollRef.current.scrollLeft = sl;
+      requestAnimationFrame(() => { isSyncingRef.current = false; });
+    }
+    if (stickyHeaderInnerRef.current) {
       stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
+    }
+  }, []);
+
+  // Re-sync sticky header + sticky bottom after column visibility or
+  // table width changes (browser may auto-clamp scrollLeft when the
+  // table gets narrower).
+  const syncScrollLeft = useCallback(() => {
+    if (!mainScrollRef.current) return;
+    const sl = mainScrollRef.current.scrollLeft;
+    if (stickyHeaderInnerRef.current) {
+      stickyHeaderInnerRef.current.style.transform = `translateX(-${sl}px)`;
+    }
+    if (stickyBottomScrollRef.current) {
+      isSyncingRef.current = true;
+      stickyBottomScrollRef.current.scrollLeft = sl;
+      requestAnimationFrame(() => { isSyncingRef.current = false; });
     }
   }, []);
 
