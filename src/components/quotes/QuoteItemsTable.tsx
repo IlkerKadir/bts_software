@@ -1406,12 +1406,6 @@ export function QuoteItemsTable({
           </tfoot>
         </table>
         </div>
-        {/* Sticky-bottom horizontal scrollbar proxy — keeps a scroll
-            strip pinned to the bottom of the viewport so users can pan
-            right-side columns into view without scrolling to the end of
-            a long quote. Width-matched inner div drives the native
-            scrollbar; handleStickyBottomScroll mirrors into the main
-            table. */}
         {/* Sticky-bottom custom scrollbar — always-visible track and
             draggable thumb. Uses absolute positioning rather than the
             native scrollbar (which macOS Chrome auto-hides even with
