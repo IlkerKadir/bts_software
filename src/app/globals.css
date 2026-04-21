@@ -275,3 +275,26 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-accent-400);
 }
+
+/* Force always-visible scrollbar for the quote editor's sticky-bottom
+   scroll proxy. macOS with trackpad hides overlay scrollbars by default;
+   we need the user to see and drag this strip without guessing it exists. */
+.sticky-bottom-hscroll {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #9ca3af #f3f4f6; /* Firefox */
+}
+.sticky-bottom-hscroll::-webkit-scrollbar {
+  height: 12px;
+  background: #f3f4f6;
+}
+.sticky-bottom-hscroll::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 6px;
+  border: 2px solid #f3f4f6;
+}
+.sticky-bottom-hscroll::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+.sticky-bottom-hscroll::-webkit-scrollbar-corner {
+  background: #f3f4f6;
+}

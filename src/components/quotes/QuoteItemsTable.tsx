@@ -310,10 +310,15 @@ export function QuoteItemsTable({
     const update = () => {
       setNeedsHScroll(node.scrollWidth > node.clientWidth + 1);
     };
-    update();
+    // Defer the initial check until layout is settled — otherwise on
+    // first mount `scrollWidth` may read 0 before the table paints.
+    const raf = requestAnimationFrame(update);
     const ro = new ResizeObserver(update);
     ro.observe(node);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, []);
 
   // ── Filter state ──────────────────────────────────────────────────────────
@@ -1376,7 +1381,7 @@ export function QuoteItemsTable({
             table. */}
         <div
           ref={stickyBottomScrollRef}
-          className="sticky bottom-0 z-30 overflow-x-auto bg-white border-x border-b border-accent-200 rounded-b-lg"
+          className="sticky bottom-0 z-30 overflow-x-scroll bg-white border-x border-b border-accent-200 rounded-b-lg sticky-bottom-hscroll"
           style={{ display: needsHScroll ? 'block' : 'none' }}
           onScroll={handleStickyBottomScroll}
           aria-hidden="true"
