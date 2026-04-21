@@ -164,6 +164,12 @@ export function QuoteItemsTable({
   // Drag state for the custom scrollbar thumb. Null when not dragging.
   const thumbDragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
 
+  // Auto-scroll loop state — only active while a row drag is in
+  // progress. The rAF id is non-null when the loop is running; the
+  // pointer Y is updated by a document-level `dragover` listener.
+  const autoScrollRafRef = useRef<number | null>(null);
+  const pointerYRef = useRef<number>(0);
+
   // Recompute thumb width + position from the main table's scroll
   // state. Called on scroll, resize, column toggle, etc. Direct DOM
   // writes avoid React re-renders on every scroll pixel.
@@ -688,6 +694,37 @@ export function QuoteItemsTable({
     const profitMargin = summary.grandTotal > 0 ? (totalProfit / summary.grandTotal) * 100 : 0;
     return { totalCost, totalProfit, profitMargin };
   }, [items, summary.grandTotal, currency, baseForeignRate]);
+
+  // Vertical auto-scroll loop. Runs during an active row drag. When
+  // the pointer is within 80px of the viewport top or bottom, scroll
+  // the window at a speed that ramps linearly — 0 px/frame at the
+  // dead-zone's inner boundary, 18 px/frame at the viewport edge.
+  // Outside the dead-zone: no scrolling, loop idle-runs.
+  const startAutoScrollLoop = useCallback(() => {
+    if (autoScrollRafRef.current !== null) return; // already running
+    const EDGE = 80;
+    const MAX_PX_PER_FRAME = 18;
+    const tick = () => {
+      const y = pointerYRef.current;
+      const h = window.innerHeight;
+      let dy = 0;
+      if (y < EDGE) {
+        dy = -MAX_PX_PER_FRAME * (1 - y / EDGE);
+      } else if (y > h - EDGE) {
+        dy = MAX_PX_PER_FRAME * (1 - (h - y) / EDGE);
+      }
+      if (dy !== 0) window.scrollBy(0, dy);
+      autoScrollRafRef.current = requestAnimationFrame(tick);
+    };
+    autoScrollRafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const stopAutoScrollLoop = useCallback(() => {
+    if (autoScrollRafRef.current !== null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+  }, []);
 
   // Drag handlers
   const handleDragStart = useCallback(
