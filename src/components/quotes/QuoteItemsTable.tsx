@@ -733,6 +733,38 @@ export function QuoteItemsTable({
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', String(index));
 
+      // Replace the browser's default drag ghost (a full-width snapshot
+      // of the row, which looks visually misaligned because the row is
+      // as wide as the table) with a small floating chip that names the
+      // item. Chip is appended off-screen, snapshotted by the browser,
+      // and self-removed on the next frame.
+      const item = items[index];
+      const label =
+        (item?.description?.trim() || item?.code?.trim() || 'Kalem').slice(0, 60);
+      const chip = document.createElement('div');
+      chip.textContent = `↕  ${label}`;
+      chip.style.cssText = [
+        'position:absolute',
+        'top:-9999px',
+        'left:-9999px',
+        'background:#1e293b',
+        'color:#fff',
+        'padding:6px 12px',
+        'border-radius:6px',
+        'font-size:13px',
+        'font-family:Tahoma,Geneva,Verdana,sans-serif',
+        'box-shadow:0 4px 12px rgba(0,0,0,0.25)',
+        'white-space:nowrap',
+        'max-width:360px',
+        'overflow:hidden',
+        'text-overflow:ellipsis',
+        'pointer-events:none',
+      ].join(';');
+      document.body.appendChild(chip);
+      e.dataTransfer.setDragImage(chip, 12, 16);
+      // Remove after the browser has snapshotted it (next frame is safe).
+      requestAnimationFrame(() => chip.remove());
+
       // Install auto-scroll — tracks pointer Y at document level and
       // runs a rAF loop until the drag ends. Cleanup attaches to the
       // same listeners so they self-remove on dragend regardless of
@@ -750,7 +782,7 @@ export function QuoteItemsTable({
       pointerYRef.current = e.clientY; // seed so first tick is correct
       startAutoScrollLoop();
     },
-    [startAutoScrollLoop, stopAutoScrollLoop],
+    [items, startAutoScrollLoop, stopAutoScrollLoop],
   );
 
   const handleDragOver = useCallback(
