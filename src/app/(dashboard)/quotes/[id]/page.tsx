@@ -173,6 +173,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
     canExport: true,
     canApprove: false,
   });
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -207,6 +208,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               canExport: !!data.user.role.canExport,
               canApprove: !!data.user.role.canApprove,
             });
+            setCurrentUserId(data.user.id ?? null);
           }
         }
       } catch {
@@ -452,6 +454,38 @@ export default function QuoteDetailPage({ params }: PageProps) {
     () => !!quote?.items.some(i => i.itemType === 'GRAND_TOTAL'),
     [quote],
   );
+
+  // ---------------------------------------------------------------------------
+  // Retract Approval Handler
+  // ---------------------------------------------------------------------------
+
+  const [isRetracting, setIsRetracting] = useState(false);
+
+  const handleRetractApproval = useCallback(async () => {
+    if (!quote) return;
+    const ok = window.confirm(
+      'Bu teklifin onay talebini geri çekip taslağa döndürmek istediğinize emin misiniz?'
+    );
+    if (!ok) return;
+    setIsRetracting(true);
+    try {
+      const res = await fetch(`/api/quotes/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'TASLAK', note: 'Onayı geri çekti' }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Onay geri çekilemedi');
+      }
+      await fetchQuote();
+    } catch (err) {
+      console.error('Retract approval error:', err);
+      setError(err instanceof Error ? err.message : 'Onay geri çekilirken bir hata oluştu');
+    } finally {
+      setIsRetracting(false);
+    }
+  }, [id, quote, fetchQuote]);
 
   // ---------------------------------------------------------------------------
   // Export Handlers
@@ -793,6 +827,19 @@ export default function QuoteDetailPage({ params }: PageProps) {
             <ClipboardCopy className="w-4 h-4" />
             Revizyon Oluştur
           </Button>
+
+          {/* Retract approval — visible only to the quote's own creator while pending */}
+          {quote.status === 'ONAY_BEKLIYOR' && currentUserId === quote.createdBy.id && (
+            <Button
+              variant="secondary"
+              onClick={handleRetractApproval}
+              disabled={isRetracting}
+              title="Onay talebini geri çek — teklif taslağa geri döner"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Onayı Geri Çek
+            </Button>
+          )}
 
           {/* Divider */}
           <div className="w-px h-6 bg-primary-200 mx-1" />
