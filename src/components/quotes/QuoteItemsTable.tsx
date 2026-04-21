@@ -297,6 +297,22 @@ export function QuoteItemsTable({
     return () => window.removeEventListener('resize', syncScrollLeft);
   }, [syncScrollLeft]);
 
+  // Hide the sticky-bottom scrollbar when the table fits in its
+  // container (no horizontal overflow). Re-check whenever the table
+  // container resizes (window resize, column width change, side panel
+  // toggle, etc).
+  useEffect(() => {
+    const node = mainScrollRef.current;
+    if (!node) return;
+    const update = () => {
+      setNeedsHScroll(node.scrollWidth > node.clientWidth + 1);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+
   // ── Filter state ──────────────────────────────────────────────────────────
 
   const [brandFilter, setBrandFilter] = useState<Set<string>>(new Set());
