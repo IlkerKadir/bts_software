@@ -276,4 +276,13 @@ body {
   background-color: var(--color-accent-400);
 }
 
-
+/* Hide the native horizontal scrollbar on elements that use the
+   custom sticky-bottom thumb. The element still scrolls — we just
+   suppress the browser's default scrollbar to avoid a duplicate when
+   the user scrolls to the end of a long quote. */
+.hide-native-hscrollbar {
+  scrollbar-width: none; /* Firefox + Chrome 121+ */
+}
+.hide-native-hscrollbar::-webkit-scrollbar {
+  display: none; /* Chrome / Safari */
+}

@@ -1090,7 +1090,7 @@ export function QuoteItemsTable({
         {/* Main scrolling table */}
         <div
           ref={mainScrollRef}
-          className={`border border-t-0 border-accent-200 bg-white overflow-x-auto ${needsHScroll ? '' : 'rounded-b-lg'}`}
+          className={`hide-native-hscrollbar border border-t-0 border-accent-200 bg-white overflow-x-auto ${needsHScroll ? '' : 'rounded-b-lg'}`}
           onScroll={handleMainScroll}
         >
         <table ref={tableRef} className="text-sm border-separate border-spacing-0" style={{ tableLayout: 'fixed', width: tableWidth }}>
