@@ -39,6 +39,7 @@ import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
 import { calculateSectionBreakdown, calculateGrandTotalAtIndex, type QuoteCurrencyContext } from '@/lib/quote-calculations';
+import { buildQuoteExportFilename } from '@/lib/filename';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -470,7 +471,14 @@ export default function QuoteDetailPage({ params }: PageProps) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${quote.quoteNumber}.pdf`;
+      a.download = buildQuoteExportFilename(
+        {
+          quoteNumber: quote.quoteNumber,
+          projectName: quote.project?.name,
+          companyName: quote.company.name,
+        },
+        'pdf'
+      );
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -494,7 +502,14 @@ export default function QuoteDetailPage({ params }: PageProps) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${quote.quoteNumber}.xlsx`;
+      a.download = buildQuoteExportFilename(
+        {
+          quoteNumber: quote.quoteNumber,
+          projectName: quote.project?.name,
+          companyName: quote.company.name,
+        },
+        'xlsx'
+      );
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
