@@ -5,6 +5,7 @@ import { getPdfService } from '@/lib/pdf/pdf-service';
 import { generateQuoteHtml, QuoteDataForPdf } from '@/lib/pdf/quote-template';
 import { buildQuoteExportFilename } from '@/lib/filename';
 import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 import fs from 'fs';
 import path from 'path';
 
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const meta = item.serviceMeta as Record<string, unknown> | null;
       const headerColor = meta && typeof meta.headerColor === 'string' ? meta.headerColor : undefined;
       const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
+      const highlight = meta && meta.highlight === true;
 
       const rawTotal = Number(item.totalPrice);
       let totalPriceInQuoteCurrency: number | undefined;
@@ -117,6 +119,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         vatRate: Number(item.vatRate),
         headerColor,
         customPozNo,
+        highlight,
         priceLabel: item.priceLabel,
         currency: item.currency ?? null,
         totalPriceInQuoteCurrency,
@@ -137,7 +140,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         quoteNumber: quote.quoteNumber,
         refNo: quote.refNo,
         subject: quote.subject,
-        createdAt: quote.createdAt,
+        displayDate: getQuoteDisplayDate(quote),
         validUntil: quote.validUntil,
         currency: quote.currency,
         language: quote.language,

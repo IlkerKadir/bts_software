@@ -21,7 +21,11 @@ export type QuoteStatus =
 const statusTransitions: Record<QuoteStatus, QuoteStatus[]> = {
   TASLAK: ['ONAY_BEKLIYOR', 'IPTAL'],
   ONAY_BEKLIYOR: ['ONAYLANDI', 'IPTAL', 'TASLAK'],
-  ONAYLANDI: ['GONDERILDI', 'IPTAL'],
+  // ONAYLANDI → ONAY_BEKLIYOR is the creator-only "tekrar onaya gönder"
+  // path: an approved quote that hasn't been sent (GONDERILDI) yet can
+  // be re-submitted for approval if the salesperson made changes after
+  // approval. The creator-vs-other check happens at the API layer.
+  ONAYLANDI: ['GONDERILDI', 'IPTAL', 'ONAY_BEKLIYOR'],
   GONDERILDI: ['TAKIPTE', 'KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   TAKIPTE: ['KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   REVIZYON: ['ONAY_BEKLIYOR', 'IPTAL'],

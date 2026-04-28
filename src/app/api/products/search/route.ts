@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,14 +24,17 @@ export async function GET(request: NextRequest) {
     const where: any = { isActive: true };
 
     if (query.length >= 2) {
-      where.OR = [
-        { code: { contains: query, mode: 'insensitive' } },
-        { shortCode: { contains: query, mode: 'insensitive' } },
-        { name: { contains: query, mode: 'insensitive' } },
-        { nameTr: { contains: query, mode: 'insensitive' } },
-        { model: { contains: query, mode: 'insensitive' } },
-        { brand: { name: { contains: query, mode: 'insensitive' } } },
-      ];
+      const searchVariants = expandTurkishVariants(query);
+      if (searchVariants.length > 0) {
+        where.OR = searchVariants.flatMap((v) => [
+          { code: { contains: v, mode: 'insensitive' as const } },
+          { shortCode: { contains: v, mode: 'insensitive' as const } },
+          { name: { contains: v, mode: 'insensitive' as const } },
+          { nameTr: { contains: v, mode: 'insensitive' as const } },
+          { model: { contains: v, mode: 'insensitive' as const } },
+          { brand: { name: { contains: v, mode: 'insensitive' as const } } },
+        ]);
+      }
     }
     if (brandId) where.brandId = brandId;
     if (categoryId) where.categoryId = categoryId;

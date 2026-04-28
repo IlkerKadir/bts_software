@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session';
 import { hashPassword } from '@/lib/auth';
 import { createUserSchema, userQuerySchema } from '@/lib/validations/user';
 import { Prisma } from '@prisma/client';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,12 +32,13 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.UserWhereInput = { deletedAt: null };
 
-    if (query.search) {
-      where.OR = [
-        { username: { contains: query.search, mode: 'insensitive' } },
-        { fullName: { contains: query.search, mode: 'insensitive' } },
-        { email: { contains: query.search, mode: 'insensitive' } },
-      ];
+    const searchVariants = expandTurkishVariants(query.search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.flatMap((v) => [
+        { username: { contains: v, mode: 'insensitive' as const } },
+        { fullName: { contains: v, mode: 'insensitive' as const } },
+        { email: { contains: v, mode: 'insensitive' as const } },
+      ]);
     }
 
     if (query.roleId) {

@@ -7,7 +7,7 @@ import {
   Filter, X, Search, ChevronDown, Sigma,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { Button } from '@/components/ui';
+import { Button, Modal } from '@/components/ui';
 import {
   QuoteItemRow,
   formatPrice,
@@ -20,6 +20,7 @@ import { BrandProfitSummary } from './BrandProfitSummary';
 import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
 import { calculateSectionBreakdown, calculateGrandTotalAtIndex, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 import { useSettings } from '@/components/settings/SettingsProvider';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -43,6 +44,16 @@ export interface QuoteItemsTableProps {
   onItemDuplicate: (itemId: string) => void;
   onReorder: (items: QuoteItemData[]) => void;
   onAddProduct: () => void;
+  /** Right-click "Ürün Değiştir" — opens the catalog in swap mode for
+   *  the given row. Only invoked from PRODUCT/SET rows that have a
+   *  productId. Optional so callers that don't want the feature can
+   *  omit it. */
+  onSwapProductRequest?: (itemId: string) => void;
+  /** Bulk apply the same katsayı value to multiple items in one
+   *  setItems pass. Avoids the O(N×items) cost of calling onItemUpdate
+   *  per row when the user bulk-applies on a large quote. When omitted
+   *  the modal falls back to per-row onItemUpdate. */
+  onBulkKatsayiApply?: (ids: string[], value: number) => void;
   onAddHeader: () => void;
   onAddNote: () => void;
   onAddCustomItem?: () => void;
@@ -122,6 +133,8 @@ export function QuoteItemsTable({
   onItemDuplicate,
   onReorder,
   onAddProduct,
+  onSwapProductRequest,
+  onBulkKatsayiApply,
   onAddHeader,
   onAddNote,
   onAddCustomItem,
@@ -142,6 +155,73 @@ export function QuoteItemsTable({
 
   // Collapsed parent state for sub-row toggle
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
+
+  // Bulk-katsayı: a modal-driven flow for setting the same katsayı value
+  // on a chosen subset of rows. Solves the "80-row quote, 40 of them need
+  // 1.2" workflow without forcing the user to click 40 cells one by one.
+  // State lives here; Apply iterates and calls onItemUpdate per row,
+  // reusing the existing katsayı change pipeline (recomputes
+  // unitPrice/totalPrice via the editor's handleItemUpdate).
+  const [bulkKatsayiOpen, setBulkKatsayiOpen] = useState(false);
+  const [selectedKatsayiIds, setSelectedKatsayiIds] = useState<Set<string>>(new Set());
+  const [bulkKatsayiInput, setBulkKatsayiInput] = useState<string>('');
+  const [bulkKatsayiFilter, setBulkKatsayiFilter] = useState<string>('');
+  const toggleKatsayiSelection = useCallback((itemId: string) => {
+    setSelectedKatsayiIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+  const closeBulkKatsayi = useCallback(() => {
+    setBulkKatsayiOpen(false);
+    setSelectedKatsayiIds(new Set());
+    setBulkKatsayiInput('');
+    setBulkKatsayiFilter('');
+  }, []);
+  const applyBulkKatsayi = useCallback(() => {
+    const raw = bulkKatsayiInput.trim().replace(',', '.');
+    const value = Number(raw);
+    if (!raw || !Number.isFinite(value) || value <= 0) return;
+    const ids = Array.from(selectedKatsayiIds);
+    // Prefer the bulk path when available — one setItems pass instead
+    // of N separate reducer runs on a long quote.
+    if (onBulkKatsayiApply) {
+      onBulkKatsayiApply(ids, value);
+    } else {
+      ids.forEach((itemId) => onItemUpdate(itemId, { katsayi: value }));
+    }
+    closeBulkKatsayi();
+  }, [bulkKatsayiInput, selectedKatsayiIds, onBulkKatsayiApply, onItemUpdate, closeBulkKatsayi]);
+
+  // Editable items for the bulk modal: PRODUCT/CUSTOM/SET only (no
+  // HEADER/NOTE/SUBTOTAL/GRAND_TOTAL — they don't carry a katsayı).
+  // Filter by description/code/brand/model when the user types in the
+  // modal's search box. Reuses the same Turkish-variant expansion as
+  // the rest of the app so "altinay" finds "Altınay".
+  const bulkKatsayiCandidates = useMemo(() => {
+    const candidates = items.filter(
+      (it) =>
+        it.itemType === 'PRODUCT' || it.itemType === 'CUSTOM' || it.itemType === 'SET'
+    );
+    const q = bulkKatsayiFilter.trim();
+    if (!q) return candidates;
+    const variants = expandTurkishVariants(q).map((v) => v.toLocaleLowerCase('tr-TR'));
+    if (variants.length === 0) return candidates;
+    return candidates.filter((it) => {
+      const fields = [it.code, it.description, it.brand, it.model]
+        .filter((f): f is string => !!f)
+        .map((f) => f.toLocaleLowerCase('tr-TR'));
+      return variants.some((v) => fields.some((f) => f.includes(v)));
+    });
+  }, [items, bulkKatsayiFilter]);
+  const selectAllVisible = useCallback(() => {
+    setSelectedKatsayiIds(new Set(bulkKatsayiCandidates.map((it) => it.id)));
+  }, [bulkKatsayiCandidates]);
+  const deselectAll = useCallback(() => {
+    setSelectedKatsayiIds(new Set());
+  }, []);
 
   // Column resize state
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
@@ -442,13 +522,13 @@ export function QuoteItemsTable({
         passes = false;
       }
       if (passes && textFilter) {
-        const search = textFilter.toLowerCase();
-        passes = !!(
-          item.code?.toLowerCase().includes(search) ||
-          item.model?.toLowerCase().includes(search) ||
-          item.description?.toLowerCase().includes(search) ||
-          item.brand?.toLowerCase().includes(search)
-        );
+        const variants = expandTurkishVariants(textFilter).map((v) => v.toLocaleLowerCase('tr-TR'));
+        const fields = [item.code, item.model, item.description, item.brand]
+          .filter((f): f is string => !!f)
+          .map((f) => f.toLocaleLowerCase('tr-TR'));
+        passes = variants.length === 0
+          ? true
+          : variants.some((v) => fields.some((f) => f.includes(v)));
       }
       if (passes) passingIds.add(item.id);
     }
@@ -828,13 +908,28 @@ export function QuoteItemsTable({
     (i) => i.itemType !== 'HEADER' && i.itemType !== 'NOTE'
   ).length;
 
-  // Shared colgroup JSX — used by both sticky header table and main table
+  // Shared colgroup JSX — used by both sticky header table and main table.
+  // Internal-only columns (cost analysis, source pricing, price history,
+  // PB) get a subtle slate tint via colgroup-level background so the user
+  // can see at a glance which cells will not appear on the customer PDF.
+  // Customer-facing columns (Poz, Açıklama, Miktar, Birim Fiyat, Toplam
+  // Fiyat) stay on the default white background. SUBTOTAL/HEADER/NOTE
+  // rows have their own row-level backgrounds that mask this tint —
+  // intentional: section bands take priority over column tinting.
+  const INTERNAL_COL_BG = '#F1F5F9'; // slate-100, very subtle
+  const internalColStyle = (width: number): React.CSSProperties => ({
+    width,
+    backgroundColor: INTERNAL_COL_BG,
+  });
   const colgroupJsx = useMemo(() => (
     <colgroup>
       <col style={{ width: columnWidths.drag }} />
       <col style={{ width: columnWidths.pozNo }} />
       {columnVisibility.urun && (
         <>
+          {/* Marka / Model / Kod appear on the customer-facing Excel
+              export, so keep them on the default background even though
+              the PDF only renders Marka inline within the description. */}
           <col style={{ width: columnWidths.marka }} />
           <col style={{ width: columnWidths.model }} />
           <col style={{ width: columnWidths.kod }} />
@@ -850,28 +945,28 @@ export function QuoteItemsTable({
       )}
       {columnVisibility.fiyat && (
         <>
-          <col style={{ width: columnWidths.katsayi }} />
-          <col style={{ width: columnWidths.listeFiyati }} />
+          <col style={internalColStyle(columnWidths.katsayi)} />
+          <col style={internalColStyle(columnWidths.listeFiyati)} />
         </>
       )}
       {canViewCosts && columnVisibility.maliyet && (
         <>
-          <col style={{ width: columnWidths.maliyet }} />
-          <col style={{ width: columnWidths.kar }} />
-          <col style={{ width: columnWidths.karPct }} />
+          <col style={internalColStyle(columnWidths.maliyet)} />
+          <col style={internalColStyle(columnWidths.kar)} />
+          <col style={internalColStyle(columnWidths.karPct)} />
         </>
       )}
-      <col style={{ width: columnWidths.pb }} />
+      <col style={internalColStyle(columnWidths.pb)} />
       {columnVisibility.gecmis && (
         <>
-          <col style={{ width: columnWidths.sonTeklif }} />
-          <col style={{ width: columnWidths.delta1 }} />
-          <col style={{ width: columnWidths.siparis }} />
-          <col style={{ width: columnWidths.delta2 }} />
-          <col style={{ width: columnWidths.enYuksek }} />
-          <col style={{ width: columnWidths.delta3 }} />
-          <col style={{ width: columnWidths.enDusuk }} />
-          <col style={{ width: columnWidths.delta4 }} />
+          <col style={internalColStyle(columnWidths.sonTeklif)} />
+          <col style={internalColStyle(columnWidths.delta1)} />
+          <col style={internalColStyle(columnWidths.siparis)} />
+          <col style={internalColStyle(columnWidths.delta2)} />
+          <col style={internalColStyle(columnWidths.enYuksek)} />
+          <col style={internalColStyle(columnWidths.delta3)} />
+          <col style={internalColStyle(columnWidths.enDusuk)} />
+          <col style={internalColStyle(columnWidths.delta4)} />
         </>
       )}
       <col style={{ width: columnWidths.delete }} />
@@ -1008,6 +1103,16 @@ export function QuoteItemsTable({
             Ek Maliyet
           </Button>
         )}
+
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setBulkKatsayiOpen(true)}
+          title="Birden fazla satıra aynı katsayı uygula"
+        >
+          <Calculator className="h-4 w-4" />
+          Toplu Katsayı
+        </Button>
 
         {/* Column group toggles */}
         <div className="flex items-center gap-1 ml-auto border border-accent-200 rounded-lg p-1 bg-accent-50">
@@ -1301,6 +1406,15 @@ export function QuoteItemsTable({
                         : undefined
                     }
                     onInsertHeaderAbove={onAddHeader}
+                    onSwapProduct={
+                      // Restricted to PRODUCT rows. A SET parent's price is
+                      // derived from its children, so swapping its product
+                      // reference would orphan the children's totals — that
+                      // path is intentionally not exposed.
+                      onSwapProductRequest && item.productId && item.itemType === 'PRODUCT'
+                        ? () => onSwapProductRequest(item.id)
+                        : undefined
+                    }
                     priceLabelOptions={priceLabelCatalog}
                     unitOptions={unitCatalog}
                     onAddSectionDiscount={
@@ -1529,6 +1643,149 @@ export function QuoteItemsTable({
             onMouseDown={handleThumbMouseDown}
           />
         </div>
+
+        {/* Bulk-katsayı modal — pick rows from the editable subset and
+            apply the same katsayı value at once. Filter input on top so
+            on a long quote (80+ rows) the user can narrow the visible
+            set before checking. */}
+        <Modal
+          isOpen={bulkKatsayiOpen}
+          onClose={closeBulkKatsayi}
+          title="Toplu Katsayı"
+          size="lg"
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-primary-600">
+              Birden fazla satıra aynı katsayı değerini uygulayın. Sadece
+              katsayı taşıyan satırlar (Ürün, Set, Serbest Kalem) listelenir.
+            </p>
+
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-primary-600 mb-1">
+                  Filtrele (kod / açıklama / marka)
+                </label>
+                <input
+                  type="text"
+                  value={bulkKatsayiFilter}
+                  onChange={(e) => setBulkKatsayiFilter(e.target.value)}
+                  placeholder="Filtre uygulayın..."
+                  className="w-full px-3 py-2 border border-primary-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+              <div className="w-40">
+                <label className="block text-xs font-medium text-primary-600 mb-1">
+                  Katsayı
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={bulkKatsayiInput}
+                  onChange={(e) => setBulkKatsayiInput(e.target.value)}
+                  placeholder="örn. 1,2"
+                  className="w-full px-3 py-2 border border-primary-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-primary-600">
+              <div>
+                {selectedKatsayiIds.size} / {bulkKatsayiCandidates.length} seçili
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  className="text-accent-600 hover:underline"
+                >
+                  Görünenlerin tümünü seç
+                </button>
+                <span className="text-primary-300">|</span>
+                <button
+                  type="button"
+                  onClick={deselectAll}
+                  className="text-accent-600 hover:underline"
+                >
+                  Temizle
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto border border-primary-200 rounded-md divide-y divide-primary-100">
+              {bulkKatsayiCandidates.length === 0 ? (
+                <div className="p-4 text-center text-sm text-primary-500">
+                  Filtre ile eşleşen satır yok.
+                </div>
+              ) : (
+                bulkKatsayiCandidates.map((it) => {
+                  const checked = selectedKatsayiIds.has(it.id);
+                  const label = [it.code, it.description].filter(Boolean).join(' — ');
+                  return (
+                    <label
+                      key={it.id}
+                      className="flex items-center gap-3 px-3 py-2 hover:bg-accent-50 cursor-pointer text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleKatsayiSelection(it.id)}
+                        className="h-4 w-4 cursor-pointer"
+                      />
+                      <span className="flex-1 truncate">{label || '(boş satır)'}</span>
+                      <span className="tabular-nums text-xs text-primary-500 w-16 text-right">
+                        {Number(it.katsayi).toFixed(3)}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Out-of-range warning: when the typed value falls outside
+                the product's min/max katsayı for any selected row, surface
+                a count above Apply so the user notices before clicking. */}
+            {(() => {
+              const raw = bulkKatsayiInput.trim().replace(',', '.');
+              const value = Number(raw);
+              if (!raw || !Number.isFinite(value) || value <= 0) return null;
+              let oorCount = 0;
+              selectedKatsayiIds.forEach((id) => {
+                const it = items.find((x) => x.id === id);
+                if (!it) return;
+                const min = it.minKatsayi != null ? Number(it.minKatsayi) : null;
+                const max = it.maxKatsayi != null ? Number(it.maxKatsayi) : null;
+                if ((min !== null && value < min) || (max !== null && value > max)) {
+                  oorCount++;
+                }
+              });
+              if (oorCount === 0) return null;
+              return (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                  ⚠ Seçilenlerin {oorCount} tanesi ürün katsayı aralığının dışında kalacak.
+                </div>
+              );
+            })()}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-primary-200">
+              <Button variant="secondary" size="sm" onClick={closeBulkKatsayi}>
+                İptal
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={applyBulkKatsayi}
+                disabled={
+                  selectedKatsayiIds.size === 0 ||
+                  !bulkKatsayiInput.trim() ||
+                  !Number.isFinite(Number(bulkKatsayiInput.trim().replace(',', '.'))) ||
+                  Number(bulkKatsayiInput.trim().replace(',', '.')) <= 0
+                }
+              >
+                Uygula ({selectedKatsayiIds.size} satır)
+              </Button>
+            </div>
+          </div>
+        </Modal>
       </div>
     </div>
   );

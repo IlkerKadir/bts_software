@@ -171,8 +171,8 @@ export default function NewQuotePage() {
 
           {/* Subject */}
           <Input
-            label="Konu"
-            placeholder="Teklif konusu girin"
+            label="Teklif Adı"
+            placeholder="Teklif adı girin"
             value={formData.subject}
             onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
           />

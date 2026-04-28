@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { Prisma, OrderStatus } from '@prisma/client';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,12 +20,13 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.OrderConfirmationWhereInput = {};
 
-    if (search) {
-      where.OR = [
-        { orderNumber: { contains: search, mode: 'insensitive' } },
-        { company: { name: { contains: search, mode: 'insensitive' } } },
-        { quote: { quoteNumber: { contains: search, mode: 'insensitive' } } },
-      ];
+    const searchVariants = expandTurkishVariants(search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.flatMap((v) => [
+        { orderNumber: { contains: v, mode: 'insensitive' as const } },
+        { company: { name: { contains: v, mode: 'insensitive' as const } } },
+        { quote: { quoteNumber: { contains: v, mode: 'insensitive' as const } } },
+      ]);
     }
 
     if (status && Object.values(OrderStatus).includes(status as OrderStatus)) {

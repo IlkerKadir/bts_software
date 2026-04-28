@@ -70,6 +70,22 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // ONAYLANDI → ONAY_BEKLIYOR is creator-only (mirrors the per-quote
+      // PUT route guard). Without this, an admin doing a bulk operation
+      // could roll someone else's approved quotes back to pending.
+      if (
+        currentStatus === 'ONAYLANDI' &&
+        targetStatus === 'ONAY_BEKLIYOR' &&
+        quote.createdById !== user.id
+      ) {
+        results.failed.push({
+          id: quote.id,
+          quoteNumber: quote.quoteNumber,
+          reason: 'Sadece teklifi oluşturan kişi tekrar onaya gönderebilir',
+        });
+        continue;
+      }
+
       try {
         // Update quote with status-specific fields
         await db.quote.update({

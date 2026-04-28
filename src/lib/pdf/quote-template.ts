@@ -14,7 +14,10 @@ export interface QuoteDataForPdf {
     quoteNumber: string;
     refNo?: string | null;
     subject?: string | null;
-    createdAt: Date;
+    /** Date shown to the customer as "Tarih". For approved quotes this
+     *  is the approval timestamp; for pre-approval drafts it's the row
+     *  creation date. Resolved by `getQuoteDisplayDate`. */
+    displayDate: Date;
     validUntil?: Date | null;
     currency: string;
     language: string;
@@ -72,6 +75,9 @@ export interface QuoteItemForPdf {
   /** Optional background color for HEADER items (CSS color value, e.g. '#FF0000') */
   headerColor?: string | null;
   customPozNo?: string | null;
+  /** When true, the row is rendered with a yellow background to match the
+   *  editor's row highlight (toggle via right-click "Vurgula"). */
+  highlight?: boolean | null;
   /** When set, the row's MIKTAR/BIRIM/TOPLAM columns collapse into one
    *  merged cell with this literal label. */
   priceLabel?: string | null;
@@ -251,18 +257,26 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     : '<p style="font-size:14pt;font-weight:bold;color:#cc0000;padding:10pt;">BTS YANGIN</p>';
 
   // ---------- Build item rows ----------
+  // When `highlight` is set on an item, the editor renders a yellow row
+  // background; we inject the same color into the PDF as an inline style
+  // so the customer-facing PDF matches what the salesperson saw.
+  const HIGHLIGHT_BG = '#FFF9C4';
+  const highlightStyle = (item: QuoteItemForPdf) =>
+    item.highlight ? `background-color:${HIGHLIGHT_BG};` : '';
+
   let itemNumber = 0;
   const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
-      return `<tr style="height:13pt; page-break-after:avoid; break-after:avoid;">
+      return `<tr style="height:13pt; page-break-after:avoid; break-after:avoid;${highlightStyle(item)}">
         <td><p><br></p></td>
         <td colspan="4"><p class="s1" style="padding-left:1pt; color:black;">${escapeHtml(item.description)}</p></td>
       </tr>`;
     }
 
     if (item.itemType === 'NOTE') {
-      return `<tr style="height:15pt">
-        <td><p class="s1" style="text-align:center;">NOT:</p></td>
+      const pozLabel = item.customPozNo || 'NOT:';
+      return `<tr style="height:15pt;${highlightStyle(item)}">
+        <td><p class="s1" style="text-align:center;">${escapeHtml(pozLabel)}</p></td>
         <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtml(item.description)}</p></td>
       </tr>`;
     }
@@ -345,7 +359,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     // single cell for the label — client needs the adet info even on
     // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR" rows.
     if (item.priceLabel) {
-      return `<tr>
+      return `<tr style="${highlightStyle(item)}">
       <td><p class="s1" style="text-align:center;">${pozText}</p></td>
       <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
@@ -360,7 +374,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     // recalculateAndPersistQuoteTotals before persisting.
     const rowCurrency = (item.itemType === 'SET' && item.currency) ? item.currency : currency;
 
-    return `<tr>
+    return `<tr style="${highlightStyle(item)}">
       <td><p class="s1" style="text-align:center;">${pozText}</p></td>
       <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
@@ -386,7 +400,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 
   // ---------- Info box right content ----------
   let rightDetailRows = '';
-  rightDetailRows += `<tr><td style="padding:2pt 2pt 1pt 8pt; border:none;"><p class="s1">${dateLabel}</p></td><td style="padding:2pt 2pt 1pt 2pt; border:none;"><p class="s1">: ${formatDate(quote.createdAt)}</p></td></tr>`;
+  rightDetailRows += `<tr><td style="padding:2pt 2pt 1pt 8pt; border:none;"><p class="s1">${dateLabel}</p></td><td style="padding:2pt 2pt 1pt 2pt; border:none;"><p class="s1">: ${formatDate(quote.displayDate)}</p></td></tr>`;
   if (quote.refNo) {
     rightDetailRows += `<tr><td style="padding:1pt 2pt 1pt 8pt; border:none;"><p class="s1">${refLabel}</p></td><td style="padding:1pt 2pt 1pt 2pt; border:none;"><p class="s1">: ${escapeHtml(quote.refNo)}</p></td></tr>`;
   }

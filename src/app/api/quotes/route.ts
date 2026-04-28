@@ -5,6 +5,7 @@ import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } from '@/lib/quote-number';
 import { fetchTcmbDirectRates, buildRateMatrix } from '@/lib/services/tcmb-service';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 /**
  * Resolve the "root" id for a quote used in revision grouping. A row
@@ -39,13 +40,14 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.QuoteWhereInput = {};
 
-    if (query.search) {
-      where.OR = [
-        { quoteNumber: { contains: query.search, mode: 'insensitive' } },
-        { company: { name: { contains: query.search, mode: 'insensitive' } } },
-        { project: { name: { contains: query.search, mode: 'insensitive' } } },
-        { subject: { contains: query.search, mode: 'insensitive' } },
-      ];
+    const searchVariants = expandTurkishVariants(query.search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.flatMap((v) => [
+        { quoteNumber: { contains: v, mode: 'insensitive' as const } },
+        { company: { name: { contains: v, mode: 'insensitive' as const } } },
+        { project: { name: { contains: v, mode: 'insensitive' as const } } },
+        { subject: { contains: v, mode: 'insensitive' as const } },
+      ]);
     }
 
     if (query.companyId) {

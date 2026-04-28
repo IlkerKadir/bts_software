@@ -362,6 +362,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           where: { id: item.id },
           data: {
             sortOrder: item.sortOrder,
+            // Allow swapping the underlying product on a PRODUCT/SET row
+            // by accepting a new productId. HEADER/NOTE/SUBTOTAL/GRAND_TOTAL
+            // never carry a productId; passing undefined leaves the column
+            // alone, null clears it, a string sets it.
+            productId: item.productId === undefined ? undefined : (item.productId ?? null),
             code: item.code || null,
             brand: item.brand || null,
             model: item.model || null,

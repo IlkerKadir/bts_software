@@ -161,7 +161,9 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   };
 
   const handleFormSuccess = () => {
-    fetchProducts();
+    // Stay on the page the user was viewing — creating or editing a
+    // product shouldn't yank them back to page 1.
+    fetchProducts(pagination?.page ?? 1);
   };
 
   const formatPrice = (price: number | null | undefined, currency: string) => {

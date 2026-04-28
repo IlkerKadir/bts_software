@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { createRoleSchema, roleQuerySchema } from '@/lib/validations/role';
 import { Prisma } from '@prisma/client';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,8 +29,11 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.RoleWhereInput = {};
 
-    if (query.search) {
-      where.name = { contains: query.search, mode: 'insensitive' };
+    const searchVariants = expandTurkishVariants(query.search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.map((v) => ({
+        name: { contains: v, mode: 'insensitive' as const },
+      }));
     }
 
     const [roles, total] = await Promise.all([

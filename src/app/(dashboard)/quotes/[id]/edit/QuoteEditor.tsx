@@ -189,6 +189,7 @@ function mapApiItemToLocal(item: ApiQuoteItem): QuoteItemData {
     maxKatsayi: item.product?.maxKatsayi != null ? Number(item.product.maxKatsayi) : null,
     subRows: item.subRows?.map(mapApiItemToLocal) ?? undefined,
     customPozNo: (item.serviceMeta as Record<string, unknown> | null)?.customPozNo as string | null ?? null,
+    highlight: ((item.serviceMeta as Record<string, unknown> | null)?.highlight as boolean | undefined) ?? false,
     ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
     currency: item.currency ?? null,
     sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
@@ -561,7 +562,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           ekMaliyetDelta: item.ekMaliyetDelta ?? null,
           notes: item.notes || '',
           priceLabel: item.priceLabel ?? null,
-          serviceMeta: item.customPozNo ? { customPozNo: item.customPozNo } : null,
+          serviceMeta: (item.customPozNo || item.highlight)
+            ? {
+                ...(item.customPozNo ? { customPozNo: item.customPozNo } : {}),
+                ...(item.highlight ? { highlight: true } : {}),
+              }
+            : null,
           sectionDiscountPct: item.sectionDiscountPct ?? null,
           sectionDiscountLabel: item.sectionDiscountLabel ?? null,
           // Per-SET currency override — only set on top-level SET rows.
@@ -1159,6 +1165,157 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     },
     [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items.length, subItemParentId, setCreationMode, defaultVatRate]
   );
+
+  // ── Bulk-apply same katsayı value to many rows in one pass ───────────────
+  // Mirrors handleItemUpdate's per-row recompute (unitPrice + totalPrice +
+  // ekDelta handling), but does it inside a single setItems call instead of
+  // N separate ones. Skips SET parents (price comes from children) and
+  // manual-priced rows (user-set unitPrice is intentional). Marks dirty so
+  // the existing auto-save persists.
+  const handleBulkKatsayiApply = useCallback(
+    (ids: string[], katsayi: number) => {
+      if (!Number.isFinite(katsayi) || katsayi <= 0 || ids.length === 0) return;
+      const idSet = new Set(ids);
+      setItems((prev) =>
+        prev.map((item) => {
+          if (!idSet.has(item.id)) return item;
+          const isSetParentItem = item.itemType === 'SET' && !item.parentItemId;
+          const updated = { ...item, katsayi };
+          if (!item.isManualPrice && !isSetParentItem) {
+            const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
+            updated.unitPrice = roundUnitPrice(
+              (Number(item.listPrice) + ekDelta) * Number(katsayi)
+            );
+          }
+          updated.totalPrice = computeRowTotal({
+            quantity: Number(item.quantity),
+            unitPrice: Number(updated.unitPrice),
+            discountPct: Number(item.discountPct),
+          });
+          return updated;
+        })
+      );
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+    },
+    []
+  );
+
+  // ── Swap product on an existing row ───────────────────────────────────────
+  // Right-click → "Ürün Değiştir" → catalog → pick replacement. Keeps the
+  // user's quantity, katsayı, discount, VAT, sortOrder, highlight, and
+  // custom poz label. Replaces product reference and re-derives prices
+  // exactly as handleAddProduct would for a fresh add.
+  const [swapTargetItemId, setSwapTargetItemId] = useState<string | null>(null);
+
+  const handleSwapProduct = useCallback(
+    async (product: ProductForQuote) => {
+      const targetId = swapTargetItemId;
+      if (!targetId) return;
+      const existing = items.find((i) => i.id === targetId);
+      if (!existing) {
+        setSwapTargetItemId(null);
+        return;
+      }
+
+      // Determine target currency: a sub-item inherits its parent SET's
+      // override; a top-level row uses the quote currency.
+      let targetCurrency = headerFields.currency;
+      let isSetOverride = false;
+      if (existing.parentItemId) {
+        const parent = items.find((i) => i.id === existing.parentItemId);
+        if (parent && parent.itemType === 'SET' && parent.currency) {
+          targetCurrency = parent.currency;
+          isSetOverride = true;
+        }
+      } else if (existing.itemType === 'SET' && existing.currency) {
+        targetCurrency = existing.currency;
+        isSetOverride = true;
+      }
+
+      // Convert the new product's price into the target currency. Mirrors
+      // handleAddProduct's logic — see comments there for the protection
+      // pct subtleties on SET currency overrides.
+      let convertedListPrice = product.listPrice;
+      let convertedCostPrice = product.costPrice ?? null;
+      if (product.currency !== targetCurrency) {
+        const pk = [product.currency, targetCurrency].sort().join('/');
+        const protectionPct = isSetOverride ? 0 : (headerFields.protectionMap[pk] ?? 0);
+        let rate = exchangeRates[product.currency]?.[targetCurrency];
+        if (!rate) {
+          const reverseRate = exchangeRates[targetCurrency]?.[product.currency];
+          if (reverseRate && reverseRate !== 0) rate = 1 / reverseRate;
+        }
+        if (rate) {
+          convertedListPrice = product.listPrice * rate * (1 + protectionPct / 100);
+          if (convertedCostPrice != null) {
+            convertedCostPrice = convertedCostPrice * rate * (1 + protectionPct / 100);
+          }
+        }
+      }
+
+      const lang = headerFields.language;
+      const newDescription =
+        lang === 'EN'
+          ? product.nameEn || product.name
+          : product.nameTr || product.name;
+
+      // Recompute unit + total using the row's existing katsayi/qty/discount.
+      // ekMaliyetDelta is intentionally preserved: it's a per-row distributed
+      // cost set via the ek-maliyet sidebar, not derived from the product —
+      // swapping the product doesn't invalidate the row's allocated share.
+      const ekDelta = existing.ekMaliyetDelta ?? 0;
+      const newUnitPrice = roundUnitPrice((convertedListPrice + ekDelta) * existing.katsayi);
+      const newTotalPrice = computeRowTotal({
+        quantity: existing.quantity,
+        unitPrice: newUnitPrice,
+        discountPct: existing.discountPct,
+      });
+
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id !== targetId
+            ? it
+            : {
+                ...it,
+                productId: product.id,
+                code: product.code,
+                brand: product.brandName ?? null,
+                model: product.model ?? null,
+                description: newDescription,
+                listPrice: convertedListPrice,
+                unitPrice: newUnitPrice,
+                totalPrice: newTotalPrice,
+                isManualPrice: product.pricingType === 'PROJECT_BASED',
+                costPrice: convertedCostPrice,
+                productCurrency: product.currency,
+                productListPrice: product.listPrice,
+                productCostPrice: product.costPrice ?? null,
+                minKatsayi: product.minKatsayi ?? null,
+                maxKatsayi: product.maxKatsayi ?? null,
+              }
+        )
+      );
+
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+      setSwapTargetItemId(null);
+      setCatalogOpen(false);
+    },
+    [
+      swapTargetItemId,
+      items,
+      headerFields.language,
+      headerFields.currency,
+      headerFields.protectionMap,
+      exchangeRates,
+    ]
+  );
+
+  const handleSwapProductRequest = useCallback((itemId: string) => {
+    setSwapTargetItemId(itemId);
+    setCatalogOpen(true);
+  }, []);
 
   // ── Add header row ─────────────────────────────────────────────────────────
 
@@ -2267,6 +2424,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onSectionDiscountPctChange={handleSectionDiscountPctChange}
         onSectionDiscountLabelChange={handleSectionDiscountLabelChange}
         onAddProduct={() => setCatalogOpen(true)}
+        onSwapProductRequest={handleSwapProductRequest}
+        onBulkKatsayiApply={handleBulkKatsayiApply}
         onAddHeader={handleAddHeader}
         onAddNote={handleAddNote}
         onAddCustomItem={handleAddCustomItem}
@@ -2328,11 +2487,24 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       {/* Product catalog slide-over panel */}
       <ProductCatalogPanel
         isOpen={catalogOpen}
-        onClose={() => { setCatalogOpen(false); setSubItemParentId(null); setSetCreationMode(false); }}
+        onClose={() => {
+          setCatalogOpen(false);
+          setSubItemParentId(null);
+          setSetCreationMode(false);
+          setSwapTargetItemId(null);
+        }}
         companyId={quote.company.id}
         quoteLanguage={headerFields.language}
-        onAddProduct={handleAddProduct}
-        title={setCreationMode ? 'Serbest Kalem Ekle - Ürün Seç' : subItemParentId ? 'Serbest Kalem Ekle' : undefined}
+        onAddProduct={swapTargetItemId ? handleSwapProduct : handleAddProduct}
+        title={
+          swapTargetItemId
+            ? 'Ürün Değiştir - Yeni Ürün Seç'
+            : setCreationMode
+              ? 'Serbest Kalem Ekle - Ürün Seç'
+              : subItemParentId
+                ? 'Serbest Kalem Ekle'
+                : undefined
+        }
       />
 
       {/* Ek Maliyet Modal */}

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { productSchema, productQuerySchema } from '@/lib/validations/product';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,15 +25,16 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.ProductWhereInput = {};
 
-    if (query.search) {
-      where.OR = [
-        { code: { contains: query.search, mode: 'insensitive' } },
-        { shortCode: { contains: query.search, mode: 'insensitive' } },
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { nameTr: { contains: query.search, mode: 'insensitive' } },
-        { model: { contains: query.search, mode: 'insensitive' } },
-        { brand: { name: { contains: query.search, mode: 'insensitive' } } },
-      ];
+    const searchVariants = expandTurkishVariants(query.search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.flatMap((v) => [
+        { code: { contains: v, mode: 'insensitive' as const } },
+        { shortCode: { contains: v, mode: 'insensitive' as const } },
+        { name: { contains: v, mode: 'insensitive' as const } },
+        { nameTr: { contains: v, mode: 'insensitive' as const } },
+        { model: { contains: v, mode: 'insensitive' as const } },
+        { brand: { name: { contains: v, mode: 'insensitive' as const } } },
+      ]);
     }
 
     if (query.brandId) {

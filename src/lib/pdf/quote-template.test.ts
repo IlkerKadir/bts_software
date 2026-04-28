@@ -7,7 +7,7 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       quoteNumber: 'SA0065-SON',
       refNo: 'REF-2026-001',
       subject: 'Yangin Algilama Sistemi',
-      createdAt: new Date('2026-01-15'),
+      displayDate: new Date('2026-01-15'),
       validUntil: new Date('2026-02-15'),
       currency: 'EUR',
       language: 'TR',
@@ -176,6 +176,40 @@ describe('Quote PDF Template — Proforma Fatura', () => {
       const html = generateQuoteHtml(mockQuoteData);
 
       expect(html).toContain('NOT:');
+      expect(html).toContain('Kurulum dahildir');
+    });
+
+    it('applies yellow highlight inline style to rows flagged as highlighted', () => {
+      const highlightedData = {
+        ...mockQuoteData,
+        items: mockQuoteData.items.map((it, idx) =>
+          idx === 0 ? { ...it, highlight: true } : it
+        ),
+      };
+      const html = generateQuoteHtml(highlightedData);
+
+      expect(html).toContain('background-color:#FFF9C4');
+    });
+
+    it('does not emit a yellow highlight on rows without the highlight flag', () => {
+      const html = generateQuoteHtml(mockQuoteData);
+      expect(html).not.toContain('background-color:#FFF9C4');
+    });
+
+    it('renders custom poz label on NOTE rows when customPozNo is set', () => {
+      const customLabelData = {
+        ...mockQuoteData,
+        items: mockQuoteData.items.map((it) =>
+          it.itemType === 'NOTE' ? { ...it, customPozNo: '*' } : it
+        ),
+      };
+      const html = generateQuoteHtml(customLabelData);
+
+      expect(html).toContain('>*<');
+      // The default "NOT:" marker is replaced when customPozNo is set —
+      // make sure no NOTE row still emits the default label literal.
+      const noteRowMatches = html.match(/<td><p class="s1" style="text-align:center;">NOT:<\/p><\/td>/g);
+      expect(noteRowMatches).toBeNull();
       expect(html).toContain('Kurulum dahildir');
     });
 
@@ -366,7 +400,7 @@ describe('Quote PDF Template — Proforma Fatura', () => {
           quoteNumber: 'BTS-2026-0002',
           refNo: null,
           subject: null,
-          createdAt: new Date('2026-01-20'),
+          displayDate: new Date('2026-01-20'),
           validUntil: null,
           currency: 'EUR',
           language: 'TR',

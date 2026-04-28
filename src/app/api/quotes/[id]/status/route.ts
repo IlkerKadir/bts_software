@@ -76,6 +76,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // ONAYLANDI → ONAY_BEKLIYOR ("tekrar onaya gönder"): creator-only.
+    // Approvers shouldn't be able to roll an approved quote back to
+    // pending — that's not their workflow. Once GONDERILDI is reached
+    // the state machine itself blocks any path back, satisfying the
+    // client's "approval can't restart after sending" rule.
+    if (currentStatus === 'ONAYLANDI' && newStatus === 'ONAY_BEKLIYOR') {
+      if (user.id !== quote.createdById) {
+        return NextResponse.json(
+          { error: 'Sadece teklifi oluşturan kişi tekrar onaya gönderebilir' },
+          { status: 403 }
+        );
+      }
+    }
+
     // ONAY_BEKLIYOR → TASLAK covers two paths:
     //   1. Creator retracts their own submission ("Onayı Geri Çek").
     //   2. Approver requests edits ("Düzenleme Talep Et"); a note is
@@ -382,6 +396,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // from everyone else so the status dropdown stays clean.
     if (currentStatus === 'ONAY_BEKLIYOR' && user.id !== quote.createdById) {
       allowedTransitions = allowedTransitions.filter(s => s !== 'TASLAK');
+    }
+
+    // Re-submit (ONAYLANDI → ONAY_BEKLIYOR) is creator-only — same
+    // filter pattern. Approvers shouldn't see "Onay Bekliyor" as an
+    // option from an approved quote they don't own.
+    if (currentStatus === 'ONAYLANDI' && user.id !== quote.createdById) {
+      allowedTransitions = allowedTransitions.filter(s => s !== 'ONAY_BEKLIYOR');
     }
 
     // Get approval check result for current quote items

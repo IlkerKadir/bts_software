@@ -49,6 +49,10 @@ export interface QuoteItemData {
   maxKatsayi?: number | null;
   subRows?: QuoteItemData[];
   customPozNo?: string | null;
+  /** When true, the row is rendered with a yellow background in the editor
+   *  and on customer-facing PDF / Excel exports. Toggled per-row via the
+   *  right-click context menu. */
+  highlight?: boolean | null;
   /** Per-unit ek maliyet distributed amount. Adds to listPrice and costPrice
    *  for display/calculation, but the underlying fields remain untouched. */
   ekMaliyetDelta?: number | null;
@@ -97,6 +101,10 @@ export interface QuoteItemRowProps {
   onDrop: (e: React.DragEvent) => void;
   onShowPriceHistory?: () => void;
   onInsertHeaderAbove?: () => void;
+  /** Right-click "Ürün Değiştir" — swaps the underlying product on this
+   *  row, keeping quantity/katsayı/etc. Only meaningful for PRODUCT and
+   *  SET rows; the parent decides when to wire it. */
+  onSwapProduct?: () => void;
   /** Admin-managed catalog of price label options (fetched once at the
    *  table level and passed down). */
   priceLabelOptions?: ReadonlyArray<{ id: string; label: string }>;
@@ -205,9 +213,15 @@ function EditableCell({
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select();
+      // Number cells get the spreadsheet behavior: open → all selected →
+      // typing replaces. Text cells (descriptions, codes, etc.) leave the
+      // text alone so the user can position the cursor and partial-select
+      // to copy or rewrite a portion.
+      if (type === 'number') {
+        inputRef.current.select();
+      }
     }
-  }, [editing]);
+  }, [editing, type]);
 
   const commit = useCallback(() => {
     setEditing(false);
@@ -322,6 +336,7 @@ export function QuoteItemRow({
   onDrop,
   onShowPriceHistory,
   onInsertHeaderAbove,
+  onSwapProduct,
   priceLabelOptions,
   unitOptions,
   onAddSectionDiscount,
@@ -398,14 +413,14 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-70 bg-accent-50')}
+          className={cn('group', isDragging && 'opacity-70 bg-accent-50', item.highlight && 'bg-yellow-100')}
         >
-          <td className="w-8 border border-accent-200 bg-[#F3F4F6] px-1 py-1.5 text-center">
+          <td className={cn('w-8 border border-accent-200 px-1 py-1.5 text-center', item.highlight ? 'bg-yellow-100' : 'bg-[#F3F4F6]')}>
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </td>
           <td
             colSpan={spanColCount}
-            className="border border-accent-200 bg-[#F3F4F6] px-3 py-2 font-bold text-accent-800 text-sm"
+            className={cn('border border-accent-200 px-3 py-2 font-bold text-accent-800 text-sm', item.highlight ? 'bg-yellow-100' : 'bg-[#F3F4F6]')}
           >
             <EditableCell
               value={item.description}
@@ -413,7 +428,7 @@ export function QuoteItemRow({
               className="font-bold"
             />
           </td>
-          <td className="w-10 border border-accent-200 bg-[#F3F4F6] px-1 py-1.5 text-center">
+          <td className={cn('w-10 border border-accent-200 px-1 py-1.5 text-center', item.highlight ? 'bg-yellow-100' : 'bg-[#F3F4F6]')}>
             <button
               type="button"
               onClick={onDelete}
@@ -432,6 +447,8 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
+            isHighlighted={!!item.highlight}
           />
         )}
       </>
@@ -440,9 +457,10 @@ export function QuoteItemRow({
 
   // ---- NOTE row ----
   if (item.itemType === 'NOTE') {
-    // Compute dynamic colspan like SUBTOTAL: accounts for column visibility
+    // Inner-cell count (excludes drag + delete columns). The dedicated
+    // poz-label cell consumes one column from this total at render time.
     const noteSpanColCount = (() => {
-      let count = 2; // Poz No + Aciklama + Miktar + Para Birimi = base always visible
+      let count = 2; // Poz No + Aciklama (always visible)
       count += 1; // Miktar
       count += 1; // Para Birimi
       if (columnVisibility.urun) count += 3; // Marka, Model, Kod
@@ -460,13 +478,20 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-70 bg-accent-50')}
+          className={cn('group', isDragging && 'opacity-70 bg-accent-50', item.highlight && 'bg-yellow-100')}
         >
           <td className="w-8 border border-accent-200 bg-white px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </td>
+          <td className="border border-accent-200 bg-white px-1 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap">
+            <PozNoInput
+              value={item.customPozNo ?? ''}
+              onCommit={(val) => onUpdate({ customPozNo: val || null })}
+              fallback="NOT:"
+            />
+          </td>
           <td
-            colSpan={noteSpanColCount}
+            colSpan={noteSpanColCount - 1}
             className="border border-accent-200 bg-white px-3 py-2 text-sm italic text-accent-600"
           >
             <EditableCell
@@ -494,6 +519,8 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
+            isHighlighted={!!item.highlight}
           />
         )}
       </>
@@ -531,7 +558,7 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-70 bg-accent-50')}
+          className={cn('group', isDragging && 'opacity-70 bg-accent-50', item.highlight && 'bg-yellow-100')}
         >
           <td className="w-8 border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -599,6 +626,8 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
+            isHighlighted={!!item.highlight}
           />
         )}
       </>
@@ -633,7 +662,7 @@ export function QuoteItemRow({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
-          className={cn('group', isDragging && 'opacity-70 bg-primary-50')}
+          className={cn('group', isDragging && 'opacity-70 bg-primary-50', item.highlight && 'bg-yellow-100')}
         >
           <td className="w-8 border border-primary-300 bg-primary-100 px-1 py-1.5 text-center">
             <GripVertical className="mx-auto h-4 w-4 cursor-grab text-primary-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -674,6 +703,8 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
+            isHighlighted={!!item.highlight}
           />
         )}
       </>
@@ -699,6 +730,7 @@ export function QuoteItemRow({
           isLowMargin && canViewCosts && 'bg-red-50',
           isSubRow && 'bg-blue-50/30 text-accent-500',
           isSetParent && 'bg-indigo-50/60',
+          item.highlight && 'bg-yellow-100',
         )}
       >
         {/* Drag handle */}
@@ -1112,6 +1144,9 @@ export function QuoteItemRow({
           onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
           onDelete={() => { onDelete(); setContextMenu(null); }}
           onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+          onSwapProduct={onSwapProduct ? () => { onSwapProduct(); setContextMenu(null); } : undefined}
+          onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
+          isHighlighted={!!item.highlight}
           onSetPriceLabel={(label) => { onUpdate({ priceLabel: label }); setContextMenu(null); }}
           currentPriceLabel={item.priceLabel ?? null}
           priceLabelOptions={priceLabelOptions}
@@ -1132,6 +1167,10 @@ interface ContextMenuOverlayProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onInsertHeaderAbove?: () => void;
+  /** Right-click → "Ürün Değiştir". When omitted, the menu item is hidden. */
+  onSwapProduct?: () => void;
+  onToggleHighlight?: () => void;
+  isHighlighted?: boolean;
   onSetPriceLabel?: (label: string | null) => void;
   currentPriceLabel?: string | null;
   /** Admin-managed catalog of price label options. When omitted the
@@ -1146,6 +1185,9 @@ function ContextMenuOverlay({
   onDuplicate,
   onDelete,
   onInsertHeaderAbove,
+  onSwapProduct,
+  onToggleHighlight,
+  isHighlighted,
   onSetPriceLabel,
   currentPriceLabel,
   priceLabelOptions,
@@ -1170,6 +1212,25 @@ function ContextMenuOverlay({
           onClick={onInsertHeaderAbove}
         >
           <Plus className="h-3.5 w-3.5" /> Üstüne Başlık Ekle
+        </button>
+      )}
+      {onSwapProduct && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
+          onClick={onSwapProduct}
+        >
+          <Package className="h-3.5 w-3.5" /> Ürün Değiştir
+        </button>
+      )}
+      {onToggleHighlight && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
+          onClick={onToggleHighlight}
+        >
+          <span className="inline-block h-3.5 w-3.5 rounded-sm border border-yellow-400 bg-yellow-200" />
+          {isHighlighted ? 'Vurguyu Kaldır' : 'Vurgula'}
         </button>
       )}
       {onSetPriceLabel && (currentPriceLabel || (priceLabelOptions && priceLabelOptions.length > 0)) && (

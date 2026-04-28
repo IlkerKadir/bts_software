@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session';
 import { getExcelService, QuoteDataForExcel, QuoteItemForExcel, CompanyInfo } from '@/lib/excel/excel-service';
 import { buildQuoteExportFilename } from '@/lib/filename';
 import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -107,8 +108,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const itemType = item.itemType as QuoteItemForExcel['itemType'];
         const description = getItemDescription(item, quote.language);
 
+        const meta = item.serviceMeta as Record<string, unknown> | null;
+        const highlight = meta && meta.highlight === true ? true : undefined;
+
         if (itemType === 'HEADER' || itemType === 'NOTE' || itemType === 'GRAND_TOTAL') {
-          return { itemType, description };
+          // NOTE rows may carry a customPozNo (in serviceMeta) overriding the
+          // default "NOT:" marker. HEADER / GRAND_TOTAL ignore the field.
+          const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : null;
+          return { itemType, description, customPozNo, highlight };
         }
 
         if (itemType === 'SUBTOTAL') {
@@ -117,6 +124,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             description,
             sectionDiscountPct: item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
             sectionDiscountLabel: item.sectionDiscountLabel ?? null,
+            highlight,
           };
         }
 
@@ -137,6 +145,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           unit: item.unit,
           unitPrice: Number(item.unitPrice),
           totalPrice: rawTotal,
+          highlight,
           katsayi: Number(item.katsayi),
           listPrice: Number(item.listPrice),
           priceLabel: item.priceLabel,
@@ -167,7 +176,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       refNo: quote.refNo ?? null,
       subject: quote.subject,
       description: quote.description ?? null,
-      date: formatDate(quote.createdAt),
+      date: formatDate(getQuoteDisplayDate(quote)),
       validUntil: quote.validUntil ? formatDate(quote.validUntil) : null,
       currency: quote.currency,
       company: {

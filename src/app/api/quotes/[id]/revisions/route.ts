@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { generateQuoteNumber, parseQuoteNumber } from '@/lib/quote-number';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -17,10 +16,11 @@ interface RouteParams {
  *   - All revisions are direct children of the root, with
  *     parentQuoteId = root.id. Revisions of revisions do not chain —
  *     the new quote still points at the same root.
- *   - Quote numbers follow the {INITIALS}{NNNN}-{SYSTEM}.{REV} scheme
- *     defined in src/lib/quote-number.ts: the root is
- *     `SA0051-YAS`, its first revision is `SA0051-YAS.1`, second
- *     is `SA0051-YAS.2`, etc.
+ *   - Quote numbers append a `.{rev}` suffix to whatever the root's
+ *     quoteNumber is — `Foo.1`, `Foo.2`, etc. The previous strict
+ *     `{INITIALS}{NNNN}-{SYSTEM}.{REV}` scheme is no longer enforced;
+ *     users can name quotes freely and revisions still produce a
+ *     deterministic suffix.
  *   - The next revision index is `max(version of all children of the
  *     root) + 1`, so sibling collisions are impossible.
  *   - Items / commercial terms / ek maliyet are copied from the
@@ -70,20 +70,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Parse the root's quote number. The revision scheme requires a
-    // system code (`SA0051-YAS`), so reject if we can't build the
-    // `.{rev}` suffix deterministically.
-    const parsed = parseQuoteNumber(rootQuote.quoteNumber);
-    if (!parsed || !parsed.systemCode) {
-      return NextResponse.json(
-        {
-          error:
-            'Revizyon oluşturmak için ana teklif numarasında sistem kodu olmalıdır (örn: SA0051-YAS). Önce teklif numarasını güncelleyin.',
-        },
-        { status: 400 }
-      );
-    }
-
     // Next revision = 1 + highest version among all children of the
     // root. We only count rows whose parentQuoteId is the root, so
     // siblings of a deleted branch don't poison the counter.
@@ -94,12 +80,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const maxRev = children.reduce((m, c) => Math.max(m, c.version), 0);
     const nextRev = maxRev + 1;
 
-    const revisionNumber = generateQuoteNumber(
-      parsed.initials,
-      parsed.sequence,
-      parsed.systemCode,
-      nextRev
-    );
+    // The new revision's number is just the root's quoteNumber with a
+    // `.{rev}` suffix. Whatever the user named the quote — system code,
+    // ad-hoc string, legacy BTS-YYYY-NNNN — is preserved verbatim.
+    const revisionNumber = `${rootQuote.quoteNumber}.${nextRev}`;
+
+    // Free-form root names (post-#15) make collisions possible: e.g.,
+    // a separate root named `Foo.1` already exists, and now we'd try to
+    // create `Foo.1` as a revision of root `Foo`. Surface a clean 409
+    // before we mutate anything so the source isn't left orphaned in
+    // REVIZYON status.
+    const collision = await db.quote.findUnique({
+      where: { quoteNumber: revisionNumber },
+      select: { id: true },
+    });
+    if (collision) {
+      return NextResponse.json(
+        {
+          error: `"${revisionNumber}" numaralı bir teklif zaten mevcut. Ana teklif numarasını değiştirin veya çakışan kaydı yeniden adlandırın.`,
+        },
+        { status: 409 }
+      );
+    }
 
     // Mark the source quote as REVIZYON (superseded). We mark source,
     // not root, so intermediate revisions get flagged correctly when

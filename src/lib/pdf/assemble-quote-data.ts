@@ -7,6 +7,7 @@ import path from 'path';
 import { db } from '@/lib/db';
 import type { QuoteDataForPdf } from '@/lib/pdf/quote-template';
 import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 
 function loadImageBase64(relativePath: string): string | undefined {
   try {
@@ -75,6 +76,7 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
     const meta = item.serviceMeta as Record<string, unknown> | null;
     const headerColor = meta && typeof meta.headerColor === 'string' ? meta.headerColor : undefined;
     const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : undefined;
+    const highlight = meta && meta.highlight === true;
 
     const rawTotal = Number(item.totalPrice);
     // For section-sum aggregation the PDF template needs the total in
@@ -101,6 +103,7 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
       vatRate: Number(item.vatRate),
       headerColor,
       customPozNo,
+      highlight,
       priceLabel: item.priceLabel,
       currency: item.currency ?? null,
       totalPriceInQuoteCurrency,
@@ -119,7 +122,7 @@ export async function assembleQuoteDataForPdf(quoteId: string): Promise<QuoteDat
       quoteNumber: quote.quoteNumber,
       refNo: quote.refNo,
       subject: quote.subject,
-      createdAt: quote.createdAt,
+      displayDate: getQuoteDisplayDate(quote),
       validUntil: quote.validUntil,
       currency: quote.currency,
       language: quote.language,

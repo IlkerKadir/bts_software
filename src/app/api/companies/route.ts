@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { companySchema, companyQuerySchema } from '@/lib/validations/company';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,12 +23,13 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.CompanyWhereInput = {};
 
-    if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { taxNumber: { contains: query.search, mode: 'insensitive' } },
-        { email: { contains: query.search, mode: 'insensitive' } },
-      ];
+    const searchVariants = expandTurkishVariants(query.search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.flatMap((v) => [
+        { name: { contains: v, mode: 'insensitive' as const } },
+        { taxNumber: { contains: v, mode: 'insensitive' as const } },
+        { email: { contains: v, mode: 'insensitive' as const } },
+      ]);
     }
 
     if (query.type) {

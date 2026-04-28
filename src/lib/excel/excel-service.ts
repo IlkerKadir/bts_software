@@ -38,6 +38,12 @@ export interface QuoteItemForExcel {
   sectionDiscountPct?: number | null;
   /** Optional custom label for the İskonto line. Falls back to "İskonto". */
   sectionDiscountLabel?: string | null;
+  /** When set on a NOTE row, replaces the default "NOT:" marker in column A. */
+  customPozNo?: string | null;
+  /** When true, every cell on the row is given a yellow fill so the row
+   *  stands out visually — matches the editor's right-click "Vurgula"
+   *  toggle. */
+  highlight?: boolean | null;
 }
 
 export interface CommercialTermForExcel {
@@ -451,7 +457,23 @@ export class ExcelService {
     let currentRow = startRow;
     let pozCounter = 0;
 
+    // When a row is highlighted, override every cell in the row with a
+     // yellow fill once the regular drawing is complete. SUBTOTAL is
+     // skipped because it can produce 1–3 stacked rows and the user-meant
+     // "this section's subtotal" semantics are ambiguous.
+    const HIGHLIGHT_FILL: ExcelJS.FillPattern = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFF9C4' },
+    };
+    const applyHighlight = (row: number) => {
+      for (let col = 1; col <= TOTAL_COLUMNS; col++) {
+        sheet.getCell(row, col).fill = HIGHLIGHT_FILL;
+      }
+    };
+
     items.forEach((item, index) => {
+      const itemStartRow = currentRow;
       if (item.itemType === 'HEADER') {
         // Bold section band — B:E merged, column A is left empty so
         // the section marker lines up flush with the description column.
@@ -467,9 +489,10 @@ export class ExcelService {
         sheet.getCell(currentRow, 1).border = blackBoxBorder();
         sheet.getRow(currentRow).height = 15;
       } else if (item.itemType === 'NOTE') {
-        // NOT: marker in column A, note text in B:E merged
+        // NOT: marker in column A (overridable per note via customPozNo),
+        // note text in B:E merged
         const pozCell = sheet.getCell(currentRow, 1);
-        pozCell.value = 'NOT:';
+        pozCell.value = item.customPozNo || 'NOT:';
         pozCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         pozCell.alignment = { horizontal: 'center', vertical: 'middle' };
         pozCell.border = blackBoxBorder();
@@ -646,6 +669,10 @@ export class ExcelService {
         // (AÇIKLAMA) at width ~40 holds about 65 chars per line.
         const lineCount = Math.max(1, Math.ceil(item.description.length / 65));
         sheet.getRow(currentRow).height = lineCount > 1 ? 13 * lineCount : 14;
+      }
+
+      if (item.highlight && item.itemType !== 'SUBTOTAL') {
+        applyHighlight(itemStartRow);
       }
 
       currentRow++;

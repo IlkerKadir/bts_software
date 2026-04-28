@@ -94,16 +94,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       project: order.quote.project ? { name: order.quote.project.name } : null,
       items: order.quote.items
         .filter(item => item.itemType !== 'SUBTOTAL')
-        .map(item => ({
-          itemType: item.itemType,
-          code: item.code,
-          brand: item.brand,
-          description: item.description,
-          quantity: Number(item.quantity),
-          unit: item.unit,
-          unitPrice: Number(item.unitPrice),
-          totalPrice: Number(item.totalPrice),
-        })),
+        .map(item => {
+          const meta = item.serviceMeta as Record<string, unknown> | null;
+          const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : null;
+          const highlight = meta && meta.highlight === true;
+          return {
+            itemType: item.itemType,
+            code: item.code,
+            brand: item.brand,
+            description: item.description,
+            quantity: Number(item.quantity),
+            unit: item.unit,
+            unitPrice: Number(item.unitPrice),
+            totalPrice: Number(item.totalPrice),
+            customPozNo,
+            highlight,
+          };
+        }),
       commercialTerms: order.quote.commercialTerms.map(term => ({
         category: term.category,
         value: term.value,

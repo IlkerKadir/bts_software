@@ -49,6 +49,12 @@ export interface OrderItemForPdf {
   unit: string;
   unitPrice: number;
   totalPrice: number;
+  /** When set on a NOTE row, replaces the default "NOT:" label in the
+   *  position column. */
+  customPozNo?: string | null;
+  /** When true, the row is rendered with a yellow background to mirror
+   *  the editor's right-click "Vurgula" toggle. */
+  highlight?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,18 +144,28 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     : '<p style="font-size:14pt;font-weight:bold;color:#cc0000;padding:10pt;">BTS YANGIN</p>';
 
   // ---------- Build item rows ----------
+  // Mirror the quote-template row highlight: when an item is flagged
+  // `highlight`, the row gets a yellow background. We use a CSS class
+  // (`highlight-row`) instead of inline style so the rule's `!important`
+  // beats `.section-hdr td`'s green on highlighted HEADER rows.
+  const trClass = (item: OrderItemForPdf, base = '') => {
+    const classes = [base, item.highlight ? 'highlight-row' : ''].filter(Boolean).join(' ');
+    return classes ? ` class="${classes}"` : '';
+  };
+
   let itemNumber = 0;
   const itemRows = items.map((item) => {
     if (item.itemType === 'HEADER') {
-      return `<tr class="section-hdr">
+      return `<tr${trClass(item, 'section-hdr')}>
         <td><p><br></p></td>
         <td colspan="4"><p class="s1" style="text-align:center;">${escapeHtml(item.description)}</p></td>
       </tr>`;
     }
 
     if (item.itemType === 'NOTE') {
-      return `<tr>
-        <td><p class="s1" style="text-align:center;">NOT:</p></td>
+      const pozLabel = item.customPozNo || 'NOT:';
+      return `<tr${trClass(item)}>
+        <td><p class="s1" style="text-align:center;">${escapeHtml(pozLabel)}</p></td>
         <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtml(item.description)}</p></td>
       </tr>`;
     }
@@ -162,7 +178,7 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     itemNumber++;
     const qtyStr = `${item.quantity} ${unitAbbr(item.unit)}`;
 
-    return `<tr>
+    return `<tr${trClass(item)}>
       <td><p class="s1" style="text-align:center;">${itemNumber}</p></td>
       <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}${item.brand ? ` <span style="color:#666;">(${escapeHtml(item.brand)})</span>` : ''}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;">${qtyStr}</p></td>
@@ -298,6 +314,11 @@ table.main tbody td:nth-child(5) {
   border-left: 0.25pt solid black !important;
   border-right: 0.25pt solid black !important;
   border-bottom: 0.25pt solid black !important;
+}
+
+/* Row highlight — must beat .section-hdr td's bg on highlighted HEADER rows */
+.highlight-row td {
+  background-color: #FFF9C4 !important;
 }
 
 /* System total row */

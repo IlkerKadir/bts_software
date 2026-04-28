@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { projectSchema, projectQuerySchema } from '@/lib/validations/project';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
+import { expandTurkishVariants } from '@/lib/search-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,11 +23,12 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.ProjectWhereInput = {};
 
-    if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { client: { is: { name: { contains: query.search, mode: 'insensitive' } } } },
-      ];
+    const searchVariants = expandTurkishVariants(query.search ?? '');
+    if (searchVariants.length > 0) {
+      where.OR = searchVariants.flatMap((v) => [
+        { name: { contains: v, mode: 'insensitive' as const } },
+        { client: { is: { name: { contains: v, mode: 'insensitive' as const } } } },
+      ]);
     }
 
     if (query.clientId) {

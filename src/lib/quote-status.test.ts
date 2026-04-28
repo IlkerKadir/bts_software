@@ -37,6 +37,14 @@ describe('Quote Status Transitions', () => {
       expect(canTransitionTo('ONAYLANDI', 'GONDERILDI')).toBe(true);
     });
 
+    it('allows ONAYLANDI to ONAY_BEKLIYOR (creator can re-submit before sending)', () => {
+      expect(canTransitionTo('ONAYLANDI', 'ONAY_BEKLIYOR')).toBe(true);
+    });
+
+    it('does NOT allow GONDERILDI back to ONAY_BEKLIYOR (no re-approval after send)', () => {
+      expect(canTransitionTo('GONDERILDI', 'ONAY_BEKLIYOR')).toBe(false);
+    });
+
     it('allows GONDERILDI to TAKIPTE', () => {
       expect(canTransitionTo('GONDERILDI', 'TAKIPTE')).toBe(true);
     });
@@ -111,6 +119,13 @@ describe('Quote Status Transitions', () => {
       expect(transitions).toContain('KAZANILDI');
       expect(transitions).toContain('KAYBEDILDI');
       expect(transitions).toContain('REVIZYON');
+    });
+
+    it('returns correct transitions for ONAYLANDI (includes re-submit path)', () => {
+      const transitions = getAvailableTransitions('ONAYLANDI');
+      expect(transitions).toContain('GONDERILDI');
+      expect(transitions).toContain('IPTAL');
+      expect(transitions).toContain('ONAY_BEKLIYOR');
     });
 
     it('returns empty array for KAZANILDI (terminal)', () => {

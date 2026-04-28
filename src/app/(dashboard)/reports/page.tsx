@@ -16,6 +16,7 @@ import { Button, Select, Card, Badge, Spinner } from '@/components/ui';
 import { QuoteStatus } from '@prisma/client';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { quoteStatusLabels } from '@/lib/validations/quote';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 
 interface Company {
   id: string;
@@ -37,6 +38,7 @@ interface Quote {
   grandTotal: number;
   status: QuoteStatus;
   createdAt: string;
+  approvedAt?: string | null;
 }
 
 interface ReportData {
@@ -467,7 +469,7 @@ export default function ReportsPage() {
                         <Badge status={quote.status} />
                       </td>
                       <td className="text-sm text-primary-500">
-                        {formatDate(quote.createdAt)}
+                        {formatDate(getQuoteDisplayDate({ createdAt: quote.createdAt, approvedAt: quote.approvedAt ?? null, status: quote.status }))}
                       </td>
                     </tr>
                   ))}

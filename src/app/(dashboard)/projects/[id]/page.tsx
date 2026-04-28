@@ -29,6 +29,7 @@ import { ProjectVisibility } from '@/components/projects/ProjectVisibility';
 import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { formatCurrency, formatDate, formatFileSize, formatDateTime } from '@/lib/utils/format';
 import { quoteStatusLabels } from '@/lib/validations/quote';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -41,6 +42,7 @@ interface ProjectQuote {
   grandTotal: number | null;
   currency: string;
   createdAt: string;
+  approvedAt?: string | null;
 }
 
 interface ProjectDocument {
@@ -684,7 +686,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
                       {formatPrice(quote.grandTotal, quote.currency)}
                     </td>
                     <td className="px-4 py-2.5 text-primary-600">
-                      {formatDate(quote.createdAt)}
+                      {formatDate(getQuoteDisplayDate({ createdAt: quote.createdAt, approvedAt: quote.approvedAt ?? null, status: quote.status }))}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <Button

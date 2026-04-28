@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus,
   Search,
@@ -20,6 +20,7 @@ import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
 import { BulkStatusModal } from '@/components/quotes/BulkStatusModal';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { Pagination } from '@/lib/types/pagination';
 
@@ -42,6 +43,7 @@ interface Quote {
   validUntil?: string | null;
   createdBy: { id: string; fullName: string };
   createdAt: string;
+  approvedAt?: string | null;
   revisions?: Quote[];
 }
 
@@ -82,12 +84,25 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
 
 export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Status passed via URL (e.g. dashboard pipeline tile → /quotes?status=TASLAK)
+  // is the source of truth at mount and on subsequent URL changes. Local dropdown
+  // edits remain local until the URL updates again.
+  const validStatuses = useMemo(() => new Set(statusOptions.map((o) => o.value)), []);
+  const sanitizeStatus = useCallback(
+    (raw: string | null) => (raw && validStatuses.has(raw) ? raw : ''),
+    [validStatuses]
+  );
+
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 300);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(() =>
+    sanitizeStatus(searchParams.get('status'))
+  );
   const [companyFilter, setCompanyFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -161,6 +176,12 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   useEffect(() => {
     fetchQuotes();
   }, [fetchQuotes]);
+
+  // Re-seed status filter when the URL changes (soft-nav from a dashboard tile).
+  // Dropdown edits stay local; only URL changes overwrite them.
+  useEffect(() => {
+    setStatusFilter(sanitizeStatus(searchParams.get('status')));
+  }, [searchParams, sanitizeStatus]);
 
   // Fetch all projects for the create modal (projects are independent of company)
   useEffect(() => {
@@ -622,8 +643,8 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           />
 
           <Input
-            label="Konu"
-            placeholder="Teklif konusu girin"
+            label="Teklif Adı"
+            placeholder="Teklif adı girin"
             value={newQuoteData.subject}
             onChange={(e) => setNewQuoteData({ ...newQuoteData, subject: e.target.value })}
           />
@@ -798,7 +819,7 @@ function QuoteGroupRows({
         </div>
       </td>
       <td className="text-xs">{quote.createdBy.fullName}</td>
-      <td className="text-xs tabular-nums">{formatDate(quote.createdAt)}</td>
+      <td className="text-xs tabular-nums">{formatDate(getQuoteDisplayDate({ createdAt: quote.createdAt, approvedAt: quote.approvedAt ?? null, status: quote.status }))}</td>
       <td onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-0.5">
           <button
@@ -872,7 +893,7 @@ function QuoteGroupRows({
           {/* Oluşturan */}
           <td className="text-xs text-primary-500">{rev.createdBy.fullName}</td>
           {/* Tarih */}
-          <td className="text-xs tabular-nums text-primary-500">{formatDate(rev.createdAt)}</td>
+          <td className="text-xs tabular-nums text-primary-500">{formatDate(getQuoteDisplayDate({ createdAt: rev.createdAt, approvedAt: rev.approvedAt ?? null, status: rev.status }))}</td>
           {/* İşlemler — minimal for sub-rows */}
           <td onClick={(e) => e.stopPropagation()}>
             <button

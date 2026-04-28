@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Badge, Spinner, Modal, Select } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
+import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 import { ApprovalStatus } from '@/components/quotes/ApprovalStatus';
 import { StatusChangeDropdown } from '@/components/quotes/StatusChangeDropdown';
 import { QuoteDocuments } from '@/components/quotes/QuoteDocuments';
@@ -81,6 +82,7 @@ interface QuoteItem {
   costPrice?: number | null;
   ekMaliyetDelta?: number | null;
   currency?: string | null;
+  serviceMeta?: Record<string, unknown> | null;
   product?: {
     minKatsayi?: number | string | null;
     maxKatsayi?: number | string | null;
@@ -118,6 +120,7 @@ interface Quote {
   commercialTerms: CommercialTerm[];
   createdBy: { id: string; fullName: string };
   createdAt: string;
+  approvedAt?: string | null;
 }
 
 interface ProfitSummary {
@@ -930,7 +933,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               <div className="flex items-center gap-2">
                 <Calendar className="w-3.5 h-3.5 text-primary-400" />
                 <span className="text-primary-500">Tarih:</span>
-                <span className="font-medium text-primary-800">{formatDate(quote.createdAt)}</span>
+                <span className="font-medium text-primary-800">{formatDate(getQuoteDisplayDate({ createdAt: quote.createdAt, approvedAt: quote.approvedAt ?? null, status: quote.status }))}</span>
               </div>
               <div className="flex items-center gap-2">
                 <DollarSign className="w-3.5 h-3.5 text-primary-400" />
@@ -1042,10 +1045,11 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 // what the client reported in the view).
                 const out: React.ReactNode[] = [];
                 const renderRow = (item: typeof quote.items[number]) => {
+                const isHighlighted = item.serviceMeta?.highlight === true;
                 // HEADER row
                 if (item.itemType === 'HEADER') {
                   return (
-                    <tr key={item.id} className="bg-accent-100">
+                    <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-accent-100')}>
                       <td className="px-3 py-2" />
                       <td colSpan={5} className="px-3 py-2 font-bold text-primary-800 text-sm">
                         {item.description}
@@ -1057,7 +1061,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 // NOTE row
                 if (item.itemType === 'NOTE') {
                   return (
-                    <tr key={item.id} className="bg-amber-50/50">
+                    <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-amber-50/50')}>
                       <td className="px-3 py-2" />
                       <td colSpan={5} className="px-3 py-2 text-sm text-primary-700 italic">
                         {item.description}
@@ -1143,6 +1147,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                       'border-b border-accent-200 hover:bg-accent-50 transition-colors',
                       kOutOfRange && 'bg-amber-50',
                       isSubRow && 'bg-blue-50/30 text-accent-500',
+                      isHighlighted && 'bg-yellow-100',
                     )}
                   >
                     <td className="px-3 py-2.5 text-center tabular-nums text-primary-500 font-medium">

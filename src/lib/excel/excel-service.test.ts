@@ -281,6 +281,48 @@ describe('ExcelService', () => {
       expect(sheetContains(sheet, 'Kurulum dahildir')).toBe(true);
     });
 
+    it('applies yellow fill to highlighted rows', async () => {
+      const service = new ExcelService();
+      const highlightedData = {
+        ...mockQuoteData,
+        items: mockQuoteData.items.map((it, idx) =>
+          idx === 0 ? { ...it, highlight: true } : it
+        ),
+      };
+      const buffer = await service.generateQuoteExcel(highlightedData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // Find the row that has yellow fill.
+      let foundYellowFill = false;
+      sheet.eachRow((row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          const fg = (cell.fill as { fgColor?: { argb?: string } } | undefined)?.fgColor?.argb;
+          if (fg === 'FFFFF9C4') foundYellowFill = true;
+        });
+      });
+      expect(foundYellowFill).toBe(true);
+    });
+
+    it('uses customPozNo on NOTE rows when set, and omits the default NOT: marker', async () => {
+      const service = new ExcelService();
+      const customLabelData = {
+        ...mockQuoteData,
+        items: mockQuoteData.items.map((it) =>
+          it.itemType === 'NOTE' ? { ...it, customPozNo: '→' } : it
+        ),
+      };
+      const buffer = await service.generateQuoteExcel(customLabelData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      expect(sheetContains(sheet, '→')).toBe(true);
+      expect(sheetContains(sheet, 'Kurulum dahildir')).toBe(true);
+      expect(sheetContains(sheet, 'NOT:')).toBe(false);
+    });
+
     it('assigns sequential POZ NO to data rows', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
