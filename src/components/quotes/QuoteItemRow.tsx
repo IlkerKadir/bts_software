@@ -377,6 +377,24 @@ export function QuoteItemRow({
     setContextMenu({ x, y });
   };
 
+  // Wrap the row's drag start so click+drag inside an input (e.g.
+  // selecting part of the description for copy/delete) doesn't get
+  // hijacked into a row reorder. The browser fires `dragstart` on the
+  // <tr draggable> with `event.target` set to the actual mousedown
+  // target — if that's an editable input/textarea, abort the drag.
+  const guardedDragStart = useCallback(
+    (e: React.DragEvent) => {
+      const target = e.target as HTMLElement;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) {
+        e.preventDefault();
+        return;
+      }
+      onDragStart(e);
+    },
+    [onDragStart],
+  );
+
   // Ek maliyet delta — adds to listPrice and costPrice for display only.
   // Underlying DB fields are never mutated.
   const ekDelta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
@@ -416,7 +434,7 @@ export function QuoteItemRow({
       <>
         <tr
           draggable
-          onDragStart={onDragStart}
+          onDragStart={guardedDragStart}
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
@@ -493,7 +511,7 @@ export function QuoteItemRow({
       <>
         <tr
           draggable
-          onDragStart={onDragStart}
+          onDragStart={guardedDragStart}
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
@@ -585,7 +603,7 @@ export function QuoteItemRow({
       <>
         <tr
           draggable
-          onDragStart={onDragStart}
+          onDragStart={guardedDragStart}
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
@@ -701,7 +719,7 @@ export function QuoteItemRow({
       <>
         <tr
           draggable
-          onDragStart={onDragStart}
+          onDragStart={guardedDragStart}
           onDragOver={onDragOver}
           onDrop={onDrop}
           onContextMenu={handleContextMenu}
@@ -775,7 +793,7 @@ export function QuoteItemRow({
     <>
       <tr
         draggable={!isSubRow}
-        onDragStart={isSubRow ? undefined : onDragStart}
+        onDragStart={isSubRow ? undefined : guardedDragStart}
         onDragOver={isSubRow ? undefined : onDragOver}
         onDrop={isSubRow ? undefined : onDrop}
         onContextMenu={handleContextMenu}

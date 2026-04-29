@@ -19,6 +19,7 @@ interface BulkStatusModalProps {
 const statusLabels: Record<string, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',
@@ -31,6 +32,10 @@ const statusLabels: Record<string, string> = {
 const ALLOWED_BULK_TRANSITIONS: Record<string, string[]> = {
   TASLAK: ['IPTAL'],
   ONAY_BEKLIYOR: ['IPTAL'],
+  // Edit-requested behaves like a draft: bulk-cancel only.
+  // Bulk re-submit is intentionally omitted — same reasoning as TASLAK
+  // (review per quote, not in bulk).
+  DUZENLEME_TALEP_EDILDI: ['IPTAL'],
   ONAYLANDI: ['GONDERILDI', 'IPTAL'],
   GONDERILDI: ['TAKIPTE', 'KAZANILDI', 'KAYBEDILDI'],
   TAKIPTE: ['KAZANILDI', 'KAYBEDILDI'],

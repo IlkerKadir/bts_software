@@ -51,8 +51,13 @@ export function generateQuoteNumber(
 export function parseQuoteNumber(quoteNumber: string): ParsedQuoteNumber | null {
   if (!quoteNumber) return null;
 
-  // New format: {INITIALS}{NNNN}-{SYSTEM}.{REV}
-  const newMatch = quoteNumber.match(/^([A-ZÇĞİÖŞÜ]+)(\d+)(?:-([A-Z0-9]+)(?:\.(\d+))?)?$/i);
+  // New format: {INITIALS}{NNNN}(-{SYSTEM})?(.{REV})?
+  // The `-SYSTEM` and `.REV` blocks are independently optional so we
+  // also match standalone-revision shorthand like `LC0014.1`. Without
+  // this, lex-sorted quote-number scans (e.g. "find latest by user")
+  // could land on a revision row and fail to parse it, falling back
+  // to sequence 1 and colliding on next-quote create.
+  const newMatch = quoteNumber.match(/^([A-ZÇĞİÖŞÜ]+)(\d+)(?:-([A-Z0-9]+))?(?:\.(\d+))?$/i);
   if (newMatch) {
     return {
       initials: newMatch[1].toUpperCase(),

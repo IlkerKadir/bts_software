@@ -135,7 +135,7 @@ export default function ApprovalsPage() {
       const response = await fetch(`/api/quotes/${quoteId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'TASLAK', note: note.trim() }),
+        body: JSON.stringify({ status: 'DUZENLEME_TALEP_EDILDI', note: note.trim() }),
       });
 
       if (response.ok) {

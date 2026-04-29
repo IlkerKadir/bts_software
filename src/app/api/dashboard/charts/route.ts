@@ -59,12 +59,16 @@ export async function GET() {
 
   // Pipeline
   const statusLabels: Record<string, string> = {
-    TASLAK: 'Taslak', ONAY_BEKLIYOR: 'Onay Bekliyor', ONAYLANDI: 'Onaylandi',
-    GONDERILDI: 'Gonderildi', TAKIPTE: 'Takipte', KAZANILDI: 'Kazanildi', KAYBEDILDI: 'Kaybedildi',
+    TASLAK: 'Taslak', ONAY_BEKLIYOR: 'Onay Bekliyor',
+    DUZENLEME_TALEP_EDILDI: 'Duzenleme Talep Edildi',
+    ONAYLANDI: 'Onaylandi', GONDERILDI: 'Gonderildi', TAKIPTE: 'Takipte',
+    REVIZYON: 'Revizyon', KAZANILDI: 'Kazanildi', KAYBEDILDI: 'Kaybedildi', IPTAL: 'Iptal',
   };
   const statusColors: Record<string, string> = {
-    TASLAK: '#94A3B8', ONAY_BEKLIYOR: '#F59E0B', ONAYLANDI: '#0EA5E9',
-    GONDERILDI: '#3B82F6', TAKIPTE: '#8B5CF6', KAZANILDI: '#22C55E', KAYBEDILDI: '#EF4444',
+    TASLAK: '#94A3B8', ONAY_BEKLIYOR: '#F59E0B',
+    DUZENLEME_TALEP_EDILDI: '#F43F5E',
+    ONAYLANDI: '#0EA5E9', GONDERILDI: '#3B82F6', TAKIPTE: '#8B5CF6',
+    REVIZYON: '#14B8A6', KAZANILDI: '#22C55E', KAYBEDILDI: '#EF4444', IPTAL: '#6B7280',
   };
 
   const pipeline = Object.entries(statusLabels).map(([status, name]) => ({

@@ -172,6 +172,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           protectionPct: sourceQuote.protectionPct,
           protectionMap: sourceQuote.protectionMap ?? Prisma.JsonNull,
           subtotal: sourceQuote.subtotal,
+          // Quote-level discount fields — copied so the clone's
+          // grandTotal is consistent with what the editor displays.
+          // discountScopeSubtotalId points at a SUBTOTAL QuoteItem
+          // and is remapped via `oldToNewId` after items are created.
+          discountTotal: sourceQuote.discountTotal,
+          discountPct: sourceQuote.discountPct,
           vatTotal: sourceQuote.vatTotal,
           grandTotal: sourceQuote.grandTotal,
           status: 'TASLAK',
@@ -259,6 +265,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
           });
           oldToNewId.set(item.id, created.id);
+        }
+      }
+
+      // Remap the optional `discountScopeSubtotalId` — same reasoning
+      // as the revisions route. Done after both passes so the SUBTOTAL
+      // row is guaranteed in the map. Missing target → null fallback
+      // so the discount applies quote-wide rather than crashing.
+      if (sourceQuote.discountScopeSubtotalId) {
+        const remappedScopeId =
+          oldToNewId.get(sourceQuote.discountScopeSubtotalId) ?? null;
+        if (remappedScopeId) {
+          await tx.quote.update({
+            where: { id: quote.id },
+            data: { discountScopeSubtotalId: remappedScopeId },
+          });
+        } else {
+          console.warn(
+            `[clone] dangling discountScopeSubtotalId=${sourceQuote.discountScopeSubtotalId} on source quote ${sourceQuote.id}; clone will apply discount quote-wide`
+          );
         }
       }
 

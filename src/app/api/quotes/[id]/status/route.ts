@@ -76,42 +76,63 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // ONAYLANDI → ONAY_BEKLIYOR ("tekrar onaya gönder"): creator-only.
-    // Approvers shouldn't be able to roll an approved quote back to
-    // pending — that's not their workflow. Once GONDERILDI is reached
-    // the state machine itself blocks any path back, satisfying the
-    // client's "approval can't restart after sending" rule.
-    if (currentStatus === 'ONAYLANDI' && newStatus === 'ONAY_BEKLIYOR') {
+    // ONAYLANDI → TASLAK ("Tekrar Onaya Gönder" → reopens for edits):
+    // creator-only. The approved quote drops back to draft so the
+    // creator can edit, then re-submit via the standard
+    // TASLAK → ONAY_BEKLIYOR. Approvers shouldn't be able to roll
+    // someone else's approved quote back to draft — that's not their
+    // workflow. Once GONDERILDI is reached the state machine itself
+    // blocks any path back, satisfying the client's "approval can't
+    // restart after sending" rule.
+    if (currentStatus === 'ONAYLANDI' && newStatus === 'TASLAK') {
       if (user.id !== quote.createdById) {
         return NextResponse.json(
-          { error: 'Sadece teklifi oluşturan kişi tekrar onaya gönderebilir' },
+          { error: 'Sadece teklifi oluşturan kişi onaylı teklifi tekrar açabilir' },
           { status: 403 }
         );
       }
     }
 
-    // ONAY_BEKLIYOR → TASLAK covers two paths:
-    //   1. Creator retracts their own submission ("Onayı Geri Çek").
-    //   2. Approver requests edits ("Düzenleme Talep Et"); a note is
-    //      required so the salesperson knows what to fix.
-    // Anyone else is blocked.
+    // ONAY_BEKLIYOR → TASLAK is now strictly the creator's "Onayı
+    // Geri Çek" path. The approver-rejection path moved to
+    // DUZENLEME_TALEP_EDILDI (#8) so the salesperson sees an explicit
+    // status instead of a TASLAK that looks identical to a fresh draft.
     if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK') {
-      const isCreator = user.id === quote.createdById;
-      const isApprover = !!user.role.canApprove;
-      if (!isCreator && !isApprover) {
+      if (user.id !== quote.createdById) {
         return NextResponse.json(
-          { error: 'Bu işlem için yetkiniz yok' },
+          { error: 'Sadece teklifi oluşturan kişi onayı geri çekebilir' },
           { status: 403 }
         );
       }
-      if (!isCreator && isApprover) {
-        const note = typeof body.note === 'string' ? body.note.trim() : '';
-        if (!note) {
-          return NextResponse.json(
-            { error: 'Düzenleme talebi için not gereklidir' },
-            { status: 400 }
-          );
-        }
+    }
+
+    // ONAY_BEKLIYOR → DUZENLEME_TALEP_EDILDI is the approver path.
+    // Note required so the salesperson knows what to fix.
+    if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'DUZENLEME_TALEP_EDILDI') {
+      if (!user.role.canApprove) {
+        return NextResponse.json(
+          { error: 'Düzenleme talep etme yetkiniz yok' },
+          { status: 403 }
+        );
+      }
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      if (!note) {
+        return NextResponse.json(
+          { error: 'Düzenleme talebi için not gereklidir' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // DUZENLEME_TALEP_EDILDI → ONAY_BEKLIYOR ("yeniden onaya gönder"):
+    // the salesperson edited the quote per the approver's note and is
+    // submitting it again. Creator-only.
+    if (currentStatus === 'DUZENLEME_TALEP_EDILDI' && newStatus === 'ONAY_BEKLIYOR') {
+      if (user.id !== quote.createdById) {
+        return NextResponse.json(
+          { error: 'Sadece teklifi oluşturan kişi yeniden onaya gönderebilir' },
+          { status: 403 }
+        );
       }
     }
 
@@ -315,7 +336,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       } catch (notificationError) {
         console.error('Notification creation error (retract):', notificationError);
       }
-    } else if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'TASLAK' && user.role.canApprove) {
+    } else if (currentStatus === 'ONAY_BEKLIYOR' && newStatus === 'DUZENLEME_TALEP_EDILDI') {
       // Approver edit request — notify creator with the note.
       try {
         const note = typeof body.note === 'string' ? body.note.trim() : '';
@@ -393,16 +414,38 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Retract (ONAY_BEKLIYOR → TASLAK) is creator-only — hide it
-    // from everyone else so the status dropdown stays clean.
-    if (currentStatus === 'ONAY_BEKLIYOR' && user.id !== quote.createdById) {
-      allowedTransitions = allowedTransitions.filter(s => s !== 'TASLAK');
+    // from everyone else.
+    //
+    // Edit-request (ONAY_BEKLIYOR → DUZENLEME_TALEP_EDILDI) is
+    // approver-only AND requires a note that the dropdown can't
+    // collect. The proper UI lives on the Onay Bekleyenler page, the
+    // editor's approver flow, and the view page's "Düzenleme Talep Et"
+    // button — all prompt for a note before POSTing. Letting the
+    // dropdown surface it would silently 400 (server requires note),
+    // so hide it from the dropdown for everyone and let the dedicated
+    // buttons be the only path.
+    if (currentStatus === 'ONAY_BEKLIYOR') {
+      if (user.id !== quote.createdById) {
+        allowedTransitions = allowedTransitions.filter(s => s !== 'TASLAK');
+      }
+      allowedTransitions = allowedTransitions.filter(s => s !== 'DUZENLEME_TALEP_EDILDI');
     }
 
-    // Re-submit (ONAYLANDI → ONAY_BEKLIYOR) is creator-only — same
-    // filter pattern. Approvers shouldn't see "Onay Bekliyor" as an
-    // option from an approved quote they don't own.
-    if (currentStatus === 'ONAYLANDI' && user.id !== quote.createdById) {
+    // Yeniden onaya gönder (DUZENLEME_TALEP_EDILDI → ONAY_BEKLIYOR)
+    // is creator-only.
+    if (currentStatus === 'DUZENLEME_TALEP_EDILDI' && user.id !== quote.createdById) {
       allowedTransitions = allowedTransitions.filter(s => s !== 'ONAY_BEKLIYOR');
+    }
+
+    // Reopen-for-edits (ONAYLANDI → TASLAK) is intentionally only
+    // exposed via the dedicated "Tekrar Onaya Gönder" button on the
+    // view page — it shows a confirm dialog, writes an audit note,
+    // and drops the user into the editor afterwards. Picking "Taslak"
+    // from the status-badge dropdown would skip all of that, so we
+    // hide the option from the dropdown entirely (creator and
+    // non-creator alike) and let the button be the single path.
+    if (currentStatus === 'ONAYLANDI') {
+      allowedTransitions = allowedTransitions.filter(s => s !== 'TASLAK');
     }
 
     // Get approval check result for current quote items

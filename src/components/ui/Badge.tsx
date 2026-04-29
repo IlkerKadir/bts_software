@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 type QuoteStatus =
   | 'TASLAK'
   | 'ONAY_BEKLIYOR'
+  | 'DUZENLEME_TALEP_EDILDI'
   | 'ONAYLANDI'
   | 'GONDERILDI'
   | 'TAKIPTE'
@@ -16,6 +17,7 @@ type QuoteStatus =
 const statusStyles: Record<QuoteStatus, string> = {
   TASLAK: 'bg-primary-100 text-primary-700 border-primary-300',
   ONAY_BEKLIYOR: 'bg-amber-50 text-amber-700 border-amber-300',
+  DUZENLEME_TALEP_EDILDI: 'bg-orange-50 text-orange-700 border-orange-300',
   ONAYLANDI: 'bg-sky-50 text-sky-700 border-sky-300',
   GONDERILDI: 'bg-blue-50 text-blue-700 border-blue-300',
   TAKIPTE: 'bg-purple-50 text-purple-700 border-purple-300',
@@ -28,6 +30,7 @@ const statusStyles: Record<QuoteStatus, string> = {
 const statusLabels: Record<QuoteStatus, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',

@@ -7,19 +7,17 @@ import {
   Clock,
   CheckCircle2,
   Send,
-  Eye,
-  RotateCcw,
+  MessageSquareWarning,
 } from 'lucide-react';
 
-type PipelineStatus = 'TASLAK' | 'ONAY_BEKLIYOR' | 'ONAYLANDI' | 'GONDERILDI' | 'TAKIPTE' | 'REVIZYON';
+type PipelineStatus = 'TASLAK' | 'ONAY_BEKLIYOR' | 'DUZENLEME_TALEP_EDILDI' | 'ONAYLANDI' | 'GONDERILDI';
 
 interface PipelineCounts {
   TASLAK: number;
   ONAY_BEKLIYOR: number;
+  DUZENLEME_TALEP_EDILDI: number;
   ONAYLANDI: number;
   GONDERILDI: number;
-  TAKIPTE: number;
-  REVIZYON: number;
 }
 
 interface QuotePipelineProps {
@@ -51,6 +49,14 @@ const pipelineConfig: {
     icon: Clock,
   },
   {
+    status: 'DUZENLEME_TALEP_EDILDI',
+    label: 'Düzenleme Talep Edildi',
+    borderColor: 'border-l-rose-500',
+    iconBg: 'bg-rose-50',
+    iconColor: 'text-rose-600',
+    icon: MessageSquareWarning,
+  },
+  {
     status: 'ONAYLANDI',
     label: 'Onaylandı',
     borderColor: 'border-l-sky-500',
@@ -66,27 +72,11 @@ const pipelineConfig: {
     iconColor: 'text-blue-600',
     icon: Send,
   },
-  {
-    status: 'TAKIPTE',
-    label: 'Takipte',
-    borderColor: 'border-l-purple-500',
-    iconBg: 'bg-purple-50',
-    iconColor: 'text-purple-600',
-    icon: Eye,
-  },
-  {
-    status: 'REVIZYON',
-    label: 'Revizyon',
-    borderColor: 'border-l-orange-500',
-    iconBg: 'bg-orange-50',
-    iconColor: 'text-orange-600',
-    icon: RotateCcw,
-  },
 ];
 
 export function QuotePipeline({ counts }: QuotePipelineProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       {pipelineConfig.map((item) => {
         const Icon = item.icon;
         const count = counts[item.status];

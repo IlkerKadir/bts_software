@@ -339,10 +339,16 @@ export async function POST(request: NextRequest) {
       const initials = getInitials(user.fullName);
       const prefix = getInitialsPrefix(initials);
 
-      // Find the last quote by this user (by initials prefix) to get next sequence
+      // Find the last quote by this user (by initials prefix) to get
+      // next sequence. Exclude revision-style numbers (anything with a
+      // `.` in it) so a row like `LC0014.1` doesn't pollute the lex-desc
+      // result and corrupt sequencing — even with the regex fix in
+      // parseQuoteNumber, base quotes are the only correct source of
+      // truth for the user's "next" sequence.
       const lastQuote = await tx.quote.findFirst({
         where: {
           quoteNumber: { startsWith: prefix },
+          NOT: { quoteNumber: { contains: '.' } },
         },
         orderBy: { quoteNumber: 'desc' },
       });

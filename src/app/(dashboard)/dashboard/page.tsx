@@ -28,22 +28,20 @@ function withVisibility(
 }
 
 async function getPipelineCounts(user: DashboardUser) {
-  const [taslak, onayBekliyor, onaylandi, gonderildi, takipte, revizyon] = await Promise.all([
+  const [taslak, onayBekliyor, duzenlemeTalep, onaylandi, gonderildi] = await Promise.all([
     db.quote.count({ where: withVisibility(user, { status: 'TASLAK' }) }),
     db.quote.count({ where: withVisibility(user, { status: 'ONAY_BEKLIYOR' }) }),
+    db.quote.count({ where: withVisibility(user, { status: 'DUZENLEME_TALEP_EDILDI' }) }),
     db.quote.count({ where: withVisibility(user, { status: 'ONAYLANDI' }) }),
     db.quote.count({ where: withVisibility(user, { status: 'GONDERILDI' }) }),
-    db.quote.count({ where: withVisibility(user, { status: 'TAKIPTE' }) }),
-    db.quote.count({ where: withVisibility(user, { status: 'REVIZYON' }) }),
   ]);
 
   return {
     TASLAK: taslak,
     ONAY_BEKLIYOR: onayBekliyor,
+    DUZENLEME_TALEP_EDILDI: duzenlemeTalep,
     ONAYLANDI: onaylandi,
     GONDERILDI: gonderildi,
-    TAKIPTE: takipte,
-    REVIZYON: revizyon,
   };
 }
 

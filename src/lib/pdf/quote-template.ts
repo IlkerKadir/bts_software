@@ -307,7 +307,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       </tr>
       <tr style="height:12pt" class="discount-row">
         <td class="sys-total-label discount-label" colspan="4"><p class="s1" style="text-align:right;">${discountLabel} (%${pct}) (${currencyName})</p></td>
-        <td class="sys-total-val discount-amount"><p class="s1" style="text-align:right; color:#dc2626;">- ${formatCurrency(discAmt, currency)}</p></td>
+        <td class="sys-total-val discount-amount"><p class="s1" style="text-align:right;">- ${formatCurrency(discAmt, currency)}</p></td>
       </tr>
       <tr style="height:12pt">
         <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">NET ${subtotalLabel} (${currencyName})</p></td>

@@ -37,21 +37,27 @@ interface PriceHistoryProps {
 const statusLabels: Record<string, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',
+  REVIZYON: 'Revizyon',
   KAZANILDI: 'Kazanıldı',
   KAYBEDILDI: 'Kaybedildi',
+  IPTAL: 'İptal',
 };
 
 const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
   TASLAK: 'default',
   ONAY_BEKLIYOR: 'warning',
+  DUZENLEME_TALEP_EDILDI: 'warning',
   ONAYLANDI: 'info',
   GONDERILDI: 'info',
   TAKIPTE: 'warning',
+  REVIZYON: 'warning',
   KAZANILDI: 'success',
   KAYBEDILDI: 'error',
+  IPTAL: 'error',
 };
 
 export function PriceHistory({ productId, companyId, currentPrice, currency = 'EUR', onApplyPrice }: PriceHistoryProps) {

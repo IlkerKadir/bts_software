@@ -63,6 +63,14 @@ describe('getQuoteDisplayDate', () => {
     })).toBe(CREATED);
   });
 
+  it('falls back to createdAt for DUZENLEME_TALEP_EDILDI with stale approvedAt (rejected after a prior approval cycle)', () => {
+    expect(getQuoteDisplayDate({
+      createdAt: CREATED,
+      approvedAt: APPROVED,
+      status: 'DUZENLEME_TALEP_EDILDI',
+    })).toBe(CREATED);
+  });
+
   it('returns createdAt for ONAYLANDI when approvedAt happens to be missing (defensive)', () => {
     expect(getQuoteDisplayDate({
       createdAt: CREATED,

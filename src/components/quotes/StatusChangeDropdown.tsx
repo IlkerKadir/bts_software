@@ -19,6 +19,7 @@ interface StatusChangeDropdownProps {
 const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
   TASLAK: 'default',
   ONAY_BEKLIYOR: 'warning',
+  DUZENLEME_TALEP_EDILDI: 'warning',
   ONAYLANDI: 'info',
   GONDERILDI: 'info',
   TAKIPTE: 'warning',

@@ -60,10 +60,10 @@ const statusOptions = [
   { value: '', label: 'Tüm Durumlar' },
   { value: 'TASLAK', label: 'Taslak' },
   { value: 'ONAY_BEKLIYOR', label: 'Onay Bekliyor' },
+  { value: 'DUZENLEME_TALEP_EDILDI', label: 'Düzenleme Talep Edildi' },
   { value: 'ONAYLANDI', label: 'Onaylandı' },
   { value: 'GONDERILDI', label: 'Gönderildi' },
   { value: 'TAKIPTE', label: 'Takipte' },
-  { value: 'REVIZYON', label: 'Revizyon' },
   { value: 'KAZANILDI', label: 'Kazanıldı' },
   { value: 'KAYBEDILDI', label: 'Kaybedildi' },
   { value: 'IPTAL', label: 'İptal' },
@@ -72,6 +72,7 @@ const statusOptions = [
 const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
   TASLAK: 'default',
   ONAY_BEKLIYOR: 'warning',
+  DUZENLEME_TALEP_EDILDI: 'warning',
   ONAYLANDI: 'info',
   GONDERILDI: 'info',
   TAKIPTE: 'warning',
@@ -836,7 +837,7 @@ function QuoteGroupRows({
           >
             <FileText className="w-4 h-4" />
           </button>
-          {quote.status === 'TASLAK' && (
+          {(quote.status === 'TASLAK' || quote.status === 'DUZENLEME_TALEP_EDILDI') && (
             <button
               onClick={() => onDelete(quote)}
               className="p-1.5 rounded hover:bg-red-50 text-red-500 cursor-pointer"

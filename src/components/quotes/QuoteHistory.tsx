@@ -65,6 +65,7 @@ const actionVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
 const statusLabels: Record<string, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',

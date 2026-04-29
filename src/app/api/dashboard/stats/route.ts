@@ -20,12 +20,14 @@ export async function GET() {
     const [
       taslakCount,
       onayBekliyorCount,
+      duzenlemeTalepCount,
       onaylandiCount,
       gonderildiCount,
       takipteCount,
     ] = await Promise.all([
       db.quote.count({ where: { status: 'TASLAK' } }),
       db.quote.count({ where: { status: 'ONAY_BEKLIYOR' } }),
+      db.quote.count({ where: { status: 'DUZENLEME_TALEP_EDILDI' } }),
       db.quote.count({ where: { status: 'ONAYLANDI' } }),
       db.quote.count({ where: { status: 'GONDERILDI' } }),
       db.quote.count({ where: { status: 'TAKIPTE' } }),
@@ -34,6 +36,7 @@ export async function GET() {
     const pipeline = {
       TASLAK: taslakCount,
       ONAY_BEKLIYOR: onayBekliyorCount,
+      DUZENLEME_TALEP_EDILDI: duzenlemeTalepCount,
       ONAYLANDI: onaylandiCount,
       GONDERILDI: gonderildiCount,
       TAKIPTE: takipteCount,

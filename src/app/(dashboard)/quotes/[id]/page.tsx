@@ -26,6 +26,7 @@ import {
   Globe,
   Shield,
   ShoppingCart,
+  MessageSquareWarning,
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Badge, Spinner, Modal, Select } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
@@ -491,6 +492,78 @@ export default function QuoteDetailPage({ params }: PageProps) {
   }, [id, quote, fetchQuote]);
 
   // ---------------------------------------------------------------------------
+  // Edit-Request Handler ("Düzenleme Talep Et" — approver-only on ONAY_BEKLIYOR)
+  // ---------------------------------------------------------------------------
+  // Mirrors the editor's `handleRejectFromEditor` — the dropdown can't
+  // collect the required note, so we expose this dedicated button on
+  // the read-only view page too. POSTs status PUT with the note;
+  // server enforces approver-only and note-required.
+
+  const [isRequestingEdits, setIsRequestingEdits] = useState(false);
+
+  const handleRequestEdits = useCallback(async () => {
+    if (!quote) return;
+    const note = window.prompt('Düzenleme talebi notu:');
+    if (!note || !note.trim()) return;
+    setIsRequestingEdits(true);
+    try {
+      const res = await fetch(`/api/quotes/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'DUZENLEME_TALEP_EDILDI', note: note.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Düzenleme talebi gönderilemedi');
+      }
+      await fetchQuote();
+    } catch (err) {
+      console.error('Edit request error:', err);
+      setError(err instanceof Error ? err.message : 'Düzenleme talebi sırasında bir hata oluştu');
+    } finally {
+      setIsRequestingEdits(false);
+    }
+  }, [id, quote, fetchQuote]);
+
+  // ---------------------------------------------------------------------------
+  // Re-open Approved Quote Handler ("Tekrar Onaya Gönder")
+  // ---------------------------------------------------------------------------
+  // Approved quotes that haven't been sent yet can be reopened by the
+  // creator: status flips to TASLAK and we drop the user straight into
+  // the editor. The follow-up TASLAK → ONAY_BEKLIYOR re-submission
+  // happens via the standard "Onaya Gönder" button inside the editor
+  // — no special path needed.
+
+  const [isReopening, setIsReopening] = useState(false);
+
+  const handleReopenForEdits = useCallback(async () => {
+    if (!quote) return;
+    const ok = window.confirm(
+      'Bu onaylı teklifi tekrar düzenlemeye açmak istediğinize emin misiniz? Teklif taslağa dönecek ve düzenleme sonrası tekrar onaya gönderilmesi gerekecek.'
+    );
+    if (!ok) return;
+    setIsReopening(true);
+    try {
+      const res = await fetch(`/api/quotes/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'TASLAK', note: 'Onaylı teklif tekrar açıldı' }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Teklif tekrar açılamadı');
+      }
+      // Drop the user straight into the editor so they can make the
+      // change that motivated reopening.
+      router.push(`/quotes/${id}/edit`);
+    } catch (err) {
+      console.error('Reopen approved quote error:', err);
+      setError(err instanceof Error ? err.message : 'Teklif tekrar açılırken bir hata oluştu');
+      setIsReopening(false);
+    }
+  }, [id, quote, router]);
+
+  // ---------------------------------------------------------------------------
   // Export Handlers
   // ---------------------------------------------------------------------------
 
@@ -744,7 +817,10 @@ export default function QuoteDetailPage({ params }: PageProps) {
     );
   }
 
-  // Regular flow: creators and editors can edit TASLAK / REVIZYON quotes.
+  // Regular flow: creators and editors can edit TASLAK / REVIZYON /
+  // DUZENLEME_TALEP_EDILDI quotes. The last one is the approver-rejected
+  // state — it exists precisely so the creator can fix the issue and
+  // re-submit, so the edit button must surface there.
   // Extra flow: managers (canApprove) can also edit ONAY_BEKLIYOR quotes
   // so they can adjust the quote in place instead of bouncing it back to
   // the salesperson. The backend PUT handler already allows this branch;
@@ -752,6 +828,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
   const canEdit =
     quote.status === 'TASLAK' ||
     quote.status === 'REVIZYON' ||
+    quote.status === 'DUZENLEME_TALEP_EDILDI' ||
     (quote.status === 'ONAY_BEKLIYOR' && permissions.canApprove);
 
   // ---------------------------------------------------------------------------
@@ -841,6 +918,38 @@ export default function QuoteDetailPage({ params }: PageProps) {
             >
               <ArrowLeft className="w-4 h-4" />
               Onayı Geri Çek
+            </Button>
+          )}
+
+          {/* Edit request — approver-only on pending quotes. Required
+              note collected via prompt; the dropdown can't carry it,
+              so this dedicated button is the on-page path (matches
+              the approvals inbox + editor approver flow). */}
+          {quote.status === 'ONAY_BEKLIYOR' && permissions.canApprove && (
+            <Button
+              variant="secondary"
+              onClick={handleRequestEdits}
+              disabled={isRequestingEdits}
+              title="Bu teklifin yeniden düzenlenmesini talep et"
+            >
+              <MessageSquareWarning className="w-4 h-4" />
+              Düzenleme Talep Et
+            </Button>
+          )}
+
+          {/* Reopen approved quote — visible only to the creator while
+              the quote is ONAYLANDI but not yet GONDERILDI. State flips
+              to TASLAK and the editor opens, mirroring the spec the
+              client laid out. */}
+          {quote.status === 'ONAYLANDI' && currentUserId === quote.createdBy.id && (
+            <Button
+              variant="secondary"
+              onClick={handleReopenForEdits}
+              disabled={isReopening}
+              title="Onaylı teklifi tekrar düzenlemeye aç — taslağa döner"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Tekrar Onaya Gönder
             </Button>
           )}
 
@@ -1031,6 +1140,10 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 <th className="px-3 py-2.5 text-left whitespace-nowrap">Açıklama</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap w-20">Miktar</th>
                 <th className="px-3 py-2.5 text-center whitespace-nowrap w-16">Birim</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap w-28 bg-accent-700/90">
+                  {permissions.canViewCosts ? 'Maliyet' : 'Liste Fiyatı'}
+                </th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap w-20 bg-accent-700/90">Katsayı</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap w-28">Birim Fiyat</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap w-28">Toplam Fiyat</th>
               </tr>
@@ -1051,7 +1164,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   return (
                     <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-accent-100')}>
                       <td className="px-3 py-2" />
-                      <td colSpan={5} className="px-3 py-2 font-bold text-primary-800 text-sm">
+                      <td colSpan={7} className="px-3 py-2 font-bold text-primary-800 text-sm">
                         {item.description}
                       </td>
                     </tr>
@@ -1063,7 +1176,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   return (
                     <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-amber-50/50')}>
                       <td className="px-3 py-2" />
-                      <td colSpan={5} className="px-3 py-2 text-sm text-primary-700 italic">
+                      <td colSpan={7} className="px-3 py-2 text-sm text-primary-700 italic">
                         {item.description}
                       </td>
                     </tr>
@@ -1079,7 +1192,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     <React.Fragment key={item.id}>
                       {hasDiscount && info && (
                         <tr className="bg-accent-50/50">
-                          <td colSpan={5} className="px-3 py-1 text-right text-sm text-accent-700">
+                          <td colSpan={7} className="px-3 py-1 text-right text-sm text-accent-700">
                             İskonto (%{info.discountPct})
                           </td>
                           <td className="px-2 py-1 text-right tabular-nums text-red-600 whitespace-nowrap">
@@ -1088,7 +1201,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                         </tr>
                       )}
                       <tr className="bg-accent-50 border-t-2 border-accent-300">
-                        <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
+                        <td colSpan={7} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
                           {item.description || 'Ara Toplam'}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
@@ -1103,7 +1216,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 if (item.itemType === 'GRAND_TOTAL') {
                   return (
                     <tr key={item.id} className="bg-primary-50 border-t-2 border-primary-300">
-                      <td colSpan={5} className="px-3 py-2.5 text-right text-sm font-bold text-primary-900">
+                      <td colSpan={7} className="px-3 py-2.5 text-right text-sm font-bold text-primary-900">
                         {item.description || 'GENEL TOPLAM'}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums font-bold text-primary-900 whitespace-nowrap">
@@ -1121,8 +1234,17 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 // level rows go through the convert helper so a
                 // TRY-SET line shows as e.g. €70,13 instead of its
                 // raw ₺4.000,00 face value.
+                // Sub-row currency resolution mirrors `effectiveItemCurrency`
+                // in `lib/quote-calculations.ts`: prefer the row's own
+                // `currency` if explicitly set, then walk to the parent
+                // SET's currency, then quote currency. The editor enforces
+                // sub-rows track parent currency, but legacy / direct-API
+                // rows can carry their own — honor it instead of silently
+                // displaying the wrong symbol.
                 const rowCurrency = isSubRow
-                  ? (parentSetCurrencyById.get(item.parentItemId!) ?? quote.currency)
+                  ? (item.currency
+                      ?? parentSetCurrencyById.get(item.parentItemId!)
+                      ?? quote.currency)
                   : quote.currency;
                 const formatRowPrice = (amount: number) =>
                   isSubRow
@@ -1203,6 +1325,29 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     >
                       {item.unit}
                     </td>
+                    {/* Internal-only column: Maliyet for cost-viewers, Liste
+                        Fiyatı for everyone else. Slate tint marks it as
+                        internal info — mirrors the editor convention. */}
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
+                        isSubRow ? 'text-accent-500' : 'text-primary-800'
+                      )}
+                    >
+                      {permissions.canViewCosts
+                        ? (item.costPrice != null
+                            ? formatRowPrice(Number(item.costPrice))
+                            : '—')
+                        : formatRowPrice(Number(item.listPrice))}
+                    </td>
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
+                        isSubRow ? 'text-accent-500' : 'text-primary-800'
+                      )}
+                    >
+                      {Number(item.katsayi).toFixed(3)}
+                    </td>
                     <td
                       className={cn(
                         'px-3 py-2.5 text-right tabular-nums',
@@ -1256,7 +1401,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
               {quote.items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-accent-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-accent-500">
                     Henüz kalem eklenmedi.
                   </td>
                 </tr>
@@ -1271,7 +1416,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     so we don't render duplicates. */}
                 {!hasInlineSubtotal && (
                   <tr className="border-t-2 border-accent-300">
-                    <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
+                    <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-700">
                       Ara Toplam
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
@@ -1282,7 +1427,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
                 {!hasInlineGrandTotal && (
                   <tr className="border-t-2 border-accent-400">
-                    <td colSpan={5} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
+                    <td colSpan={7} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
                       GENEL TOPLAM
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-base font-bold text-accent-900 whitespace-nowrap">
@@ -1295,7 +1440,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 {permissions.canViewCosts && profitSummary && (
                   <>
                     <tr className="border-t-2 border-accent-300">
-                      <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-600">
+                      <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-600">
                         Toplam Maliyet
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-accent-700 whitespace-nowrap">
@@ -1303,7 +1448,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-600">
+                      <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-600">
                         Toplam Kar
                       </td>
                       <td
@@ -1316,7 +1461,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-600">
+                      <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-600">
                         Kar Marjı %
                       </td>
                       <td

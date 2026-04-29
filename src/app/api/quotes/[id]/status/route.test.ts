@@ -137,3 +137,69 @@ describe('PUT /api/quotes/[id]/status - empty quote validation', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('PUT /api/quotes/[id]/status - DUZENLEME_TALEP_EDILDI guards', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getSession).mockResolvedValue(mockUser as never);
+    vi.mocked(db.quoteHistory.create).mockResolvedValue({} as never);
+    vi.mocked(db.user.findMany).mockResolvedValue([] as never);
+  });
+
+  it('returns 400 when transitioning to DUZENLEME_TALEP_EDILDI without a note', async () => {
+    // Locks the regression that motivated hiding this transition from
+    // the status-badge dropdown: server requires a note, dropdown
+    // can't collect one, so silently 400'd. Kept as a guard so a
+    // future refactor that drops the `if (!note)` check can't
+    // re-introduce the silent-failure path.
+    vi.mocked(db.quote.findUnique).mockResolvedValue({
+      id: 'quote1',
+      status: 'ONAY_BEKLIYOR',
+      validityDays: 30,
+      createdById: 'someoneElse', // approver, not creator
+    } as never);
+
+    const res = await PUT(
+      makeRequest({ status: 'DUZENLEME_TALEP_EDILDI' }),
+      makeParams(),
+    );
+    expect(res.status).toBe(400);
+
+    const data = await res.json();
+    expect(data.error).toBe('Düzenleme talebi için not gereklidir');
+  });
+
+  it('returns 400 when note is whitespace-only', async () => {
+    vi.mocked(db.quote.findUnique).mockResolvedValue({
+      id: 'quote1',
+      status: 'ONAY_BEKLIYOR',
+      validityDays: 30,
+      createdById: 'someoneElse',
+    } as never);
+
+    const res = await PUT(
+      makeRequest({ status: 'DUZENLEME_TALEP_EDILDI', note: '   ' }),
+      makeParams(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 403 when a non-approver attempts the transition', async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      ...mockUser,
+      role: { ...mockUser.role, canApprove: false },
+    } as never);
+    vi.mocked(db.quote.findUnique).mockResolvedValue({
+      id: 'quote1',
+      status: 'ONAY_BEKLIYOR',
+      validityDays: 30,
+      createdById: 'user1',
+    } as never);
+
+    const res = await PUT(
+      makeRequest({ status: 'DUZENLEME_TALEP_EDILDI', note: 'fix the price' }),
+      makeParams(),
+    );
+    expect(res.status).toBe(403);
+  });
+});

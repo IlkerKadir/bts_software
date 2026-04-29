@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const quoteStatusEnum = z.enum([
   'TASLAK',
   'ONAY_BEKLIYOR',
+  'DUZENLEME_TALEP_EDILDI',
   'ONAYLANDI',
   'GONDERILDI',
   'TAKIPTE',
@@ -108,6 +109,7 @@ export const quoteUpdateSchema = z.object({
 export const quoteStatusLabels: Record<string, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',

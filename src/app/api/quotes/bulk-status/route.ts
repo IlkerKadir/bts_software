@@ -70,18 +70,49 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // ONAYLANDI → ONAY_BEKLIYOR is creator-only (mirrors the per-quote
-      // PUT route guard). Without this, an admin doing a bulk operation
-      // could roll someone else's approved quotes back to pending.
+      // ONAYLANDI → TASLAK ("Tekrar Onaya Gönder" → reopens for edits)
+      // is creator-only (mirrors the per-quote PUT route guard).
+      // Without this, an admin doing a bulk operation could roll
+      // someone else's approved quotes back to draft.
       if (
         currentStatus === 'ONAYLANDI' &&
+        targetStatus === 'TASLAK' &&
+        quote.createdById !== user.id
+      ) {
+        results.failed.push({
+          id: quote.id,
+          quoteNumber: quote.quoteNumber,
+          reason: 'Sadece teklifi oluşturan kişi onaylı teklifi tekrar açabilir',
+        });
+        continue;
+      }
+
+      // ONAY_BEKLIYOR → DUZENLEME_TALEP_EDILDI is approver-only
+      // (mirrors per-quote guard). Without this, a non-approver could
+      // bulk-flip pending quotes to "edit-requested" and forge a fake
+      // approver-rejection trail. Bulk path doesn't carry a per-quote
+      // note so we can't satisfy the per-PUT note requirement either —
+      // refuse the transition entirely from the bulk flow.
+      if (currentStatus === 'ONAY_BEKLIYOR' && targetStatus === 'DUZENLEME_TALEP_EDILDI') {
+        results.failed.push({
+          id: quote.id,
+          quoteNumber: quote.quoteNumber,
+          reason: 'Düzenleme talebi tek tek yapılmalıdır (not gerekli)',
+        });
+        continue;
+      }
+
+      // DUZENLEME_TALEP_EDILDI → ONAY_BEKLIYOR ("yeniden onaya gönder")
+      // is creator-only.
+      if (
+        currentStatus === 'DUZENLEME_TALEP_EDILDI' &&
         targetStatus === 'ONAY_BEKLIYOR' &&
         quote.createdById !== user.id
       ) {
         results.failed.push({
           id: quote.id,
           quoteNumber: quote.quoteNumber,
-          reason: 'Sadece teklifi oluşturan kişi tekrar onaya gönderebilir',
+          reason: 'Sadece teklifi oluşturan kişi yeniden onaya gönderebilir',
         });
         continue;
       }

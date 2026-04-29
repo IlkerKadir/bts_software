@@ -6,6 +6,7 @@
 export type QuoteStatus =
   | 'TASLAK'
   | 'ONAY_BEKLIYOR'
+  | 'DUZENLEME_TALEP_EDILDI'
   | 'ONAYLANDI'
   | 'GONDERILDI'
   | 'TAKIPTE'
@@ -20,12 +21,22 @@ export type QuoteStatus =
  */
 const statusTransitions: Record<QuoteStatus, QuoteStatus[]> = {
   TASLAK: ['ONAY_BEKLIYOR', 'IPTAL'],
-  ONAY_BEKLIYOR: ['ONAYLANDI', 'IPTAL', 'TASLAK'],
-  // ONAYLANDI → ONAY_BEKLIYOR is the creator-only "tekrar onaya gönder"
-  // path: an approved quote that hasn't been sent (GONDERILDI) yet can
-  // be re-submitted for approval if the salesperson made changes after
-  // approval. The creator-vs-other check happens at the API layer.
-  ONAYLANDI: ['GONDERILDI', 'IPTAL', 'ONAY_BEKLIYOR'],
+  // ONAY_BEKLIYOR has TWO ways out (besides approval/cancel): the
+  // creator can retract their submission to TASLAK ("Onayı Geri Çek"),
+  // or an approver can request edits → DUZENLEME_TALEP_EDILDI. The
+  // creator-vs-approver fork lives at the API layer.
+  ONAY_BEKLIYOR: ['ONAYLANDI', 'IPTAL', 'TASLAK', 'DUZENLEME_TALEP_EDILDI'],
+  // After an approver kicks the quote back, the salesperson edits and
+  // resubmits — DUZENLEME_TALEP_EDILDI → ONAY_BEKLIYOR.
+  DUZENLEME_TALEP_EDILDI: ['ONAY_BEKLIYOR', 'IPTAL'],
+  // ONAYLANDI → TASLAK is the creator-only "tekrar onaya gönder" path:
+  // an approved quote that hasn't been sent (GONDERILDI) yet can be
+  // reopened for edits, then re-submitted via the standard
+  // TASLAK → ONAY_BEKLIYOR. Re-approval without an edit doesn't make
+  // sense, so the direct ONAYLANDI → ONAY_BEKLIYOR shortcut is
+  // intentionally not in the table. Creator-vs-other check happens at
+  // the API layer.
+  ONAYLANDI: ['GONDERILDI', 'IPTAL', 'TASLAK'],
   GONDERILDI: ['TAKIPTE', 'KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   TAKIPTE: ['KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   REVIZYON: ['ONAY_BEKLIYOR', 'IPTAL'],
@@ -79,6 +90,7 @@ export function requiresApproval(status: QuoteStatus): boolean {
 export const statusLabels: Record<QuoteStatus, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',
@@ -94,6 +106,7 @@ export const statusLabels: Record<QuoteStatus, string> = {
 export const statusColors: Record<QuoteStatus, string> = {
   TASLAK: 'default',
   ONAY_BEKLIYOR: 'warning',
+  DUZENLEME_TALEP_EDILDI: 'warning',
   ONAYLANDI: 'info',
   GONDERILDI: 'info',
   TAKIPTE: 'warning',

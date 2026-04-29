@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 
@@ -9,26 +10,37 @@ interface RouteParams {
 /**
  * POST /api/quotes/[id]/revisions
  *
- * Creates a new revision of the quote.
+ * Creates a new revision of the quote. After #9 the new quote is fully
+ * standalone — there is no `parentQuoteId` link, no `version` field
+ * bookkeeping, and the source quote is left untouched (no flip to
+ * REVIZYON). The relationship to the source survives only as the
+ * quote-number suffix.
  *
  * Revision model:
- *   - A "root" is the original quote (parentQuoteId = null).
- *   - All revisions are direct children of the root, with
- *     parentQuoteId = root.id. Revisions of revisions do not chain —
- *     the new quote still points at the same root.
- *   - Quote numbers append a `.{rev}` suffix to whatever the root's
- *     quoteNumber is — `Foo.1`, `Foo.2`, etc. The previous strict
- *     `{INITIALS}{NNNN}-{SYSTEM}.{REV}` scheme is no longer enforced;
- *     users can name quotes freely and revisions still produce a
- *     deterministic suffix.
- *   - The next revision index is `max(version of all children of the
- *     root) + 1`, so sibling collisions are impossible.
- *   - Items / commercial terms / ek maliyet are copied from the
- *     `source` quote (the one the user was looking at when they hit
- *     "create revision"), not from the root — so revising `.2` gives
- *     you `.3` with `.2`'s content, not the original's.
- *   - The source quote's status is set to REVIZYON so the UI can mark
- *     it as "superseded".
+ *   - A revision is a brand-new quote with `parentQuoteId = null` and
+ *     `status = TASLAK`. The user edits it like any other draft.
+ *   - Numbering is FLAT under a root. We compute the root by stripping
+ *     any trailing `.{N}` sequences from the source's quote number, so
+ *     revising `Foo`, `Foo.1`, or `Foo.1.2` all share the same root
+ *     `Foo`. The new quote's number is `${root}.${nextRev}` — never
+ *     `.1.1`, never deeper than one level. Revising a revision is
+ *     just another sibling of the original.
+ *   - `nextRev` = max numeric direct-child suffix off `root` plus one.
+ *     Sibling lookup matches `quoteNumber: { startsWith: '${root}.' }`,
+ *     scoped by `companyId` so unrelated quotes at other companies
+ *     don't bump the counter. Multi-dot legacy names like `Foo.1.2`
+ *     get pulled in by the prefix but ignored by the suffix parser
+ *     (the slice after `Foo.` isn't purely a number), so they don't
+ *     inflate `nextRev`.
+ *   - Items / commercial terms / ek maliyet are deep-copied from the
+ *     `source` quote (whichever quote the user clicked from), not
+ *     from the computed root. Revising `Foo.1` gives you `Foo.2` with
+ *     `Foo.1`'s content — the user is iterating, not restarting.
+ *   - The source quote's status, validUntil, and approval timestamps
+ *     are NOT touched. An ONAYLANDI quote stays ONAYLANDI; closing
+ *     #16 naturally.
+ *   - 409 returned on quote-number collision (rare; hand-edited
+ *     numbers can produce one).
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
@@ -53,43 +65,42 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Resolve the root: if source already is a revision, the root is
-    // source.parentQuote; otherwise source itself is the root.
-    const rootId = sourceQuote.parentQuoteId ?? sourceQuote.id;
-    const rootQuote = sourceQuote.parentQuoteId
-      ? await db.quote.findUnique({
-          where: { id: rootId },
-          select: { id: true, quoteNumber: true },
-        })
-      : { id: sourceQuote.id, quoteNumber: sourceQuote.quoteNumber };
+    // Compute the root by stripping any trailing `.{N}` segments from
+    // the source's quote number. Revising the original `Foo`, `Foo.1`,
+    // or even a legacy `Foo.1.2` all collapse to root = `Foo`, so the
+    // next revision lands at `Foo.{N+1}` instead of nesting deeper.
+    // Client wanted flat numbering — `.1.1` is "saçma".
+    const rootMatch = sourceQuote.quoteNumber.match(/^(.+?)(?:\.\d+)*$/);
+    const rootNumber = rootMatch ? rootMatch[1] : sourceQuote.quoteNumber;
 
-    if (!rootQuote) {
-      return NextResponse.json(
-        { error: 'Kök teklif bulunamadı — revizyon zinciri bozuk olabilir' },
-        { status: 500 }
-      );
-    }
-
-    // Next revision = 1 + highest version among all children of the
-    // root. We only count rows whose parentQuoteId is the root, so
-    // siblings of a deleted branch don't poison the counter.
-    const children = await db.quote.findMany({
-      where: { parentQuoteId: rootId },
-      select: { version: true },
+    // Sibling lookup: every quote whose number starts with `${root}.`,
+    // scoped to the same company so a same-named quote at a different
+    // company can't bump this counter.
+    const siblings = await db.quote.findMany({
+      where: {
+        quoteNumber: { startsWith: `${rootNumber}.` },
+        companyId: sourceQuote.companyId,
+      },
+      select: { quoteNumber: true },
     });
-    const maxRev = children.reduce((m, c) => Math.max(m, c.version), 0);
+    const baseLen = rootNumber.length + 1; // skip "Root."
+    const maxRev = siblings.reduce((m, s) => {
+      const suffix = s.quoteNumber.slice(baseLen);
+      // Only count direct children (suffix is purely a number — no
+      // further dots). Legacy multi-dot names like `Foo.1.2` are
+      // pulled in by the prefix but ignored here, so they don't
+      // inflate the flat counter.
+      const n = /^\d+$/.test(suffix) ? parseInt(suffix, 10) : 0;
+      return Math.max(m, n);
+    }, 0);
     const nextRev = maxRev + 1;
 
-    // The new revision's number is just the root's quoteNumber with a
-    // `.{rev}` suffix. Whatever the user named the quote — system code,
-    // ad-hoc string, legacy BTS-YYYY-NNNN — is preserved verbatim.
-    const revisionNumber = `${rootQuote.quoteNumber}.${nextRev}`;
+    // Always one level deep under root — flat sibling, never `.1.1`.
+    const revisionNumber = `${rootNumber}.${nextRev}`;
 
-    // Free-form root names (post-#15) make collisions possible: e.g.,
-    // a separate root named `Foo.1` already exists, and now we'd try to
-    // create `Foo.1` as a revision of root `Foo`. Surface a clean 409
-    // before we mutate anything so the source isn't left orphaned in
-    // REVIZYON status.
+    // Defense-in-depth: even with the maxRev calc above, a manually
+    // named quote could collide. Surface a clean 409 instead of letting
+    // Prisma's unique-violation bubble up.
     const collision = await db.quote.findUnique({
       where: { quoteNumber: revisionNumber },
       select: { id: true },
@@ -103,31 +114,52 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Mark the source quote as REVIZYON (superseded). We mark source,
-    // not root, so intermediate revisions get flagged correctly when
-    // the user revises them.
-    await db.quote.update({
-      where: { id: sourceQuote.id },
-      data: { status: 'REVIZYON' },
-    });
-
-    // Create the new revision quote, linked to the root
+    // After #9 the source quote is left untouched — revisions are now
+    // standalone new quotes, not children of the original. The user's
+    // original ONAYLANDI / GONDERILDI / etc. status stays as-is so the
+    // approved-and-shipped record isn't corrupted by the user clicking
+    // "Revizyon Oluştur" (#16 follows from this naturally).
+    //
+    // The new quote starts as TASLAK with no `parentQuoteId` link, no
+    // `version` bookkeeping. List grouping that used to nest revisions
+    // under their root still works for legacy parent-linked rows and is
+    // a no-op for the new standalone ones.
     const newQuote = await db.quote.create({
       data: {
         quoteNumber: revisionNumber,
         companyId: sourceQuote.companyId,
         projectId: sourceQuote.projectId,
         subject: sourceQuote.subject,
+        // Description carries free-form metadata (project notes, internal
+        // tags). Losing it on revision was an oversight — the user
+        // expects the new revision to start as a faithful copy of the
+        // source they're iterating on.
+        description: sourceQuote.description,
         currency: sourceQuote.currency,
         exchangeRate: sourceQuote.exchangeRate,
+        // Preserve the source's exchange-rate context exactly. A
+        // revision is "what if we changed X about this approved
+        // quote" — it should NOT silently re-fetch today's TCMB
+        // rates (that's the clone semantics, which is a different
+        // intent). Same for protectionMap (per-currency override
+        // matrix). Use Prisma.JsonNull for null source values so
+        // Prisma writes a JSON null instead of skipping the column.
+        rateSnapshot: sourceQuote.rateSnapshot ?? Prisma.JsonNull,
         protectionPct: sourceQuote.protectionPct,
+        protectionMap: sourceQuote.protectionMap ?? Prisma.JsonNull,
         subtotal: sourceQuote.subtotal,
+        // Quote-level discount fields. Without these, the new revision's
+        // grandTotal would still reflect a discount the discount fields
+        // claim isn't there — totals look right but the editor shows
+        // "no discount" until the user re-enters it. The scope id
+        // points at a SUBTOTAL QuoteItem so it has to be remapped via
+        // `oldToNewId` after items are created (see below).
+        discountTotal: sourceQuote.discountTotal,
+        discountPct: sourceQuote.discountPct,
         vatTotal: sourceQuote.vatTotal,
         grandTotal: sourceQuote.grandTotal,
         status: 'TASLAK',
         validityDays: sourceQuote.validityDays,
-        version: nextRev,
-        parentQuoteId: rootId,
         notes: sourceQuote.notes,
         language: sourceQuote.language,
         createdById: user.id,
@@ -216,6 +248,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Remap the optional `discountScopeSubtotalId` — it points at a
+    // SUBTOTAL QuoteItem and item IDs were just regenerated. Done after
+    // both passes so the SUBTOTAL row is guaranteed to exist in the
+    // map. If the source's scope target is missing from the map (e.g.
+    // dangling FK in legacy data) we fall back to null so the discount
+    // applies quote-wide rather than crashing.
+    if (sourceQuote.discountScopeSubtotalId) {
+      const remappedScopeId =
+        oldToNewId.get(sourceQuote.discountScopeSubtotalId) ?? null;
+      if (remappedScopeId) {
+        await db.quote.update({
+          where: { id: newQuote.id },
+          data: { discountScopeSubtotalId: remappedScopeId },
+        });
+      } else {
+        console.warn(
+          `[revisions] dangling discountScopeSubtotalId=${sourceQuote.discountScopeSubtotalId} on source quote ${sourceQuote.id}; revision will apply discount quote-wide`
+        );
+      }
+    }
+
     // Copy all QuoteCommercialTerms
     if (sourceQuote.commercialTerms.length > 0) {
       await db.quoteCommercialTerm.createMany({
@@ -250,9 +303,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         changes: {
           sourceQuoteId: sourceQuote.id,
           sourceQuoteNumber: sourceQuote.quoteNumber,
-          rootQuoteId: rootId,
-          rootQuoteNumber: rootQuote.quoteNumber,
-          version: nextRev,
+          // Root is what numbering is keyed off; useful in the audit
+          // trail when source is itself a revision (rootNumber !=
+          // sourceQuoteNumber in that case).
+          rootNumber,
+          // `revIndex` rather than `version` since the standalone
+          // quote no longer carries a `version` column value.
+          revIndex: nextRev,
         },
       },
     });
@@ -283,24 +340,44 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { id: quoteId } = await params;
 
-    // Get the quote to check existence and resolve the root.
     const quote = await db.quote.findUnique({
       where: { id: quoteId },
-      select: { id: true, version: true, parentQuoteId: true },
+      select: { id: true, quoteNumber: true, version: true, parentQuoteId: true, companyId: true },
     });
 
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Root = the caller's parent if it has one, else the caller itself.
-    // Revisions of revisions aren't supported, so one hop is enough.
-    const rootId = quote.parentQuoteId ?? quote.id;
+    // Find the family of related quotes for the version sidebar. Two
+    // schemes coexist after #9:
+    //   - Legacy quotes (created before #9) link via parentQuoteId →
+    //     gather root + every direct child.
+    //   - New standalone revisions have no parent link → gather them by
+    //     quote-number prefix instead, scoped to the same company so an
+    //     unrelated quote with a colliding name doesn't pollute the
+    //     family.
+    // We compute a "root number" by trimming any trailing `.{N}` from
+    // the current quote's number, then match the root + everything
+    // that starts with `${rootNumber}.` (covers `.1`, `.1.2`, etc.).
+    const rootMatch = quote.quoteNumber.match(/^(.+?)(?:\.\d+)*$/);
+    const rootNumber = rootMatch ? rootMatch[1] : quote.quoteNumber;
+    const legacyRootId = quote.parentQuoteId ?? quote.id;
 
-    // Pull the root itself plus every direct child in one query.
     const revisions = await db.quote.findMany({
       where: {
-        OR: [{ id: rootId }, { parentQuoteId: rootId }],
+        OR: [
+          // Legacy parent-linked tree
+          { id: legacyRootId },
+          { parentQuoteId: legacyRootId },
+          // New standalone tree (matched by quote-number prefix +
+          // company so we don't accidentally pull unrelated rows).
+          { quoteNumber: rootNumber, companyId: quote.companyId },
+          {
+            quoteNumber: { startsWith: `${rootNumber}.` },
+            companyId: quote.companyId,
+          },
+        ],
       },
       select: {
         id: true,
@@ -318,11 +395,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           },
         },
       },
-      // Root first (version=1 with no parent), then children by version desc.
-      // Prisma can't express "root first" directly, so caller sorts if it
-      // wants — we return newest-child-first as that's what the sidebar
-      // expects.
-      orderBy: { version: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     return NextResponse.json({

@@ -107,6 +107,20 @@ describe('Quote Number', () => {
       });
     });
 
+    it('parses {INITIALS}{NNNN}.{REV} (revision without system code)', () => {
+      // Standalone revisions append `.{rev}` directly to the base
+      // number — no `-SYSTEM` between them. Previously this was
+      // unrecognized, which corrupted next-sequence calculation when
+      // a revision happened to be the lex-largest match in the user's
+      // quote list (`LC0014.1` > `LC0014` lexicographically).
+      expect(parseQuoteNumber('LC0014.1')).toEqual({
+        initials: 'LC',
+        sequence: 14,
+        systemCode: '',
+        revision: 1,
+      });
+    });
+
     it('parses the legacy BTS-YYYY-NNNN form for backward compatibility', () => {
       expect(parseQuoteNumber('BTS-2025-0042')).toEqual({
         initials: 'BTS',
@@ -153,6 +167,10 @@ describe('Quote Number', () => {
       expect(getNextSequence('SA0042')).toBe(43);
       expect(getNextSequence('SA0051-YAS')).toBe(52);
       expect(getNextSequence('SA0051-YAS.2')).toBe(52);
+      // Revisions without a system code (LC0014.1) must yield the
+      // base sequence + 1, not 1 (which was the regression that
+      // produced unique-constraint failures on new-quote create).
+      expect(getNextSequence('LC0014.1')).toBe(15);
     });
 
     it('increments from the parsed sequence in the legacy BTS format', () => {

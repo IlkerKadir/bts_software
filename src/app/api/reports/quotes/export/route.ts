@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs';
 const STATUS_LABELS: Record<QuoteStatus, string> = {
   TASLAK: 'Taslak',
   ONAY_BEKLIYOR: 'Onay Bekliyor',
+  DUZENLEME_TALEP_EDILDI: 'Düzenleme Talep Edildi',
   ONAYLANDI: 'Onaylandı',
   GONDERILDI: 'Gönderildi',
   TAKIPTE: 'Takipte',
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest) {
     const statusCounts: Record<QuoteStatus, { count: number; value: number }> = {
       TASLAK: { count: 0, value: 0 },
       ONAY_BEKLIYOR: { count: 0, value: 0 },
+      DUZENLEME_TALEP_EDILDI: { count: 0, value: 0 },
       ONAYLANDI: { count: 0, value: 0 },
       GONDERILDI: { count: 0, value: 0 },
       TAKIPTE: { count: 0, value: 0 },

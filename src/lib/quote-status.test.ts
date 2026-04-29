@@ -33,12 +33,37 @@ describe('Quote Status Transitions', () => {
       expect(canTransitionTo('ONAY_BEKLIYOR', 'TASLAK')).toBe(true);
     });
 
+    it('allows ONAY_BEKLIYOR to DUZENLEME_TALEP_EDILDI (approver edit request)', () => {
+      expect(canTransitionTo('ONAY_BEKLIYOR', 'DUZENLEME_TALEP_EDILDI')).toBe(true);
+    });
+
+    it('allows DUZENLEME_TALEP_EDILDI to ONAY_BEKLIYOR (creator resubmits after edits)', () => {
+      expect(canTransitionTo('DUZENLEME_TALEP_EDILDI', 'ONAY_BEKLIYOR')).toBe(true);
+    });
+
+    it('allows DUZENLEME_TALEP_EDILDI to IPTAL', () => {
+      expect(canTransitionTo('DUZENLEME_TALEP_EDILDI', 'IPTAL')).toBe(true);
+    });
+
+    it('does NOT allow DUZENLEME_TALEP_EDILDI directly to ONAYLANDI (must go through ONAY_BEKLIYOR)', () => {
+      expect(canTransitionTo('DUZENLEME_TALEP_EDILDI', 'ONAYLANDI')).toBe(false);
+    });
+
     it('allows ONAYLANDI to GONDERILDI', () => {
       expect(canTransitionTo('ONAYLANDI', 'GONDERILDI')).toBe(true);
     });
 
-    it('allows ONAYLANDI to ONAY_BEKLIYOR (creator can re-submit before sending)', () => {
-      expect(canTransitionTo('ONAYLANDI', 'ONAY_BEKLIYOR')).toBe(true);
+    it('allows ONAYLANDI to TASLAK (creator can reopen for edits before sending)', () => {
+      // The "tekrar onaya gönder" button on an approved quote routes
+      // through TASLAK so the creator can edit, then re-submit via the
+      // standard TASLAK → ONAY_BEKLIYOR path. Direct ONAYLANDI →
+      // ONAY_BEKLIYOR is no longer allowed — re-approval without an
+      // edit doesn't really make sense.
+      expect(canTransitionTo('ONAYLANDI', 'TASLAK')).toBe(true);
+    });
+
+    it('does NOT allow ONAYLANDI to ONAY_BEKLIYOR (must go through TASLAK)', () => {
+      expect(canTransitionTo('ONAYLANDI', 'ONAY_BEKLIYOR')).toBe(false);
     });
 
     it('does NOT allow GONDERILDI back to ONAY_BEKLIYOR (no re-approval after send)', () => {
@@ -121,11 +146,12 @@ describe('Quote Status Transitions', () => {
       expect(transitions).toContain('REVIZYON');
     });
 
-    it('returns correct transitions for ONAYLANDI (includes re-submit path)', () => {
+    it('returns correct transitions for ONAYLANDI (includes reopen-for-edits path)', () => {
       const transitions = getAvailableTransitions('ONAYLANDI');
       expect(transitions).toContain('GONDERILDI');
       expect(transitions).toContain('IPTAL');
-      expect(transitions).toContain('ONAY_BEKLIYOR');
+      expect(transitions).toContain('TASLAK');
+      expect(transitions).not.toContain('ONAY_BEKLIYOR');
     });
 
     it('returns empty array for KAZANILDI (terminal)', () => {

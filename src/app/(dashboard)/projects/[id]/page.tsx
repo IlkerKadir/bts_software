@@ -38,6 +38,7 @@ import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 interface ProjectQuote {
   id: string;
   quoteNumber: string;
+  subject?: string | null;
   status: string;
   grandTotal: number | null;
   currency: string;
@@ -409,6 +410,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
           (q) =>
             q.status === 'TASLAK' ||
             q.status === 'ONAY_BEKLIYOR' ||
+            q.status === 'DUZENLEME_TALEP_EDILDI' ||
             q.status === 'GONDERILDI' ||
             q.status === 'TAKIPTE'
         ).length,
@@ -662,6 +664,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
               <thead>
                 <tr className="bg-accent-50 border-b border-accent-200 text-xs uppercase tracking-wider text-accent-600">
                   <th className="px-4 py-2.5 text-left">Teklif No</th>
+                  <th className="px-4 py-2.5 text-left">Teklif Adı</th>
                   <th className="px-4 py-2.5 text-left">Durum</th>
                   <th className="px-4 py-2.5 text-right">Genel Toplam</th>
                   <th className="px-4 py-2.5 text-left">Tarih</th>
@@ -676,6 +679,9 @@ export default function ProjectDetailPage({ params }: PageProps) {
                   >
                     <td className="px-4 py-2.5 font-medium text-primary-900">
                       {quote.quoteNumber}
+                    </td>
+                    <td className="px-4 py-2.5 text-primary-700">
+                      {quote.subject || '—'}
                     </td>
                     <td className="px-4 py-2.5">
                       <Badge status={quote.status as any}>

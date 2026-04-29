@@ -547,6 +547,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   const isEditable = quote
     ? (quote.status === 'TASLAK' || quote.status === 'REVIZYON' ||
+       quote.status === 'DUZENLEME_TALEP_EDILDI' ||
        (quote.status === 'ONAY_BEKLIYOR' && user?.role.canApprove))
     : false;
 
@@ -1949,7 +1950,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       const res = await fetch(`/api/quotes/${quoteId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'TASLAK', note: note.trim() }),
+        body: JSON.stringify({ status: 'DUZENLEME_TALEP_EDILDI', note: note.trim() }),
       });
 
       if (!res.ok) {
@@ -1957,7 +1958,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         throw new Error(data.error || 'Düzenleme talebi gönderilemedi');
       }
 
-      setQuote((prev) => (prev ? { ...prev, status: 'TASLAK' } : prev));
+      setQuote((prev) => (prev ? { ...prev, status: 'DUZENLEME_TALEP_EDILDI' } : prev));
       setSuccessMessage('Düzenleme talebi gönderildi');
 
       setTimeout(() => {
@@ -2434,9 +2435,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Render: Main ───────────────────────────────────────────────────────────
 
-  // "Submit for Approval" — any user can submit their quote for approval
+  // "Submit for Approval" — the creator can resubmit their own quote.
+  // DUZENLEME_TALEP_EDILDI is the approver-rejected state; the creator
+  // edits, then re-submits via this same button. The state machine
+  // permits DUZENLEME_TALEP_EDILDI → ONAY_BEKLIYOR and the status route
+  // enforces creator-only on the server side.
   const canSubmitForApproval =
-    (quote.status === 'TASLAK' || quote.status === 'REVIZYON') && !hasChanges
+    (quote.status === 'TASLAK' ||
+      quote.status === 'REVIZYON' ||
+      quote.status === 'DUZENLEME_TALEP_EDILDI') &&
+    !hasChanges
       ? handleSubmitForApproval
       : undefined;
 

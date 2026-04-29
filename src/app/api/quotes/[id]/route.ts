@@ -385,8 +385,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Only allow deleting draft quotes
-    if (existingQuote.status !== 'TASLAK') {
+    // Only allow deleting pre-approval quotes (TASLAK + the
+    // approver-rejected DUZENLEME_TALEP_EDILDI). The latter behaves
+    // like a draft — the creator may abandon it instead of fixing.
+    if (
+      existingQuote.status !== 'TASLAK' &&
+      existingQuote.status !== 'DUZENLEME_TALEP_EDILDI'
+    ) {
       return NextResponse.json(
         { error: 'Sadece taslak teklifler silinebilir' },
         { status: 400 }

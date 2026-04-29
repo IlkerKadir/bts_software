@@ -225,6 +225,12 @@ model Product {
 enum QuoteStatus {
   TASLAK
   ONAY_BEKLIYOR
+  /// Approver requested edits on a pending quote. Distinct from
+  /// TASLAK so the salesperson sees explicitly that an approver
+  /// kicked the quote back, not just that they retracted it. The
+  /// creator transitions out via DUZENLEME_TALEP_EDILDI →
+  /// ONAY_BEKLIYOR ("yeniden onaya gönder").
+  DUZENLEME_TALEP_EDILDI
   ONAYLANDI
   GONDERILDI
   TAKIPTE

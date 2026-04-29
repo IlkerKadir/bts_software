@@ -25,6 +25,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: {
             id: true,
             quoteNumber: true,
+            subject: true,
             status: true,
             grandTotal: true,
             currency: true,

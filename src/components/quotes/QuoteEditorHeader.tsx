@@ -33,6 +33,7 @@ import { TeklifNoBuilderModal } from './TeklifNoBuilderModal';
 type QuoteStatus =
   | 'TASLAK'
   | 'ONAY_BEKLIYOR'
+  | 'DUZENLEME_TALEP_EDILDI'
   | 'ONAYLANDI'
   | 'GONDERILDI'
   | 'TAKIPTE'
@@ -156,9 +157,16 @@ export function QuoteEditorHeader({
   onExport,
   onQuoteNumberChange,
 }: QuoteEditorHeaderProps) {
-  // Allow editing for approvers when status is ONAY_BEKLIYOR
+  // Allow editing for approvers when status is ONAY_BEKLIYOR.
+  // DUZENLEME_TALEP_EDILDI behaves like TASLAK — the creator edits the
+  // approver-rejected quote and re-submits via the same Save / Onaya
+  // Gönder flow, so this header has to unlock the same controls.
   const router = useRouter();
-  const isEditable = status === 'TASLAK' || status === 'REVIZYON' || (status === 'ONAY_BEKLIYOR' && !!(onApprove));
+  const isEditable =
+    status === 'TASLAK' ||
+    status === 'REVIZYON' ||
+    status === 'DUZENLEME_TALEP_EDILDI' ||
+    (status === 'ONAY_BEKLIYOR' && !!onApprove);
 
   // Project selection state
   const [projects, setProjects] = useState<ProjectOption[]>([]);

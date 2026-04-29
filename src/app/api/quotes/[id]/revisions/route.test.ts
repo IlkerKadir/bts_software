@@ -91,9 +91,7 @@ describe('GET /api/quotes/[id]/revisions', () => {
   });
 
   it('returns all revisions for a quote with parent', async () => {
-    vi.mocked(db.quote.findUnique)
-      .mockResolvedValueOnce(mockQuote as never)
-      .mockResolvedValueOnce({ id: 'parentQuote1', parentQuoteId: null } as never);
+    vi.mocked(db.quote.findUnique).mockResolvedValue(mockQuote as never);
     vi.mocked(db.quote.findMany).mockResolvedValue(mockRevisions as never);
 
     const request = new NextRequest('http://localhost/api/quotes/quote1/revisions');
