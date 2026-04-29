@@ -206,7 +206,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Build update data
     const updateData: Prisma.QuoteUpdateInput = {};
 
-    if (body.companyId !== undefined) updateData.company = { connect: { id: body.companyId } };
+    // companyId and projectId update independently. The schema treats a
+    // project as a tag/grouping that can hold quotes for multiple
+    // different companies (`Project.clientId` is just the project's
+    // primary owner — quotes attached to it may target other companies),
+    // so changing one does not invalidate the other.
+    if (body.companyId !== undefined) {
+      updateData.company = { connect: { id: body.companyId } };
+    }
     if (body.projectId !== undefined) {
       if (body.projectId) {
         updateData.project = { connect: { id: body.projectId } };
@@ -273,7 +280,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Build structured diff for history: { field: { from, to } }
     const trackableFields = [
       'refNo', 'currency', 'subject', 'description', 'language',
-      'projectId', 'exchangeRate',
+      'companyId', 'projectId', 'exchangeRate',
       'validityDays', 'protectionPct', 'protectionMap', 'notes',
     ] as const;
 
@@ -320,6 +327,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
       (changes.projectId as Record<string, unknown>).fromName = oldProject?.name ?? null;
       (changes.projectId as Record<string, unknown>).toName = newProject?.name ?? null;
+    }
+
+    // Same name-resolution treatment for companyId so the audit timeline
+    // shows "ABC İnşaat → XYZ Ltd." instead of opaque cuids.
+    if (changes.companyId) {
+      const oldCompanyId = changes.companyId.from as string | null;
+      const newCompanyId = changes.companyId.to as string | null;
+      const [oldCompany, newCompany] = await Promise.all([
+        oldCompanyId ? db.company.findUnique({ where: { id: oldCompanyId }, select: { name: true } }) : null,
+        newCompanyId ? db.company.findUnique({ where: { id: newCompanyId }, select: { name: true } }) : null,
+      ]);
+      (changes.companyId as Record<string, unknown>).fromName = oldCompany?.name ?? null;
+      (changes.companyId as Record<string, unknown>).toName = newCompany?.name ?? null;
     }
 
     // Only create history entry if there are actual changes

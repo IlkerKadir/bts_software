@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
               canManageUsers: true,
               canEditProducts: true,
               canDelete: true,
+              canDeleteProducts: true,
             },
           },
           isActive: true,

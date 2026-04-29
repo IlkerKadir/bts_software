@@ -69,6 +69,13 @@ export interface QuoteEditorHeaderProps {
   isSaving: boolean;
   /** Full name of the current session user (for RefNo builder initials) */
   userFullName?: string;
+  /** Companies the user can switch the quote to. Provided by the
+   *  parent so the dropdown doesn't have to fetch on every header
+   *  render. Empty array hides the dropdown affordance. */
+  availableCompanies?: { id: string; name: string }[];
+  onCompanyChange?: (companyId: string) => void;
+  /** Disables the company dropdown while a change-company request is in flight. */
+  isChangingCompany?: boolean;
   onProjectChange: (projectId: string | null) => void;
   onRefNoChange: (value: string) => void;
   onSystemBrandChange: (value: string) => void;
@@ -111,6 +118,9 @@ export function QuoteEditorHeader({
   status,
   companyName,
   companyId,
+  availableCompanies,
+  onCompanyChange,
+  isChangingCompany,
   projectId,
   projectName,
   refNo,
@@ -155,6 +165,8 @@ export function QuoteEditorHeader({
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
+  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
+  const companyDropdownRef = useRef<HTMLDivElement>(null);
 
   // Exchange rate modal state
   const [showExchangeRateModal, setShowExchangeRateModal] = useState(false);
@@ -180,6 +192,18 @@ export function QuoteEditorHeader({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showProjectDropdown]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target as Node)) {
+        setShowCompanyDropdown(false);
+      }
+    }
+    if (showCompanyDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showCompanyDropdown]);
 
   // Fetch all active projects (a quote can be for any project, sent to any company)
   useEffect(() => {
@@ -227,11 +251,57 @@ export function QuoteEditorHeader({
             <ArrowLeft className="w-4 h-4" />
           </button>
 
-          {/* Company */}
-          <div className="flex items-center gap-1.5 text-sm text-primary-700">
-            <Building2 className="h-4 w-4 shrink-0 text-primary-500" />
-            <span className="font-medium truncate max-w-[200px]">{companyName}</span>
-          </div>
+          {/* Company — dropdown when editable, static label otherwise */}
+          {isEditable && availableCompanies && availableCompanies.length > 0 && onCompanyChange ? (
+            <div className="relative" ref={companyDropdownRef}>
+              <button
+                type="button"
+                onClick={() => !isChangingCompany && setShowCompanyDropdown(!showCompanyDropdown)}
+                disabled={isChangingCompany}
+                className={cn(
+                  'flex items-center gap-1.5 text-sm text-primary-700 px-2 py-1 rounded-md transition-colors',
+                  !isChangingCompany && 'hover:bg-primary-100 cursor-pointer',
+                  isChangingCompany && 'opacity-60 cursor-wait'
+                )}
+                title="Firmayı değiştir"
+              >
+                <Building2 className="h-4 w-4 shrink-0 text-primary-500" />
+                <span className="font-medium truncate max-w-[200px]">{companyName}</span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 text-primary-400 transition-transform',
+                    showCompanyDropdown && 'rotate-180'
+                  )}
+                />
+              </button>
+              {showCompanyDropdown && (
+                <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-primary-200 rounded-lg shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
+                  {availableCompanies.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setShowCompanyDropdown(false);
+                        if (c.id !== companyId) onCompanyChange(c.id);
+                      }}
+                      className={cn(
+                        'w-full text-left px-3 py-1.5 text-sm hover:bg-accent-50 transition-colors flex items-center gap-2',
+                        c.id === companyId && 'bg-accent-50 font-medium text-primary-900'
+                      )}
+                    >
+                      {c.id === companyId && <Building2 className="h-3.5 w-3.5 text-accent-600" />}
+                      <span className="truncate">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-sm text-primary-700">
+              <Building2 className="h-4 w-4 shrink-0 text-primary-500" />
+              <span className="font-medium truncate max-w-[200px]">{companyName}</span>
+            </div>
+          )}
 
           {/* Divider */}
           <span className="hidden sm:block h-4 w-px bg-primary-200" aria-hidden />

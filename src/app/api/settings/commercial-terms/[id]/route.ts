@@ -59,6 +59,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ template });
   } catch (error) {
+    // Friendly mapping for the (category, name) unique-constraint violation.
+    if (
+      typeof error === 'object' && error !== null && 'code' in error &&
+      (error as { code: string }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { error: 'Bu ad zaten kullanılıyor — farklı bir ad seçin' },
+        { status: 409 }
+      );
+    }
     console.error('Commercial terms PUT error:', error);
     return NextResponse.json(
       { error: 'Ticari sart guncellenirken hata olustu' },

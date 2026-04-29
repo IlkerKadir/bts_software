@@ -18,6 +18,17 @@ vi.mock('@/lib/db', () => ({
     quoteHistory: {
       create: vi.fn(),
     },
+    // PUT handler resolves company/project names for the audit-history
+    // diff (`{ from, to, fromName, toName }`). Mock returns null which
+    // is the route's "not found / unresolved" path — keeps the
+    // happy-path tests green without forcing every test to populate
+    // companies/projects.
+    company: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    project: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   },
 }));
 

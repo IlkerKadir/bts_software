@@ -113,10 +113,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user can delete
-    if (!user.role.canDelete) {
+    // Product-catalog deletes use a dedicated permission. The general
+    // `canDelete` flag covers quotes/companies/projects/etc. but NOT
+    // products — product rows are master-catalog data that survives
+    // beyond any one quote, so removal is gated separately.
+    if (!user.role.canDeleteProducts) {
       return NextResponse.json(
-        { error: 'Bu işlem için yetkiniz bulunmuyor' },
+        { error: 'Ürün silme yetkiniz bulunmuyor' },
         { status: 403 }
       );
     }

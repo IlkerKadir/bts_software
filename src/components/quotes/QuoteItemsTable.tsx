@@ -5,6 +5,7 @@ import {
   Plus, Type, StickyNote, Wrench, AlertTriangle,
   Package, DollarSign, Calculator, Clock, Layers,
   Filter, X, Search, ChevronDown, Sigma,
+  Copy, Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button, Modal } from '@/components/ui';
@@ -54,6 +55,12 @@ export interface QuoteItemsTableProps {
    *  per row when the user bulk-applies on a large quote. When omitted
    *  the modal falls back to per-row onItemUpdate. */
   onBulkKatsayiApply?: (ids: string[], value: number) => void;
+  /** Bulk delete (#5). Single confirm + parallel DELETEs + descendant
+   *  pre-filter. Required when the multi-row toolbar is exposed. */
+  onBulkDelete?: (ids: string[]) => Promise<void> | void;
+  /** Bulk duplicate (#5). Iterates per-row in items-array order so the
+   *  cloned rows land deterministically. */
+  onBulkDuplicate?: (ids: string[]) => Promise<void> | void;
   onAddHeader: () => void;
   onAddNote: () => void;
   onAddCustomItem?: () => void;
@@ -135,6 +142,8 @@ export function QuoteItemsTable({
   onAddProduct,
   onSwapProductRequest,
   onBulkKatsayiApply,
+  onBulkDelete,
+  onBulkDuplicate,
   onAddHeader,
   onAddNote,
   onAddCustomItem,
@@ -152,6 +161,37 @@ export function QuoteItemsTable({
 }: QuoteItemsTableProps) {
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  // Multi-row selection (revision item #5). User checks rows in the
+  // editor; the selection toolbar above the table offers Çoğalt and
+  // Sil. Drag-handlers below also detect when the dragged row is in
+  // selection and move all selected together. Limited to top-level
+  // rows (sub-items of SETs aren't selectable — moving them
+  // independently of their parent breaks the hierarchy).
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const toggleRowSelected = useCallback((itemId: string) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelectedRowIds(new Set()), []);
+  const [bulkActionBusy, setBulkActionBusy] = useState(false);
+
+  // Prune stale IDs (rows deleted via single-row context menu, revert,
+  // etc.) so the toolbar count stays honest and `isMultiDrag`
+  // detection isn't tricked by ghost selections.
+  useEffect(() => {
+    setSelectedRowIds((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(items.map((i) => i.id));
+      const next = new Set<string>();
+      prev.forEach((id) => { if (valid.has(id)) next.add(id); });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
 
   // Collapsed parent state for sub-row toggle
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
@@ -180,6 +220,48 @@ export function QuoteItemsTable({
     setBulkKatsayiInput('');
     setBulkKatsayiFilter('');
   }, []);
+  // Bulk-duplicate of all selected rows. Prefers the editor-level
+  // batch handler (single confirm-free pass) when available; falls
+  // back to iterating onItemDuplicate which surfaces a per-row
+  // confirm prompt — kept as a safety net only.
+  const handleBulkDuplicateClick = useCallback(async () => {
+    if (selectedRowIds.size === 0) return;
+    const ids = Array.from(selectedRowIds);
+    setBulkActionBusy(true);
+    try {
+      if (onBulkDuplicate) {
+        await onBulkDuplicate(ids);
+      } else {
+        for (const id of ids) onItemDuplicate(id);
+      }
+    } finally {
+      setBulkActionBusy(false);
+      setSelectedRowIds(new Set());
+    }
+  }, [selectedRowIds, onBulkDuplicate, onItemDuplicate]);
+
+  // Bulk-delete: editor's onBulkDelete owns the single confirm + the
+  // parent/child cascade pre-filter. The fallback path (per-row
+  // onItemDelete) is intentionally avoided once onBulkDelete is wired,
+  // because the per-row handler still pops its own confirm dialog.
+  const handleBulkDeleteClick = useCallback(async () => {
+    if (selectedRowIds.size === 0) return;
+    const ids = Array.from(selectedRowIds);
+    setBulkActionBusy(true);
+    try {
+      if (onBulkDelete) {
+        await onBulkDelete(ids);
+      } else {
+        // No-op fallback: refuse to fire N per-row confirms. Caller
+        // must wire onBulkDelete to use the toolbar.
+        console.warn('Bulk delete invoked without onBulkDelete prop — toolbar action is a no-op');
+      }
+    } finally {
+      setBulkActionBusy(false);
+      setSelectedRowIds(new Set());
+    }
+  }, [selectedRowIds, onBulkDelete]);
+
   const applyBulkKatsayi = useCallback(() => {
     const raw = bulkKatsayiInput.trim().replace(',', '.');
     const value = Number(raw);
@@ -813,14 +895,20 @@ export function QuoteItemsTable({
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', String(index));
 
+      // Multi-drag detection: if the dragged row is in the current
+      // selection (and the selection has >1 row), the chip shows the
+      // count and `handleDrop` will move all selected together.
+      const item = items[index];
+      const isMultiDrag = !!item && selectedRowIds.has(item.id) && selectedRowIds.size > 1;
+
       // Replace the browser's default drag ghost (a full-width snapshot
       // of the row, which looks visually misaligned because the row is
       // as wide as the table) with a small floating chip that names the
       // item. Chip is appended off-screen, snapshotted by the browser,
       // and self-removed on the next frame.
-      const item = items[index];
-      const label =
-        (item?.description?.trim() || item?.code?.trim() || 'Kalem').slice(0, 60);
+      const label = isMultiDrag
+        ? `${selectedRowIds.size} kalem`
+        : (item?.description?.trim() || item?.code?.trim() || 'Kalem').slice(0, 60);
       const chip = document.createElement('div');
       chip.textContent = `↕  ${label}`;
       chip.style.cssText = [
@@ -862,7 +950,7 @@ export function QuoteItemsTable({
       pointerYRef.current = e.clientY; // seed so first tick is correct
       startAutoScrollLoop();
     },
-    [items, startAutoScrollLoop, stopAutoScrollLoop],
+    [items, selectedRowIds, startAutoScrollLoop, stopAutoScrollLoop],
   );
 
   const handleDragOver = useCallback(
@@ -879,7 +967,37 @@ export function QuoteItemsTable({
       stopAutoScrollLoop(); // belt & suspenders — dragend may not fire on all browsers after drop
       const sourceIndex = dragIndex;
       setDragIndex(null);
-      if (sourceIndex === null || sourceIndex === targetIndex) return;
+      if (sourceIndex === null) return;
+
+      // Multi-drag: source row is in the selection AND ≥2 rows
+      // selected. Pull all selected items out of the array (preserving
+      // relative order), then insert them as a block at the target's
+      // position in the remaining list. Dropping onto a row that's
+      // itself in the selection is a no-op (you're dropping the group
+      // onto itself).
+      const sourceItem = items[sourceIndex];
+      const targetItem = items[targetIndex];
+      const isMultiDrag = !!sourceItem && selectedRowIds.has(sourceItem.id) && selectedRowIds.size > 1;
+
+      if (isMultiDrag) {
+        if (!targetItem || selectedRowIds.has(targetItem.id)) return;
+        const selected = items.filter((it) => selectedRowIds.has(it.id));
+        const remaining = items.filter((it) => !selectedRowIds.has(it.id));
+        const targetIdx = remaining.findIndex((it) => it.id === targetItem.id);
+        if (targetIdx < 0) return;
+        remaining.splice(targetIdx, 0, ...selected);
+        const reordered = remaining.map((item, idx) => ({
+          ...item,
+          sortOrder: idx + 1,
+        }));
+        onReorder(reordered);
+        // Selection persists after the move so the user can keep
+        // moving / duplicating the group; clear via the toolbar
+        // "Temizle" link.
+        return;
+      }
+
+      if (sourceIndex === targetIndex) return;
 
       const updated = [...items];
       const [moved] = updated.splice(sourceIndex, 1);
@@ -890,7 +1008,7 @@ export function QuoteItemsTable({
       }));
       onReorder(reordered);
     },
-    [dragIndex, items, onReorder, stopAutoScrollLoop],
+    [dragIndex, items, selectedRowIds, onReorder, stopAutoScrollLoop],
   );
 
   // Belt-and-suspenders teardown on unmount: if the component
@@ -1282,6 +1400,46 @@ export function QuoteItemsTable({
       */}
       <div>
         {/* Floating sticky header — visual duplicate of the thead */}
+        {/* Multi-row selection toolbar (#5). Appears when ≥1 row is
+            checked; offers Çoğalt + Sil + Temizle. Drag-to-move while
+            selection is active groups all selected rows together. */}
+        {selectedRowIds.size > 0 && (
+          <div className="sticky top-0 z-40 flex items-center justify-between gap-3 rounded-lg border border-primary-300 bg-primary-50 px-4 py-2 mb-2 shadow-sm">
+            <span className="text-sm text-primary-800">
+              <span className="font-semibold">{selectedRowIds.size}</span> satır seçili
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleBulkDuplicateClick}
+                disabled={bulkActionBusy}
+                title="Seçili satırları çoğalt"
+              >
+                <Copy className="h-3.5 w-3.5" /> Çoğalt
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleBulkDeleteClick}
+                disabled={bulkActionBusy}
+                className="text-red-600 hover:bg-red-50"
+                title="Seçili satırları sil"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Sil
+              </Button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={bulkActionBusy}
+                className="text-xs text-primary-600 hover:underline ml-1"
+              >
+                Temizle
+              </button>
+            </div>
+          </div>
+        )}
+
         <div
           className="sticky top-0 z-30 overflow-hidden rounded-t-lg border border-b-0 border-accent-200 bg-white"
           aria-hidden="true"
@@ -1415,6 +1573,8 @@ export function QuoteItemsTable({
                         ? () => onSwapProductRequest(item.id)
                         : undefined
                     }
+                    isSelected={selectedRowIds.has(item.id)}
+                    onToggleSelected={() => toggleRowSelected(item.id)}
                     priceLabelOptions={priceLabelCatalog}
                     unitOptions={unitCatalog}
                     onAddSectionDiscount={

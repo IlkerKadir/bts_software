@@ -22,7 +22,13 @@ model Role {
   /// user/role admin rights.
   canManageSettings  Boolean  @default(false)
   canEditProducts    Boolean  @default(false)
+  /// `canDelete` covers quotes (drafts only), companies, projects, and
+  /// other operational records. Product-catalog deletes are gated by a
+  /// separate flag — `canDeleteProducts` — so a salesperson can clean
+  /// up their own drafts/companies/projects without ever being able to
+  /// remove a product from the master catalog.
   canDelete          Boolean  @default(false)
+  canDeleteProducts  Boolean  @default(false)
   canOverrideKatsayi Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

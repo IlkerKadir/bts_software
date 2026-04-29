@@ -105,6 +105,11 @@ export interface QuoteItemRowProps {
    *  row, keeping quantity/katsayı/etc. Only meaningful for PRODUCT and
    *  SET rows; the parent decides when to wire it. */
   onSwapProduct?: () => void;
+  /** Multi-row selection (#5). When provided, a checkbox is rendered
+   *  in the drag column. Only top-level rows opt in — sub-items of
+   *  SETs are not selectable on their own. */
+  isSelected?: boolean;
+  onToggleSelected?: () => void;
   /** Admin-managed catalog of price label options (fetched once at the
    *  table level and passed down). */
   priceLabelOptions?: ReadonlyArray<{ id: string; label: string }>;
@@ -337,6 +342,8 @@ export function QuoteItemRow({
   onShowPriceHistory,
   onInsertHeaderAbove,
   onSwapProduct,
+  isSelected,
+  onToggleSelected,
   priceLabelOptions,
   unitOptions,
   onAddSectionDiscount,
@@ -416,7 +423,19 @@ export function QuoteItemRow({
           className={cn('group', isDragging && 'opacity-70 bg-accent-50', item.highlight && 'bg-yellow-100')}
         >
           <td className={cn('w-8 border border-accent-200 px-1 py-1.5 text-center', item.highlight ? 'bg-yellow-100' : 'bg-[#F3F4F6]')}>
-            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="flex items-center justify-center gap-1">
+              {onToggleSelected && (
+                <input
+                  type="checkbox"
+                  checked={!!isSelected}
+                  onChange={onToggleSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn('h-3 w-3 cursor-pointer', !isSelected && 'opacity-0 group-hover:opacity-100 transition-opacity')}
+                  aria-label="Seçim"
+                />
+              )}
+              <GripVertical className="h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           </td>
           <td
             colSpan={spanColCount}
@@ -481,7 +500,19 @@ export function QuoteItemRow({
           className={cn('group', isDragging && 'opacity-70 bg-accent-50', item.highlight && 'bg-yellow-100')}
         >
           <td className="w-8 border border-accent-200 bg-white px-1 py-1.5 text-center">
-            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="flex items-center justify-center gap-1">
+              {onToggleSelected && (
+                <input
+                  type="checkbox"
+                  checked={!!isSelected}
+                  onChange={onToggleSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn('h-3 w-3 cursor-pointer', !isSelected && 'opacity-0 group-hover:opacity-100 transition-opacity')}
+                  aria-label="Seçim"
+                />
+              )}
+              <GripVertical className="h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           </td>
           <td className="border border-accent-200 bg-white px-1 py-1.5 text-center tabular-nums text-accent-700 whitespace-nowrap">
             <PozNoInput
@@ -561,7 +592,19 @@ export function QuoteItemRow({
           className={cn('group', isDragging && 'opacity-70 bg-accent-50', item.highlight && 'bg-yellow-100')}
         >
           <td className="w-8 border border-accent-200 bg-accent-100 px-1 py-1.5 text-center">
-            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="flex items-center justify-center gap-1">
+              {onToggleSelected && (
+                <input
+                  type="checkbox"
+                  checked={!!isSelected}
+                  onChange={onToggleSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn('h-3 w-3 cursor-pointer', !isSelected && 'opacity-0 group-hover:opacity-100 transition-opacity')}
+                  aria-label="Seçim"
+                />
+              )}
+              <GripVertical className="h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           </td>
           <td
             colSpan={subtotalLabelSpan}
@@ -665,7 +708,19 @@ export function QuoteItemRow({
           className={cn('group', isDragging && 'opacity-70 bg-primary-50', item.highlight && 'bg-yellow-100')}
         >
           <td className="w-8 border border-primary-300 bg-primary-100 px-1 py-1.5 text-center">
-            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-primary-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="flex items-center justify-center gap-1">
+              {onToggleSelected && (
+                <input
+                  type="checkbox"
+                  checked={!!isSelected}
+                  onChange={onToggleSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn('h-3 w-3 cursor-pointer', !isSelected && 'opacity-0 group-hover:opacity-100 transition-opacity')}
+                  aria-label="Seçim"
+                />
+              )}
+              <GripVertical className="h-4 w-4 cursor-grab text-primary-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           </td>
           <td
             colSpan={labelSpan}
@@ -736,7 +791,19 @@ export function QuoteItemRow({
         {/* Drag handle */}
         <td className="w-8 border border-accent-200 px-1 py-1.5 text-center">
           {!isSubRow && (
-            <GripVertical className="mx-auto h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="flex items-center justify-center gap-1">
+              {onToggleSelected && (
+                <input
+                  type="checkbox"
+                  checked={!!isSelected}
+                  onChange={onToggleSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn('h-3 w-3 cursor-pointer', !isSelected && 'opacity-0 group-hover:opacity-100 transition-opacity')}
+                  aria-label="Seçim"
+                />
+              )}
+              <GripVertical className="h-4 w-4 cursor-grab text-accent-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           )}
         </td>
 

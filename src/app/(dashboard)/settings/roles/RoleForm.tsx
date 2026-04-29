@@ -13,6 +13,7 @@ interface RoleFormData {
   canManageSettings: boolean;
   canEditProducts: boolean;
   canDelete: boolean;
+  canDeleteProducts: boolean;
 }
 
 interface RoleFormProps {
@@ -29,7 +30,8 @@ const PERMISSIONS = [
   { key: 'canManageUsers', label: 'Kullanıcı Yönetimi', description: 'Kullanıcı ve rol yönetimi yapabilir' },
   { key: 'canManageSettings', label: 'Ayar Yönetimi', description: 'Ticari şart şablonları, fiyat etiketleri ve diğer ayarları düzenleyebilir' },
   { key: 'canEditProducts', label: 'Ürün Düzenleme', description: 'Ürün bilgilerini düzenleyebilir' },
-  { key: 'canDelete', label: 'Kayıt Silme', description: 'Teklif, sipariş, proje, firma ve ürün kayıtlarını silebilir' },
+  { key: 'canDelete', label: 'Kayıt Silme', description: 'Taslak teklif, sipariş, proje ve firma kayıtlarını silebilir (ürünler hariç)' },
+  { key: 'canDeleteProducts', label: 'Ürün Silme', description: 'Veritabanından ürün kaydı silebilir — yalnızca kataloğu yönetenlerde olmalı' },
 ] as const;
 
 export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormProps) {
@@ -46,6 +48,7 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
     canManageSettings: false,
     canEditProducts: false,
     canDelete: false,
+    canDeleteProducts: false,
   });
 
   // Reset form when initialData changes
@@ -60,6 +63,7 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
         canManageSettings: initialData?.canManageSettings ?? false,
         canEditProducts: initialData?.canEditProducts ?? false,
         canDelete: initialData?.canDelete ?? false,
+        canDeleteProducts: initialData?.canDeleteProducts ?? false,
       });
       setError('');
     }

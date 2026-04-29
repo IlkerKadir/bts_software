@@ -16,6 +16,7 @@ interface Role {
   canManageSettings: boolean;
   canEditProducts: boolean;
   canDelete: boolean;
+  canDeleteProducts: boolean;
   userCount: number;
   createdAt: string;
 }
@@ -191,6 +192,7 @@ export function RolesList() {
                   <PermissionBadge enabled={role.canManageUsers} label="Kullanici Yonetimi" />
                   <PermissionBadge enabled={role.canEditProducts} label="Urun Duzenleme" />
                   <PermissionBadge enabled={role.canDelete} label="Kayit Silme" />
+                  <PermissionBadge enabled={role.canDeleteProducts} label="Ürün Silme" />
                 </div>
               </div>
             </Card>

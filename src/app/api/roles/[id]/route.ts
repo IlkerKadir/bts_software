@@ -119,6 +119,7 @@ export async function PUT(
         ...(validatedData.canManageSettings !== undefined && { canManageSettings: validatedData.canManageSettings }),
         ...(validatedData.canEditProducts !== undefined && { canEditProducts: validatedData.canEditProducts }),
         ...(validatedData.canDelete !== undefined && { canDelete: validatedData.canDelete }),
+        ...(validatedData.canDeleteProducts !== undefined && { canDeleteProducts: validatedData.canDeleteProducts }),
       },
     });
 

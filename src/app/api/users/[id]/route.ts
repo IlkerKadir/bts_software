@@ -46,6 +46,7 @@ export async function GET(
             canManageUsers: true,
             canEditProducts: true,
             canDelete: true,
+            canDeleteProducts: true,
           },
         },
         isActive: true,

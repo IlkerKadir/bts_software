@@ -350,7 +350,7 @@ export async function POST(request: NextRequest) {
       const nextSequence = getNextSequence(lastQuote?.quoteNumber || null);
       const quoteNumber = generateQuoteNumber(initials, nextSequence);
 
-      return await tx.quote.create({
+      const created = await tx.quote.create({
         data: {
           quoteNumber,
           companyId: data.companyId,
@@ -370,15 +370,49 @@ export async function POST(request: NextRequest) {
           createdBy: { select: { id: true, fullName: true } },
         },
       });
-    });
 
-    // Create history entry
-    await db.quoteHistory.create({
-      data: {
-        quoteId: quote.id,
-        userId: user.id,
-        action: 'CREATE',
-      },
+      // Seed isDefault=true NOTLAR templates onto the freshly created
+      // quote. Admin marks one note (e.g. "Gizlilik") as default in
+      // Settings and every new quote starts with that note already
+      // selected — the editor renders isDefault rows as locked
+      // checkboxes so it can't be accidentally unchecked.
+      //
+      // Scoped to NOTLAR only by design. Other categories already
+      // surface the default template via their own UI (single-value
+      // dropdowns show the default as the picked value); auto-seeding
+      // them here would silently lock entries the user expects to
+      // pick themselves. Kept inside the transaction so a failure
+      // rolls back the whole quote create.
+      const defaultTemplates = await tx.commercialTermTemplate.findMany({
+        where: {
+          isDefault: true,
+          category: 'NOTLAR',
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+      if (defaultTemplates.length > 0) {
+        await tx.quoteCommercialTerm.createMany({
+          data: defaultTemplates.map((tpl) => ({
+            quoteId: created.id,
+            category: tpl.category,
+            value: tpl.value,
+            sortOrder: tpl.sortOrder,
+            highlight: tpl.highlight,
+          })),
+        });
+      }
+
+      // History entry — also inside the transaction so audit trail and
+      // quote row stay in lockstep.
+      await tx.quoteHistory.create({
+        data: {
+          quoteId: created.id,
+          userId: user.id,
+          action: 'CREATE',
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json({ quote }, { status: 201 });

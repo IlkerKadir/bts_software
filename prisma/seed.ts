@@ -9,7 +9,7 @@ async function main() {
   // Create roles
   const yonetimRole = await prisma.role.upsert({
     where: { name: 'Yonetim' },
-    update: { canManageSettings: true },
+    update: { canManageSettings: true, canDeleteProducts: true },
     create: {
       name: 'Yonetim',
       canViewCosts: true,
@@ -19,6 +19,7 @@ async function main() {
       canManageSettings: true,
       canEditProducts: true,
       canDelete: true,
+      canDeleteProducts: true,
       canOverrideKatsayi: true,
     },
   });

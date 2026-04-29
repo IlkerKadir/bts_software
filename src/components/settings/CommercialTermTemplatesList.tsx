@@ -77,6 +77,107 @@ export function CommercialTermTemplatesList() {
   };
 
   const filtered = templates.filter(t => t.category === activeCategory);
+  const isMatrixCategory = activeCategory === 'uretici_firmalar';
+
+  // Quick-add input state for the matrix editor — one input per side
+  // (markalar / sistemler) so the user can hammer through 10 brands and
+  // 5 systems without opening the modal each time.
+  const [quickBrand, setQuickBrand] = useState('');
+  const [quickSystem, setQuickSystem] = useState('');
+  const [quickAddBusy, setQuickAddBusy] = useState(false);
+
+  // Drag-and-drop reordering for the matrix panels. The dragged id and
+  // the current drop target id are kept in state so the row under the
+  // pointer can show a top-border cue without re-rendering all rows.
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [reorderBusy, setReorderBusy] = useState(false);
+
+  const SYSTEM_PREFIX = 'Sistem:';
+
+  const matrixBrands = filtered.filter((t) => !t.name.startsWith(SYSTEM_PREFIX));
+  const matrixSystems = filtered.filter((t) => t.name.startsWith(SYSTEM_PREFIX));
+
+  // Persist a new ordering by renumbering with gaps (10, 20, 30...) so
+  // future single-row sortOrder edits via the modal still slot in
+  // cleanly. Optimistic local update; PATCHes go out in parallel.
+  const persistReorder = async (kind: 'marka' | 'sistem', orderedIds: string[]) => {
+    const updates = orderedIds.map((id, i) => ({ id, sortOrder: (i + 1) * 10 }));
+    setTemplates((prev) =>
+      prev.map((t) => {
+        const u = updates.find((x) => x.id === t.id);
+        return u ? { ...t, sortOrder: u.sortOrder } : t;
+      })
+    );
+    setReorderBusy(true);
+    try {
+      await Promise.all(
+        updates.map((u) =>
+          fetch(`/api/settings/commercial-terms/${u.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sortOrder: u.sortOrder }),
+          })
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sıralama kaydedilemedi');
+      // Reload to restore server-side truth on failure
+      await load();
+    } finally {
+      setReorderBusy(false);
+      void kind; // documented kind for clarity even though no per-kind branch needed
+    }
+  };
+
+  const handleDrop = (targetId: string, kind: 'marka' | 'sistem') => {
+    const id = draggedId;
+    setDraggedId(null);
+    setDragOverId(null);
+    if (!id || id === targetId) return;
+    const list = (kind === 'marka' ? matrixBrands : matrixSystems)
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'tr'));
+    const fromIdx = list.findIndex((t) => t.id === id);
+    const toIdx = list.findIndex((t) => t.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, moved);
+    void persistReorder(kind, list.map((t) => t.id));
+  };
+
+  const handleQuickAdd = async (kind: 'marka' | 'sistem') => {
+    const raw = (kind === 'marka' ? quickBrand : quickSystem).trim();
+    if (!raw) return;
+    setQuickAddBusy(true);
+    try {
+      const finalName = kind === 'sistem' ? `${SYSTEM_PREFIX} ${raw}` : raw;
+      const res = await fetch('/api/settings/commercial-terms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: 'uretici_firmalar',
+          name: finalName,
+          value: '',
+          sortOrder: 0,
+          isDefault: false,
+          highlight: false,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Eklenemedi');
+        return;
+      }
+      if (kind === 'marka') setQuickBrand('');
+      else setQuickSystem('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Eklenemedi');
+    } finally {
+      setQuickAddBusy(false);
+    }
+  };
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
@@ -136,6 +237,127 @@ export function CommercialTermTemplatesList() {
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
+        </div>
+      ) : isMatrixCategory ? (
+        // Matrix-style editor for Üretici Firmalar: two side-by-side
+        // panels with inline quick-add inputs. Avoids opening the modal
+        // for every single brand or system addition.
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            { kind: 'marka' as const, title: 'Markalar (Satırlar)', items: matrixBrands, value: quickBrand, setValue: setQuickBrand, placeholder: 'Örn: DSPA' },
+            { kind: 'sistem' as const, title: 'Sistemler (Sütunlar)', items: matrixSystems, value: quickSystem, setValue: setQuickSystem, placeholder: 'Örn: Aerosol Söndürme' },
+          ].map((panel) => (
+            <div key={panel.kind} className="rounded-lg border border-accent-200 bg-white p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-accent-900">
+                  {panel.title}
+                </h3>
+                <span className="text-xs text-accent-500">{panel.items.length} adet</span>
+              </div>
+
+              {/* Quick-add input */}
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={panel.value}
+                  onChange={(e) => panel.setValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleQuickAdd(panel.kind);
+                    }
+                  }}
+                  placeholder={panel.placeholder}
+                  disabled={quickAddBusy}
+                  className="flex-1 rounded border border-accent-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleQuickAdd(panel.kind)}
+                  disabled={quickAddBusy || !panel.value.trim()}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Ekle
+                </Button>
+              </div>
+
+              {/* Existing items */}
+              {panel.items.length === 0 ? (
+                <div className="rounded border border-dashed border-accent-200 bg-accent-50 p-4 text-center text-xs text-accent-500">
+                  Henüz {panel.kind === 'marka' ? 'marka' : 'sistem'} eklenmemiş.
+                </div>
+              ) : (
+                <ul className="space-y-1">
+                  {panel.items
+                    .slice()
+                    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'tr'))
+                    .map((t) => {
+                      const displayName = panel.kind === 'sistem'
+                        ? t.name.replace(SYSTEM_PREFIX, '').trim()
+                        : t.name;
+                      const isDragged = draggedId === t.id;
+                      const isDragOver = dragOverId === t.id && draggedId && draggedId !== t.id;
+                      return (
+                        <li
+                          key={t.id}
+                          draggable={!reorderBusy}
+                          onDragStart={(e) => {
+                            setDraggedId(t.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          onDragEnd={() => {
+                            setDraggedId(null);
+                            setDragOverId(null);
+                          }}
+                          onDragOver={(e) => {
+                            if (!draggedId || draggedId === t.id) return;
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (dragOverId !== t.id) setDragOverId(t.id);
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverId === t.id) setDragOverId(null);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            handleDrop(t.id, panel.kind);
+                          }}
+                          className={cn(
+                            'flex items-center gap-2 rounded border bg-white px-3 py-1.5 text-sm group transition-colors',
+                            isDragged ? 'border-primary-400 opacity-50' : 'border-accent-200',
+                            isDragOver && 'border-t-2 border-t-primary-500',
+                            !reorderBusy && 'cursor-grab active:cursor-grabbing'
+                          )}
+                          title="Sürükleyerek sırasını değiştirin"
+                        >
+                          <span className="flex-1 truncate text-accent-800 select-none">{displayName}</span>
+                          <button
+                            type="button"
+                            onClick={() => { setEditing(t); setFormOpen(true); }}
+                            className="rounded p-1 text-accent-400 hover:bg-accent-100 hover:text-accent-900 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Düzenle"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleting(t)}
+                            className="rounded p-1 text-accent-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Sil"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+            </div>
+          ))}
+          <div className="md:col-span-2 text-xs text-accent-500 italic">
+            Marka × Sistem kesişimleri teklif hazırlanırken Üretici Firmalar matrisinden işaretlenir.
+            Sıralama, varsayılan ve vurgulu ayarları için kalemin yanındaki kalem ikonuna tıklayın.
+          </div>
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-accent-300 bg-accent-50 p-8 text-center text-sm text-accent-500">

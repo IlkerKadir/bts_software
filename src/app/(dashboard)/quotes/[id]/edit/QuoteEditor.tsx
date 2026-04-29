@@ -287,6 +287,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const [ekMaliyetStampedCount, setEkMaliyetStampedCount] = useState<number | null>(null);
   const [ekMaliyetLegacyCount, setEkMaliyetLegacyCount] = useState<number>(0);
 
+  // Companies list for the header's company dropdown. Populated once on
+  // mount; the dropdown lets the user fix a wrong-company selection
+  // without recreating the quote (revision item #2).
+  const [availableCompanies, setAvailableCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [isChangingCompany, setIsChangingCompany] = useState(false);
+
   // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
@@ -406,6 +412,83 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Companies for the in-editor company-change dropdown. One-shot fetch
+  // on mount; the list rarely changes during a single edit session.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/companies?limit=500');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setAvailableCompanies(
+            (data.companies ?? []).map((c: { id: string; name: string }) => ({
+              id: c.id,
+              name: c.name,
+            }))
+          );
+        }
+      } catch {
+        // Silent — the company chip will just show the current value
+        // without an editable dropdown if the fetch fails.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fix a wrong-company selection without recreating the quote. We hit
+  // the existing PUT /api/quotes/[id] route — the server auto-clears
+  // projectId when the project's client doesn't match the new company,
+  // so the user has to re-pick a project after the change.
+  const handleCompanyChange = useCallback(
+    async (newCompanyId: string) => {
+      if (!quote || newCompanyId === quote.company.id) return;
+      const target = availableCompanies.find((c) => c.id === newCompanyId);
+      if (!target) return;
+      if (!window.confirm(`"${target.name}" firmasına geçilecek. Devam edilsin mi?`)) return;
+
+      setIsChangingCompany(true);
+      try {
+        const res = await fetch(`/api/quotes/${quoteId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId: newCompanyId }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          alert(data.error || 'Firma değiştirilemedi');
+          return;
+        }
+        const data = await res.json();
+        const updated = data.quote;
+        setQuote((prev) =>
+          prev
+            ? {
+                ...prev,
+                company: { id: updated.company.id, name: updated.company.name },
+                project: updated.project
+                  ? { id: updated.project.id, name: updated.project.name }
+                  : null,
+              }
+            : prev
+        );
+        setHeaderFields((prev) => ({
+          ...prev,
+          projectId: updated.project?.id ?? null,
+        }));
+      } catch (err) {
+        console.error('Company change error:', err);
+        alert('Firma değiştirilirken bir hata oluştu');
+      } finally {
+        setIsChangingCompany(false);
+      }
+    },
+    [quote, quoteId, availableCompanies, headerFields.projectId]
+  );
 
   // ── Change detection ───────────────────────────────────────────────────────
 
@@ -1164,6 +1247,55 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       }
     },
     [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items.length, subItemParentId, setCreationMode, defaultVatRate]
+  );
+
+  // ── Bulk delete + duplicate for the multi-row toolbar (#5) ───────────────
+  // Both run a single confirm + a single state mutation so the user
+  // doesn't see N modal prompts and so the per-row handlers' stale
+  // closure over `items` doesn't bite when iterating a Set.
+
+  const handleBulkDelete = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      // Drop any IDs whose parent is also being deleted — the cascade
+      // handles them server-side and a direct DELETE would 404.
+      const idSet = new Set(ids);
+      const directIds = ids.filter((id) => {
+        const it = items.find((x) => x.id === id);
+        return !it?.parentItemId || !idSet.has(it.parentItemId);
+      });
+
+      const totalCount = ids.length;
+      if (!window.confirm(`${totalCount} satır silinecek. Devam edilsin mi?`)) return;
+
+      // Optimistic local removal — drop targets and any descendants.
+      setItems((prev) =>
+        prev.filter((it) => !idSet.has(it.id) && !(it.parentItemId && idSet.has(it.parentItemId)))
+      );
+
+      // Fire DELETEs in parallel. Failures aren't surfaced individually
+      // — at this scale a refetch on the next save covers any drift.
+      await Promise.allSettled(
+        directIds.map((id) =>
+          fetch(`/api/quotes/${quoteId}/items/${id}`, { method: 'DELETE' })
+        )
+      );
+    },
+    [items, quoteId]
+  );
+
+  const handleBulkDuplicate = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      // Iterate in items-array order (deterministic UX) rather than
+      // Set-insertion order. Awaiting each call lets handleItemDuplicate
+      // see fresh state; for ≤20 rows the latency is acceptable.
+      const ordered = items.map((it) => it.id).filter((id) => ids.includes(id));
+      for (const id of ordered) {
+        await handleItemDuplicate(id);
+      }
+    },
+    [items, handleItemDuplicate]
   );
 
   // ── Bulk-apply same katsayı value to many rows in one pass ───────────────
@@ -2374,6 +2506,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         validityDays={headerFields.validityDays}
         hasChanges={hasChanges}
         isSaving={isSaving}
+        availableCompanies={availableCompanies}
+        onCompanyChange={handleCompanyChange}
+        isChangingCompany={isChangingCompany}
         onProjectChange={(v) => updateHeaderField('projectId', v)}
         onRefNoChange={(v) => updateHeaderField('refNo', v)}
         onSystemBrandChange={(v) => updateHeaderField('subject', v)}
@@ -2426,6 +2561,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onAddProduct={() => setCatalogOpen(true)}
         onSwapProductRequest={handleSwapProductRequest}
         onBulkKatsayiApply={handleBulkKatsayiApply}
+        onBulkDelete={handleBulkDelete}
+        onBulkDuplicate={handleBulkDuplicate}
         onAddHeader={handleAddHeader}
         onAddNote={handleAddNote}
         onAddCustomItem={handleAddCustomItem}

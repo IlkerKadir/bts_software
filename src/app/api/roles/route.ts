@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
         canManageSettings: validatedData.canManageSettings ?? false,
         canEditProducts: validatedData.canEditProducts ?? false,
         canDelete: validatedData.canDelete ?? false,
+        canDeleteProducts: validatedData.canDeleteProducts ?? false,
       },
     });
 

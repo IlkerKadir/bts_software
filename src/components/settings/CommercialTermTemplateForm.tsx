@@ -13,6 +13,24 @@ interface Props {
   onSuccess: () => void;
 }
 
+// "Üretici Firmalar" stores its data as a brand × system matrix. Each
+// template row is either a brand (regular name) or a system column
+// (name prefixed with "Sistem: "). The form surfaces this with a radio
+// so admins don't have to know the prefix convention by heart.
+const MATRIX_CATEGORY = 'uretici_firmalar';
+const SYSTEM_PREFIX = 'Sistem:';
+
+function splitMatrixName(name: string): { type: 'marka' | 'sistem'; base: string } {
+  if (name.startsWith(SYSTEM_PREFIX)) {
+    return { type: 'sistem', base: name.replace(SYSTEM_PREFIX, '').trim() };
+  }
+  return { type: 'marka', base: name };
+}
+
+function joinMatrixName(type: 'marka' | 'sistem', base: string): string {
+  return type === 'sistem' ? `${SYSTEM_PREFIX} ${base.trim()}` : base.trim();
+}
+
 export function CommercialTermTemplateForm({
   initialData,
   defaultCategory,
@@ -21,8 +39,10 @@ export function CommercialTermTemplateForm({
   onSuccess,
 }: Props) {
   const isEdit = !!initialData;
+  const initialMatrixSplit = initialData ? splitMatrixName(initialData.name) : null;
   const [category, setCategory] = useState(initialData?.category ?? defaultCategory);
-  const [name, setName] = useState(initialData?.name ?? '');
+  const [name, setName] = useState(initialMatrixSplit?.base ?? initialData?.name ?? '');
+  const [matrixType, setMatrixType] = useState<'marka' | 'sistem'>(initialMatrixSplit?.type ?? 'marka');
   const [value, setValue] = useState(initialData?.value ?? '');
   const [sortOrder, setSortOrder] = useState<number>(initialData?.sortOrder ?? 0);
   const [isDefault, setIsDefault] = useState(initialData?.isDefault ?? false);
@@ -30,11 +50,15 @@ export function CommercialTermTemplateForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isMatrix = category === MATRIX_CATEGORY;
+
   // If the parent switches the selected template while the modal is open,
   // reset the local state to match.
   useEffect(() => {
+    const split = initialData ? splitMatrixName(initialData.name) : null;
     setCategory(initialData?.category ?? defaultCategory);
-    setName(initialData?.name ?? '');
+    setName(split?.base ?? initialData?.name ?? '');
+    setMatrixType(split?.type ?? 'marka');
     setValue(initialData?.value ?? '');
     setSortOrder(initialData?.sortOrder ?? 0);
     setIsDefault(initialData?.isDefault ?? false);
@@ -44,8 +68,13 @@ export function CommercialTermTemplateForm({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !value.trim()) {
-      setError('Ad ve metin zorunludur');
+    const matrix = category === MATRIX_CATEGORY;
+    if (!name.trim()) {
+      setError('Ad zorunludur');
+      return;
+    }
+    if (!matrix && !value.trim()) {
+      setError('Metin zorunludur');
       return;
     }
     setBusy(true);
@@ -59,7 +88,7 @@ export function CommercialTermTemplateForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category,
-          name: name.trim(),
+          name: matrix ? joinMatrixName(matrixType, name) : name.trim(),
           value: value.trim(),
           sortOrder,
           isDefault,
@@ -117,27 +146,67 @@ export function CommercialTermTemplateForm({
             </select>
           </div>
 
+          {isMatrix && (
+            <div>
+              <label className="block text-xs font-medium text-accent-700 mb-1">Tür</label>
+              <div className="flex gap-3 text-sm">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="matrixType"
+                    checked={matrixType === 'marka'}
+                    onChange={() => setMatrixType('marka')}
+                  />
+                  <span>Marka</span>
+                </label>
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="matrixType"
+                    checked={matrixType === 'sistem'}
+                    onChange={() => setMatrixType('sistem')}
+                  />
+                  <span>Sistem (matriste sütun)</span>
+                </label>
+              </div>
+              <p className="mt-1 text-[11px] text-accent-500">
+                Marka satır olarak, Sistem ise sütun olarak gösterilir. Marka × Sistem
+                kesişimleri teklif hazırlanırken işaretlenir.
+              </p>
+            </div>
+          )}
+
           <div>
-            <label className="block text-xs font-medium text-accent-700 mb-1">Şablon Adı</label>
+            <label className="block text-xs font-medium text-accent-700 mb-1">
+              {isMatrix ? (matrixType === 'sistem' ? 'Sistem Adı' : 'Marka Adı') : 'Şablon Adı'}
+            </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Örn: 2 yıl garanti"
+              placeholder={
+                isMatrix
+                  ? matrixType === 'sistem'
+                    ? 'Örn: Aspirasyonlu Algılama Sistemi'
+                    : 'Örn: DSPA'
+                  : 'Örn: 2 yıl garanti'
+              }
               required
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-accent-700 mb-1">Şablon Metni</label>
-            <textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              rows={5}
-              className="w-full rounded border border-accent-300 bg-white px-2 py-1.5 text-sm font-mono"
-              placeholder="Teklife eklenecek tam metin…"
-              required
-            />
-          </div>
+          {!isMatrix && (
+            <div>
+              <label className="block text-xs font-medium text-accent-700 mb-1">Şablon Metni</label>
+              <textarea
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                rows={5}
+                className="w-full rounded border border-accent-300 bg-white px-2 py-1.5 text-sm font-mono"
+                placeholder="Teklife eklenecek tam metin…"
+                required
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

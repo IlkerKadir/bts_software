@@ -58,9 +58,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { category, name, value, isDefault, sortOrder, highlight } = body;
 
-    if (!category || !name || !value) {
+    // `uretici_firmalar` is a brand × system matrix where each template
+    // row stores only a name (the brand label, or "Sistem: <Adı>" for a
+    // column). The matrix UI in the editor never reads `value` for that
+    // category, so we don't require it. Other categories still need a
+    // non-empty value — that's the actual text that lands on the PDF.
+    const valueRequired = category !== 'uretici_firmalar';
+    if (!category || !name || (valueRequired && !value)) {
       return NextResponse.json(
-        { error: 'Kategori, ad ve deger zorunludur' },
+        { error: valueRequired ? 'Kategori, ad ve deger zorunludur' : 'Kategori ve ad zorunludur' },
         { status: 400 }
       );
     }
@@ -77,7 +83,9 @@ export async function POST(request: NextRequest) {
       data: {
         category,
         name,
-        value,
+        // Defensive: matrix templates legitimately send an empty `value`;
+        // protect against future clients omitting the field entirely.
+        value: value ?? '',
         isDefault: isDefault || false,
         sortOrder: sortOrder ?? 0,
         highlight: highlight || false,
@@ -86,6 +94,18 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ template }, { status: 201 });
   } catch (error) {
+    // The (category, name) pair is unique. Surfacing P2002 as a friendly
+    // 409 saves admins from a generic "Bir hata oluştu" toast when they
+    // try to add a brand or system that already exists.
+    if (
+      typeof error === 'object' && error !== null && 'code' in error &&
+      (error as { code: string }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { error: 'Bu ad zaten kullanılıyor — farklı bir ad seçin' },
+        { status: 409 }
+      );
+    }
     console.error('Commercial terms POST error:', error);
     return NextResponse.json(
       { error: 'Ticari sart olusturulurken hata olustu' },

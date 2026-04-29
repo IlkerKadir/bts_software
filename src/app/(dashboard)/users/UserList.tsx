@@ -15,6 +15,7 @@ interface Role {
   canManageUsers: boolean;
   canEditProducts: boolean;
   canDelete: boolean;
+  canDeleteProducts: boolean;
 }
 
 interface UserItem {

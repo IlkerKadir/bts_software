@@ -11,6 +11,7 @@ export const createRoleSchema = z.object({
   canManageSettings: z.boolean().optional().default(false),
   canEditProducts: z.boolean().optional().default(false),
   canDelete: z.boolean().optional().default(false),
+  canDeleteProducts: z.boolean().optional().default(false),
 });
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
@@ -27,6 +28,7 @@ export const updateRoleSchema = z.object({
   canManageSettings: z.boolean().optional(),
   canEditProducts: z.boolean().optional(),
   canDelete: z.boolean().optional(),
+  canDeleteProducts: z.boolean().optional(),
 });
 
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
