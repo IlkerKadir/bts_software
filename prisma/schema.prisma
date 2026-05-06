@@ -53,6 +53,7 @@ model User {
   updatedAt      DateTime        @updatedAt
   quotes         Quote[]              @relation("CreatedBy")
   approvedQuotes Quote[]              @relation("ApprovedBy")
+  lastEditedQuotes Quote[]            @relation("LastEditedBy")
   notifications  Notification[]
   quoteHistory   QuoteHistory[]
   documents      QuoteDocument[]
@@ -112,7 +113,7 @@ model Project {
   createdById    String?
   createdBy      User?             @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   status         ProjectStatus     @default(TEKLIF_ASAMASINDA)
-  visibility     ProjectVisibility @default(CREATOR_ONLY)
+  visibility     ProjectVisibility @default(EVERYONE)
   estimatedStart DateTime?
   estimatedEnd   DateTime?
   notes          String?
@@ -280,6 +281,15 @@ model Quote {
   approvedById    String?
   approvedBy      User?                 @relation("ApprovedBy", fields: [approvedById], references: [id])
   approvedAt      DateTime?
+  /**
+   * Tracks the user who pulled an approved quote back to TASLAK via
+   * the status dropdown. Independent of `createdById` so the original
+   * author isn't overwritten — used by the view page's "Hazırlayan"
+   * field to display the most-recent editor when set.
+   */
+  lastEditedById  String?
+  lastEditedBy    User?                 @relation("LastEditedBy", fields: [lastEditedById], references: [id])
+  lastEditedAt    DateTime?
   notes           String?
   language        String                @default("TR")
   /** Cosmetic PDF override — stores user-edited HTML from the WYSIWYG PDF editor.
