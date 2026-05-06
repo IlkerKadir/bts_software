@@ -89,7 +89,8 @@ export function CompanyList() {
       }
 
       setDeletingCompany(null);
-      fetchCompanies();
+      // Preserve current page after CRUD — don't reset to page 1.
+      fetchCompanies(pagination?.page ?? 1);
     } catch {
       setDeleteError('Bir hata oluştu');
     }
@@ -101,7 +102,7 @@ export function CompanyList() {
   };
 
   const handleFormSuccess = () => {
-    fetchCompanies();
+    fetchCompanies(pagination?.page ?? 1);
   };
 
   const handleExport = async () => {
@@ -155,7 +156,7 @@ export function CompanyList() {
         type: 'success',
         text: `${data.total} firma başarıyla içeri aktarıldı (${data.created} yeni, ${data.updated} güncellendi)`,
       });
-      fetchCompanies();
+      fetchCompanies(pagination?.page ?? 1);
     } catch (error) {
       console.error('Import error:', error);
       setImportMessage({ type: 'error', text: 'İçeri aktarma sırasında bir hata oluştu' });

@@ -65,6 +65,9 @@ export default function ApprovalsPage() {
   const [quotes, setQuotes] = useState<QuoteWithApproval[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  // Filter the inbox by who prepared the quote — useful when a manager
+  // wants to bulk-review one salesperson's pending quotes.
+  const [createdByFilter, setCreatedByFilter] = useState('');
 
   const fetchPendingQuotes = useCallback(async () => {
     try {
@@ -189,10 +192,37 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
+      {/* Filter — by creator. Built from the loaded quotes' own
+          createdBy field so the dropdown only shows users who
+          actually have pending quotes in the inbox. */}
+      {quotes.length > 0 && (() => {
+        const creators = Array.from(
+          new Map(quotes.map((q) => [q.createdBy.id, q.createdBy])).values(),
+        ).sort((a, b) => a.fullName.localeCompare(b.fullName, 'tr-TR'));
+        if (creators.length < 2) return null;
+        return (
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-primary-500">Oluşturan:</label>
+            <select
+              value={createdByFilter}
+              onChange={(e) => setCreatedByFilter(e.target.value)}
+              className="px-3 py-1.5 border border-primary-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+            >
+              <option value="">Tümü</option>
+              {creators.map((u) => (
+                <option key={u.id} value={u.id}>{u.fullName}</option>
+              ))}
+            </select>
+          </div>
+        );
+      })()}
+
       {/* Quotes List */}
       {quotes.length > 0 ? (
         <div className="grid gap-4">
-          {quotes.map((quote) => (
+          {quotes
+            .filter((q) => !createdByFilter || q.createdBy.id === createdByFilter)
+            .map((quote) => (
             <Card key={quote.id}>
               <div className="p-4">
                 <div className="flex items-start justify-between gap-4">

@@ -47,6 +47,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         project: { include: { visibleTo: { select: { userId: true } } } },
         createdBy: { select: { id: true, fullName: true } },
         approvedBy: { select: { id: true, fullName: true } },
+        lastEditedBy: { select: { id: true, fullName: true } },
         items: {
           orderBy: { sortOrder: 'asc' },
           include: {
@@ -385,15 +386,20 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Only allow deleting pre-approval quotes (TASLAK + the
-    // approver-rejected DUZENLEME_TALEP_EDILDI). The latter behaves
-    // like a draft — the creator may abandon it instead of fixing.
-    if (
-      existingQuote.status !== 'TASLAK' &&
-      existingQuote.status !== 'DUZENLEME_TALEP_EDILDI'
-    ) {
+    // Allowed delete states:
+    //   - TASLAK: never been approved
+    //   - DUZENLEME_TALEP_EDILDI: approver rejected, behaves like draft
+    //   - IPTAL: cancelled, can be cleaned up after the fact
+    // Everything else (in-flight or post-send) blocks deletion to keep
+    // audit trail intact.
+    const deletableStatuses: typeof existingQuote.status[] = [
+      'TASLAK',
+      'DUZENLEME_TALEP_EDILDI',
+      'IPTAL',
+    ];
+    if (!deletableStatuses.includes(existingQuote.status)) {
       return NextResponse.json(
-        { error: 'Sadece taslak teklifler silinebilir' },
+        { error: 'Sadece taslak veya iptal edilmiş teklifler silinebilir' },
         { status: 400 }
       );
     }
@@ -402,6 +408,23 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    // P2003 = FK violation. Most common case: deleting an IPTAL
+    // parent quote that still has linked legacy revisions
+    // (`parentQuoteId` self-relation has no cascade). Surface a
+    // friendly Turkish 400 instead of the generic 500 so the user
+    // knows what to do next.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2003'
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Bu teklifin bağlı revizyonları olduğu için silinemez. Önce revizyonları silin.',
+        },
+        { status: 400 }
+      );
+    }
     console.error('Quote DELETE error:', error);
     return NextResponse.json(
       { error: 'Teklif silinirken bir hata oluştu' },

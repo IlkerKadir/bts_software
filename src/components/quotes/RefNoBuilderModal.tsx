@@ -4,6 +4,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { Check, Eye } from 'lucide-react';
 import { Modal, Button } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import {
+  DEFAULT_REFNO_OPTIONS,
+  type RefNoOption,
+  type RefNoOptionGroups,
+} from '@/lib/refno-options';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -16,60 +21,9 @@ export interface RefNoBuilderModalProps {
   currentRefNo?: string;
 }
 
-// ── Constants (from TLM.23 EK.1 Rev8 Fatura Kodlama Sistemi) ─────────────
-
-const A_BOLUM = [
-  { value: '1', label: '1 - Yönetim' },
-  { value: '2', label: '2 - Satış' },
-  { value: '3', label: '3 - Teknik Satış' },
-  { value: '4', label: '4 - Hizmet' },
-];
-
-const B_KONU = [
-  { value: '1', label: '1 - Yangın Algılama' },
-  { value: '2', label: '2 - Yangın Söndürme' },
-  { value: '3', label: '3 - Yalıtım' },
-  { value: '4', label: '4 - Seslendirme' },
-  { value: '5', label: '5 - CCTV' },
-  { value: '6', label: '6 - Kartlı Geçiş / Turnike' },
-  { value: '7', label: '7 - Çevre Güvenliği' },
-  { value: '8', label: '8 - Gaz Algılama' },
-];
-
-const C_KISI = [
-  { value: '1', label: '1 - Levent' },
-  { value: '2', label: '2 - Şelale' },
-  { value: '5', label: '5 - Serhat' },
-  { value: '6', label: '6 - Hakan (Teknik Servis)' },
-  { value: '7', label: '7 - Hakan (Hizmet İşleri)' },
-  { value: '8', label: '8 - (Boş)' },
-  { value: '9', label: '9 - Cansu' },
-];
-
-const D_URETICI = [
-  { value: 'A', label: 'A - ZETA' },
-  { value: 'B', label: 'B - JCI / TYCO / ZETTLER' },
-  { value: 'C', label: 'C - BANDWEAVER' },
-  { value: 'D', label: 'D - XTRALIS' },
-  { value: 'E', label: 'E - TYCO Söndürme' },
-  { value: 'F', label: 'F - Diğer Söndürme' },
-  { value: 'G', label: 'G - Korsis STAT-X' },
-  { value: 'H', label: 'H - TYCO Ambient (NEO)' },
-  { value: 'I', label: 'I - ELEKTROPANC' },
-  { value: 'J', label: 'J - SENSITRON' },
-  { value: 'K', label: 'K - HAIKON' },
-  { value: 'L', label: 'L - PANASONIC' },
-  { value: 'M', label: 'M - WOLMAN (SIKA) / KBS' },
-  { value: 'N', label: 'N - NEUTRON / FIREBREAK' },
-  { value: 'O', label: 'O - EVENOS' },
-  { value: 'P', label: 'P - MIKAFON' },
-  { value: 'T', label: 'T - TELEDATA' },
-  { value: 'U', label: 'U - Taşeron Hizmeti' },
-  { value: 'V', label: 'V - İç Piyasa (Güç Kaynağı, Akü, vs.)' },
-  { value: 'W', label: 'W - Devreye Alma' },
-  { value: 'Y', label: 'Y - Montaj Malzemeleri (Kablo, Boru, vs.)' },
-  { value: 'Z', label: 'Z - Bakım Servis' },
-];
+// Constants moved to `src/lib/refno-options.ts`. The modal fetches the
+// admin-overridable lists from the API at open time and falls back to
+// the defaults if the fetch fails.
 
 // ── User → C code mapping ─────────────────────────────────────────────────
 
@@ -124,9 +78,29 @@ export function RefNoBuilderModal({
   const [b, setB] = useState<string[]>([]);
   const [c, setC] = useState('');
   const [d, setD] = useState<string[]>([]);
+  // Option lists are admin-editable; fetched on open. Defaults keep
+  // the modal usable if the fetch fails (offline, perm error, etc.).
+  const [groups, setGroups] = useState<RefNoOptionGroups>(DEFAULT_REFNO_OPTIONS);
 
   const toggleB = (val: string) => setB(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort());
   const toggleD = (val: string) => setD(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val].sort());
+
+  // Fetch admin-edited options when modal opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetch('/api/settings/refno-options')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.options) setGroups(data.options);
+      })
+      .catch(() => {
+        // Defaults already in state; nothing else to do.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   // Reset / pre-fill when modal opens
   useEffect(() => {
@@ -160,10 +134,10 @@ export function RefNoBuilderModal({
   };
 
   // Decode for display
-  const decodedA = A_BOLUM.find(x => x.value === a)?.label || a;
-  const decodedB = b.map(v => B_KONU.find(x => x.value === v)?.label || v).join(', ');
-  const decodedC = C_KISI.find(x => x.value === c)?.label || c;
-  const decodedD = d.map(v => D_URETICI.find(x => x.value === v)?.label || v).join(', ');
+  const decodedA = groups.a.find(x => x.value === a)?.label || a;
+  const decodedB = b.map(v => groups.b.find(x => x.value === v)?.label || v).join(', ');
+  const decodedC = groups.c.find(x => x.value === c)?.label || c;
+  const decodedD = d.map(v => groups.d.find(x => x.value === v)?.label || v).join(', ');
 
   return (
     <Modal
@@ -199,7 +173,7 @@ export function RefNoBuilderModal({
             )}
           >
             <option value="">Seçiniz...</option>
-            {A_BOLUM.map(opt => (
+            {groups.a.map((opt: RefNoOption) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
@@ -211,7 +185,7 @@ export function RefNoBuilderModal({
             B — Konu <span className="text-primary-400 font-normal">(birden fazla seçilebilir)</span>
           </label>
           <div className="border border-primary-300 rounded-lg p-2 grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
-            {B_KONU.map(opt => (
+            {groups.b.map((opt: RefNoOption) => (
               <label key={opt.value} className={cn(
                 'flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors',
                 b.includes(opt.value) ? 'bg-accent-50 text-accent-900' : 'hover:bg-primary-50 text-primary-700'
@@ -243,7 +217,7 @@ export function RefNoBuilderModal({
             )}
           >
             <option value="">Seçiniz...</option>
-            {C_KISI.map(opt => (
+            {groups.c.map((opt: RefNoOption) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
@@ -255,7 +229,7 @@ export function RefNoBuilderModal({
             D — Üretici <span className="text-primary-400 font-normal">(birden fazla seçilebilir)</span>
           </label>
           <div className="border border-primary-300 rounded-lg p-2 grid grid-cols-2 gap-1 max-h-48 overflow-y-auto">
-            {D_URETICI.map(opt => (
+            {groups.d.map((opt: RefNoOption) => (
               <label key={opt.value} className={cn(
                 'flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors',
                 d.includes(opt.value) ? 'bg-accent-50 text-accent-900' : 'hover:bg-primary-50 text-primary-700'

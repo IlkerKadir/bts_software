@@ -386,9 +386,28 @@ export function QuoteItemRow({
     (e: React.DragEvent) => {
       const target = e.target as HTMLElement;
       const tag = target.tagName;
+      // Direct target check — when user click+drags inside an input,
+      // the dragstart's event.target is usually the input itself.
       if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) {
         e.preventDefault();
         return;
+      }
+      // Backup: some browsers fire dragstart with event.target set to a
+      // wrapping <td>/<span> instead of the input that's actually
+      // focused. Catch that case via document.activeElement so partial
+      // text selection stays reliable.
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable)
+      ) {
+        const rowEl = e.currentTarget as HTMLElement;
+        if (rowEl.contains(active)) {
+          e.preventDefault();
+          return;
+        }
       }
       onDragStart(e);
     },

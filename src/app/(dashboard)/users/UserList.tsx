@@ -119,7 +119,7 @@ export function UserList() {
       }
 
       setTogglingUser(null);
-      fetchUsers();
+      fetchUsers(pagination?.page ?? 1);
     } catch {
       setToggleError('Bir hata oluştu');
     }
@@ -131,7 +131,7 @@ export function UserList() {
   };
 
   const handleFormSuccess = () => {
-    fetchUsers();
+    fetchUsers(pagination?.page ?? 1);
   };
 
   const formatDate = (dateString: string | null) => {

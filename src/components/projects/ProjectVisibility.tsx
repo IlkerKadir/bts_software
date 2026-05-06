@@ -31,7 +31,7 @@ export function ProjectVisibility({ projectId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const [visibility, setVisibility] = useState<VisibilityMode>('CREATOR_ONLY');
+  const [visibility, setVisibility] = useState<VisibilityMode>('EVERYONE');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [currentUsers, setCurrentUsers] = useState<VisibilityUser[]>([]);
   const [allUsers, setAllUsers] = useState<{ id: string; fullName: string; username: string }[]>([]);

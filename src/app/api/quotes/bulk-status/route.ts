@@ -70,22 +70,14 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // ONAYLANDI → TASLAK ("Tekrar Onaya Gönder" → reopens for edits)
-      // is creator-only (mirrors the per-quote PUT route guard).
-      // Without this, an admin doing a bulk operation could roll
-      // someone else's approved quotes back to draft.
-      if (
-        currentStatus === 'ONAYLANDI' &&
-        targetStatus === 'TASLAK' &&
-        quote.createdById !== user.id
-      ) {
-        results.failed.push({
-          id: quote.id,
-          quoteNumber: quote.quoteNumber,
-          reason: 'Sadece teklifi oluşturan kişi onaylı teklifi tekrar açabilir',
-        });
-        continue;
-      }
+      // ONAYLANDI → TASLAK is open to anyone with quote access per
+      // the 29.04 client decision; the per-quote PUT writes
+      // `lastEditedBy` so the audit trail still identifies who pulled
+      // the quote back. Note: BulkStatusModal currently doesn't expose
+      // this transition (`ALLOWED_BULK_TRANSITIONS['ONAYLANDI']`
+      // omits TASLAK). If you ever wire it in, also stamp
+      // lastEditedBy/At in the update below — same as the per-quote
+      // route does.
 
       // ONAY_BEKLIYOR → DUZENLEME_TALEP_EDILDI is approver-only
       // (mirrors per-quote guard). Without this, a non-approver could

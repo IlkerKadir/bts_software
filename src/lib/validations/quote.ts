@@ -54,6 +54,15 @@ export const quoteItemSchema = z.object({
   notes: z.string().nullish(),
   priceLabel: z.string().nullish(),
   costPrice: z.number().nullish(),
+  /** Conversion factor (rate × (1 + protectionPct/100)) the editor
+   *  computed at item-add time. Used by the server only when the
+   *  client did NOT supply a costPrice (non-canViewCosts users) — the
+   *  server multiplies the master Product.costPrice by this factor to
+   *  reproduce the same converted cost a manager's editor would have
+   *  written. canViewCosts users send costPrice directly, in which
+   *  case this field is ignored. Optional for backward compatibility
+   *  with older clients (server falls back to listPrice ratio). */
+  costConversionFactor: z.number().positive().nullish(),
   ekMaliyetDelta: z.number().nullish(),
   /** Optional per-SET currency override. Only accepted on top-level SET
    *  rows. Semantic enforcement (value must match quote currency or be

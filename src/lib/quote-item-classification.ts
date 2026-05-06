@@ -18,6 +18,7 @@ export interface ClassificationInput {
   priceLabel?: string | null;
   productCurrency?: string | null;
   productListPrice?: number | string | null;
+  productCostPrice?: number | string | null;
 }
 
 /**
@@ -65,9 +66,16 @@ export function isRateSensitiveRow<T extends ClassificationInput>(
   if (item.priceLabel) return false;
   // Manual-priced rows are user commitments, not rate-derived.
   if (item.isManualPrice) return false;
-  // No source to derive from.
+  // Need a productCurrency and at least one numeric source to derive
+  // against. Insurance / service products often have listPrice=0 but
+  // a real costPrice — those still need to recompute their cost on a
+  // currency change. Only when BOTH list and cost are absent do we
+  // bail. The recompute math handles listPrice=0 cleanly (0 × rate =
+  // 0), so no special-casing is needed in callers.
   const listPrice = item.productListPrice == null ? null : Number(item.productListPrice);
-  if (!item.productCurrency || listPrice == null || listPrice === 0) return false;
+  const costPrice = item.productCostPrice == null ? null : Number(item.productCostPrice);
+  if (!item.productCurrency || listPrice == null) return false;
+  if (listPrice === 0 && costPrice == null) return false;
   return true;
 }
 
@@ -97,7 +105,13 @@ export function isManualCommitmentRow(item: ClassificationInput): boolean {
   if (item.itemType === 'SET' && !item.parentItemId) return false;
   if (item.isManualPrice) return true;
   // Free-form row with no catalog reference — also a commitment.
+  // Mirror of isRateSensitiveRow: an insurance/service item with
+  // listPrice=0 but a non-null costPrice IS rate-sensitive (its cost
+  // updates on currency change), so it shouldn't be classified as a
+  // manual commitment.
   const listPrice = item.productListPrice == null ? null : Number(item.productListPrice);
-  if (!item.productCurrency || listPrice == null || listPrice === 0) return true;
+  const costPrice = item.productCostPrice == null ? null : Number(item.productCostPrice);
+  if (!item.productCurrency || listPrice == null) return true;
+  if (listPrice === 0 && costPrice == null) return true;
   return false;
 }

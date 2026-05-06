@@ -166,6 +166,79 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       itemCurrency = data.currency === quote.currency ? null : data.currency;
     }
 
+    // Cost resolution. The catalog APIs (`/api/products`,
+    // `/api/products/search`) hide `costPrice` from non-canViewCosts
+    // users — so a salesperson's client posts here with `costPrice`
+    // null/undefined. Without a server-side fallback, the QuoteItem
+    // ends up cost-less, and the manager who later approves the quote
+    // (canViewCosts) opens it and sees an empty cost column even
+    // though the master product has a known cost.
+    //
+    // The editor computes its conversion as:
+    //   converted = master * rate * (1 + protectionPct / 100)
+    // and now sends the same factor (`rate × (1 + protectionPct/100)`)
+    // alongside the item as `costConversionFactor`. The server
+    // multiplies the master cost by this factor to reproduce exactly
+    // what a canViewCosts user's editor would have written.
+    //
+    // Why a factor and not server-side rate logic: replicating the
+    // editor's rate/protection/SET-override formula on the server
+    // would drift the next time the client formula changes, and the
+    // server doesn't have the editor's runtime context (live TCMB
+    // rates, per-pair protection map, parent-SET currency override)
+    // without re-loading and re-deriving them.
+    //
+    // Why a factor and not a listPrice ratio: the ratio approach
+    // (data.listPrice / master.listPrice) breaks for products with
+    // master.listPrice == 0 (insurance, service items) — they often
+    // have a real cost but no list price.
+    //
+    // Edge cases:
+    //   - canViewCosts user sends an explicit value: trusted as-is
+    //     (could be a manual override).
+    //   - Older clients that don't send factor: fall back to listPrice
+    //     ratio (works for non-zero master listPrice; same currency
+    //     case has factor=1 implicitly via ratio=1).
+    //   - CUSTOM items (no productId): unchanged null-fallback
+    //     behavior.
+    let resolvedCostPrice: number | null = data.costPrice ?? null;
+    if (data.productId && resolvedCostPrice == null) {
+      const masterProduct = await db.product.findUnique({
+        where: { id: data.productId },
+        select: { costPrice: true, listPrice: true },
+      });
+      if (masterProduct?.costPrice != null) {
+        const masterCostPrice = Number(masterProduct.costPrice);
+        const masterListPrice = Number(masterProduct.listPrice);
+
+        let factor: number;
+        let factorSource: string;
+        if (data.costConversionFactor != null && data.costConversionFactor > 0) {
+          // Preferred: explicit factor from editor
+          factor = data.costConversionFactor;
+          factorSource = 'explicit';
+        } else if (masterListPrice > 0) {
+          // Fallback: derive from listPrice ratio (older clients)
+          factor = data.listPrice / masterListPrice;
+          factorSource = 'ratio';
+        } else {
+          // Last resort: no factor, no ratio. Same-currency case is
+          // captured by factor=1 above; foreign-currency master with
+          // listPrice=0 and no factor is genuinely unrecoverable, so
+          // write null rather than a wrong-currency value.
+          factor = 1;
+          factorSource = 'identity';
+        }
+        resolvedCostPrice = masterCostPrice * factor;
+        // Audit breadcrumb — distinguishes "client sent X" from
+        // "server resolved X" if a question arises later about a
+        // quote's cost provenance.
+        console.info(
+          `[items POST] resolved costPrice from master: quoteId=${quoteId} productId=${data.productId} masterCost=${masterCostPrice} factor=${factor} source=${factorSource} resolved=${resolvedCostPrice}`
+        );
+      }
+    }
+
     const item = await db.quoteItem.create({
       data: {
         quoteId,
@@ -188,7 +261,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         notes: data.notes || null,
         priceLabel: data.priceLabel || null,
         parentItemId: data.parentItemId || null,
-        costPrice: data.costPrice ?? null,
+        costPrice: resolvedCostPrice,
         ekMaliyetDelta: data.ekMaliyetDelta ?? null,
         currency: itemCurrency,
         sectionDiscountPct,
@@ -358,6 +431,34 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           ? 0
           : computeRowTotal({ quantity, unitPrice, discountPct });
 
+        // Cost resolution for PUT. Default behavior: respect the
+        // body's costPrice (or skip update if null/undefined). When
+        // the editor sends a `costConversionFactor` AND the item has
+        // a productId, override the body's costPrice with master ×
+        // factor. The editor only sends the factor for items where
+        // `productCostPrice` was null in local state — i.e., the
+        // salesperson case where the catalog API filtered cost. This
+        // ensures currency-change saves on salesperson-prepared
+        // quotes don't ship a stale costPrice from the previous
+        // currency. Manager flow doesn't send factor → unchanged.
+        let costPriceUpdate: number | null | undefined = item.costPrice ?? undefined;
+        if (
+          item.productId &&
+          item.costConversionFactor != null &&
+          item.costConversionFactor > 0
+        ) {
+          const masterProduct = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { costPrice: true },
+          });
+          if (masterProduct?.costPrice != null) {
+            costPriceUpdate = Number(masterProduct.costPrice) * item.costConversionFactor;
+            console.info(
+              `[items PUT] resolved costPrice via factor: itemId=${item.id} productId=${item.productId} factor=${item.costConversionFactor} resolved=${costPriceUpdate}`
+            );
+          }
+        }
+
         await tx.quoteItem.update({
           where: { id: item.id },
           data: {
@@ -383,7 +484,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             notes: item.notes || null,
             priceLabel: item.priceLabel || null,
             parentItemId: item.parentItemId || null,
-            costPrice: item.costPrice ?? undefined,
+            costPrice: costPriceUpdate,
             ekMaliyetDelta: item.ekMaliyetDelta !== undefined ? item.ekMaliyetDelta : undefined,
             serviceMeta: item.serviceMeta !== undefined ? item.serviceMeta : undefined,
             ...(currencyUpdate === undefined ? {} : { currency: currencyUpdate }),

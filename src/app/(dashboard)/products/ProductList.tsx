@@ -149,7 +149,8 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
       }
 
       setDeletingProduct(null);
-      fetchProducts();
+      // Preserve page — see handleFormSuccess for the rationale.
+      fetchProducts(pagination?.page ?? 1);
     } catch {
       setDeleteError('Bir hata oluştu');
     }
@@ -638,7 +639,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
           onClose={() => setIsImportModalOpen(false)}
           onImportComplete={() => {
             setIsImportModalOpen(false);
-            fetchProducts();
+            fetchProducts(pagination?.page ?? 1);
           }}
         />
       )}
@@ -663,7 +664,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
           onSuccess={() => {
             setIsBulkPriceModalOpen(false);
             setSelectedProducts(new Set());
-            fetchProducts();
+            fetchProducts(pagination?.page ?? 1);
           }}
         />
       )}

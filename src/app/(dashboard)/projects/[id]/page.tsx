@@ -39,6 +39,7 @@ interface ProjectQuote {
   id: string;
   quoteNumber: string;
   subject?: string | null;
+  refNo?: string | null;
   status: string;
   grandTotal: number | null;
   currency: string;
@@ -143,6 +144,10 @@ export default function ProjectDetailPage({ params }: PageProps) {
 
   // Core state
   const [project, setProject] = useState<Project | null>(null);
+  // Search across the project's quote list. Customer note: a single
+  // project can hold quotes from multiple years, so case-insensitive
+  // match across quoteNumber, refNo, and subject keeps lookup fast.
+  const [quoteSearch, setQuoteSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -659,11 +664,22 @@ export default function ProjectDetailPage({ params }: PageProps) {
             </p>
           </CardBody>
         ) : (
+          <>
+            <div className="px-5 pt-3 pb-2">
+              <input
+                type="text"
+                placeholder="Teklif no, fatura kodu veya teklif adı ile ara..."
+                value={quoteSearch}
+                onChange={(e) => setQuoteSearch(e.target.value)}
+                className="w-full max-w-md px-3 py-1.5 text-sm border border-accent-200 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-300"
+              />
+            </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-accent-50 border-b border-accent-200 text-xs uppercase tracking-wider text-accent-600">
                   <th className="px-4 py-2.5 text-left">Teklif No</th>
+                  <th className="px-4 py-2.5 text-left">Fatura Kodu</th>
                   <th className="px-4 py-2.5 text-left">Teklif Adı</th>
                   <th className="px-4 py-2.5 text-left">Durum</th>
                   <th className="px-4 py-2.5 text-right">Genel Toplam</th>
@@ -672,13 +688,25 @@ export default function ProjectDetailPage({ params }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {project.quotes.map((quote) => (
+                {project.quotes
+                  .filter((q) => {
+                    const term = quoteSearch.trim().toLocaleLowerCase('tr-TR');
+                    if (!term) return true;
+                    const haystack = [q.quoteNumber, q.refNo ?? '', q.subject ?? '']
+                      .join(' ')
+                      .toLocaleLowerCase('tr-TR');
+                    return haystack.includes(term);
+                  })
+                  .map((quote) => (
                   <tr
                     key={quote.id}
                     className="border-b border-accent-100 hover:bg-accent-50/50 transition-colors"
                   >
                     <td className="px-4 py-2.5 font-medium text-primary-900">
                       {quote.quoteNumber}
+                    </td>
+                    <td className="px-4 py-2.5 text-primary-700">
+                      {quote.refNo || '—'}
                     </td>
                     <td className="px-4 py-2.5 text-primary-700">
                       {quote.subject || '—'}
@@ -708,6 +736,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 

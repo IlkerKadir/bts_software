@@ -79,5 +79,10 @@ export interface CreateItemPayload {
   unitPrice?: number;
   totalPrice?: number;
   costPrice?: number | null;
+  /** Conversion factor (rate × (1 + protectionPct/100)) the editor
+   *  computed at item-add time. Server uses this only when costPrice
+   *  is null (non-canViewCosts user) to derive the converted cost
+   *  from the master Product.costPrice. */
+  costConversionFactor?: number;
   ekMaliyetDelta?: number | null;
 }

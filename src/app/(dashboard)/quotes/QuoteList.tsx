@@ -105,9 +105,11 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     sanitizeStatus(searchParams.get('status'))
   );
   const [companyFilter, setCompanyFilter] = useState('');
+  const [createdByFilter, setCreatedByFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [users, setUsers] = useState<{ id: string; fullName: string }[]>([]);
   const [isNewQuoteModalOpen, setIsNewQuoteModalOpen] = useState(false);
   const [newQuoteData, setNewQuoteData] = useState({
     companyId: '',
@@ -136,6 +138,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (companyFilter) params.set('companyId', companyFilter);
+      if (createdByFilter) params.set('createdById', createdByFilter);
       if (dateFrom) params.set('dateFrom', dateFrom);
       if (dateTo) params.set('dateTo', dateTo);
       if (sortField) params.set('sortField', sortField);
@@ -158,7 +161,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearch, statusFilter, companyFilter, dateFrom, dateTo, sortField, sortDirection]);
+  }, [debouncedSearch, statusFilter, companyFilter, createdByFilter, dateFrom, dateTo, sortField, sortDirection]);
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -172,6 +175,30 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     };
 
     fetchCompanies();
+
+    // Populate "Oluşturan" filter dropdown for everyone. Non-admins
+    // typically only see their own quotes server-side, but they can
+    // also be granted access to other users' quotes via project
+    // visibility — so the dropdown stays useful. The lightweight
+    // /api/users/list endpoint returns just id+fullName and is open
+    // to any authenticated user (the heavy /api/users stays gated).
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch('/api/users/list');
+        if (!response.ok) return;
+        const data = await response.json();
+        setUsers(
+          (data.users || []).map((u: { id: string; fullName: string }) => ({
+            id: u.id,
+            fullName: u.fullName,
+          })),
+        );
+      } catch (err) {
+        console.error('Error fetching users:', err);
+      }
+    };
+
+    fetchUsers();
   }, []);
 
   useEffect(() => {
@@ -245,7 +272,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       }
       setDeletingQuote(null);
       setDeleteError('');
-      fetchQuotes();
+      fetchQuotes(pagination?.page ?? 1);
     } catch {
       setDeleteError('Bir hata oluştu');
     }
@@ -364,6 +391,21 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
               options={statusOptions}
               className="w-full sm:w-48"
             />
+            {/* "Oluşturan" filter — available to everyone. Non-admins
+                usually only see their own quotes, but project-level
+                sharing can expose others' quotes to them, so let
+                them filter by creator like admins do. */}
+            {users.length > 0 && (
+              <Select
+                value={createdByFilter}
+                onChange={(e) => setCreatedByFilter(e.target.value)}
+                options={[
+                  { value: '', label: 'Tüm Oluşturanlar' },
+                  ...users.map((u) => ({ value: u.id, label: u.fullName })),
+                ]}
+                className="w-full sm:w-48"
+              />
+            )}
           </div>
           {/* Second row: date range */}
           <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
@@ -705,7 +747,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           onSuccess={() => {
             setShowBulkModal(false);
             setSelectedQuoteIds(new Set());
-            fetchQuotes();
+            fetchQuotes(pagination?.page ?? 1);
           }}
         />
       )}
@@ -837,7 +879,9 @@ function QuoteGroupRows({
           >
             <FileText className="w-4 h-4" />
           </button>
-          {(quote.status === 'TASLAK' || quote.status === 'DUZENLEME_TALEP_EDILDI') && (
+          {(quote.status === 'TASLAK' ||
+            quote.status === 'DUZENLEME_TALEP_EDILDI' ||
+            quote.status === 'IPTAL') && (
             <button
               onClick={() => onDelete(quote)}
               className="p-1.5 rounded hover:bg-red-50 text-red-500 cursor-pointer"

@@ -81,7 +81,7 @@ export function RolesList() {
       }
 
       setDeletingRole(null);
-      fetchRoles();
+      fetchRoles(pagination?.page ?? 1);
     } catch {
       setDeleteError('Bir hata olustu');
     }
@@ -93,7 +93,7 @@ export function RolesList() {
   };
 
   const handleFormSuccess = () => {
-    fetchRoles();
+    fetchRoles(pagination?.page ?? 1);
   };
 
   const PermissionBadge = ({ enabled, label }: { enabled: boolean; label: string }) => (

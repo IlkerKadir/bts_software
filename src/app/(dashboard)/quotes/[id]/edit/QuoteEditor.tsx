@@ -211,7 +211,54 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── State ──────────────────────────────────────────────────────────────────
 
   const [quote, setQuote] = useState<QuoteData | null>(null);
-  const [items, setItems] = useState<QuoteItemData[]>([]);
+  const [items, setItemsRaw] = useState<QuoteItemData[]>([]);
+  // Undo support: every user-driven `setItems` call snapshots the
+  // previous items array onto a ring buffer (capped at 30). The Geri
+  // Al button + Ctrl+Z pop the most recent snapshot back. We wrap
+  // setItems below so existing call sites (~34) stay untouched.
+  const itemsHistoryRef = useRef<QuoteItemData[][]>([]);
+  const skipFirstSnapshotRef = useRef(true);
+  // StrictMode (Next dev default) invokes state updaters twice; we
+  // dedupe history pushes by the `prev` reference passed in — same
+  // ref means it's the same logical setItems call replayed.
+  const lastSnapshottedPrevRef = useRef<QuoteItemData[] | null>(null);
+  const [undoDepth, setUndoDepth] = useState(0);
+  const setItems = useCallback(
+    (updater: QuoteItemData[] | ((prev: QuoteItemData[]) => QuoteItemData[])) => {
+      setItemsRaw((prev) => {
+        if (lastSnapshottedPrevRef.current !== prev) {
+          // The very first setItems call comes from the initial fetch
+          // populating items from the API — don't record an "empty"
+          // baseline as undoable.
+          if (skipFirstSnapshotRef.current) {
+            skipFirstSnapshotRef.current = false;
+          } else {
+            const stack = itemsHistoryRef.current;
+            stack.push(prev);
+            if (stack.length > 30) stack.shift();
+            setUndoDepth(stack.length);
+          }
+          lastSnapshottedPrevRef.current = prev;
+        }
+        return typeof updater === 'function'
+          ? (updater as (p: QuoteItemData[]) => QuoteItemData[])(prev)
+          : updater;
+      });
+    },
+    [],
+  );
+  const handleUndo = useCallback(() => {
+    const stack = itemsHistoryRef.current;
+    if (stack.length === 0) return;
+    const prev = stack.pop()!;
+    // Direct setter bypasses our wrapper — undo itself shouldn't
+    // record on the history stack.
+    setItemsRaw(prev);
+    setUndoDepth(stack.length);
+    itemsDirtyRef.current = true;
+    setHasChanges(true);
+  }, []);
+  const canUndo = undoDepth > 0;
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -623,44 +670,93 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
       // 2. Save items if dirty (reorder or modifications)
       if (itemsDirtyRef.current) {
-        const bulkItems = items.map((item) => ({
-          id: item.id,
-          itemType: item.itemType,
-          sortOrder: item.sortOrder,
-          productId: item.productId,
-          parentItemId: item.parentItemId || null,
-          code: item.code || '',
-          brand: item.brand || '',
-          model: item.model || '',
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          listPrice: item.listPrice,
-          katsayi: item.katsayi,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          discountPct: item.discountPct,
-          vatRate: item.vatRate,
-          isManualPrice: item.isManualPrice || false,
-          costPrice: item.costPrice ?? null,
-          ekMaliyetDelta: item.ekMaliyetDelta ?? null,
-          notes: item.notes || '',
-          priceLabel: item.priceLabel ?? null,
-          serviceMeta: (item.customPozNo || item.highlight)
-            ? {
-                ...(item.customPozNo ? { customPozNo: item.customPozNo } : {}),
-                ...(item.highlight ? { highlight: true } : {}),
-              }
-            : null,
-          sectionDiscountPct: item.sectionDiscountPct ?? null,
-          sectionDiscountLabel: item.sectionDiscountLabel ?? null,
-          // Per-SET currency override — only set on top-level SET rows.
-          // Sending it always (null for non-SET rows) lets the API reset
-          // stray values when a row changes type.
-          currency: item.itemType === 'SET' && !item.parentItemId
-            ? (item.currency ?? null)
-            : null,
-        }));
+        // Compute the FX factor for an item from product currency to
+        // target currency (quote or per-SET override). Mirrors the
+        // formula in `recalcItemPrices` (line ~2068-2078) and
+        // `handleAddProduct` (line ~1140-1156). We send this to the
+        // server for items whose local state lacks `productCostPrice`
+        // (non-canViewCosts user — catalog API filtered cost) so the
+        // server can re-derive cost = master.costPrice × factor on
+        // each save. Without this, salesperson currency-change saves
+        // ship a stale costPrice from the previous currency.
+        const computeFactorForItem = (item: QuoteItemData): number | undefined => {
+          if (!item.productId || !item.productCurrency) return undefined;
+          // Manager flow: productCostPrice is set, recompute already
+          // ran client-side, costPrice in local state is correct —
+          // don't send factor (server should respect manager's value,
+          // including any manual cost overrides).
+          if (item.productCostPrice != null) return undefined;
+
+          let targetCurrency = headerFields.currency;
+          let isSetOverride = false;
+          if (item.parentItemId) {
+            const parent = items.find((i) => i.id === item.parentItemId);
+            if (parent && parent.itemType === 'SET' && parent.currency) {
+              targetCurrency = parent.currency;
+              isSetOverride = true;
+            }
+          }
+
+          if (item.productCurrency === targetCurrency) return 1;
+
+          const pk = [item.productCurrency, targetCurrency].sort().join('/');
+          const protectionPct = isSetOverride ? 0 : (headerFields.protectionMap[pk] ?? 0);
+
+          let rate = exchangeRates[item.productCurrency]?.[targetCurrency];
+          if (!rate) {
+            const reverseRate = exchangeRates[targetCurrency]?.[item.productCurrency];
+            if (reverseRate && reverseRate !== 0) rate = 1 / reverseRate;
+          }
+          if (!rate) return undefined;
+
+          return rate * (1 + protectionPct / 100);
+        };
+
+        const bulkItems = items.map((item) => {
+          const factor = computeFactorForItem(item);
+          return {
+            id: item.id,
+            itemType: item.itemType,
+            sortOrder: item.sortOrder,
+            productId: item.productId,
+            parentItemId: item.parentItemId || null,
+            code: item.code || '',
+            brand: item.brand || '',
+            model: item.model || '',
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            listPrice: item.listPrice,
+            katsayi: item.katsayi,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            discountPct: item.discountPct,
+            vatRate: item.vatRate,
+            isManualPrice: item.isManualPrice || false,
+            costPrice: item.costPrice ?? null,
+            // Only sent when productCostPrice is null (salesperson
+            // case). Server uses it to override the body's costPrice
+            // with master × factor.
+            ...(factor != null ? { costConversionFactor: factor } : {}),
+            ekMaliyetDelta: item.ekMaliyetDelta ?? null,
+            notes: item.notes || '',
+            priceLabel: item.priceLabel ?? null,
+            serviceMeta: (item.customPozNo || item.highlight)
+              ? {
+                  ...(item.customPozNo ? { customPozNo: item.customPozNo } : {}),
+                  ...(item.highlight ? { highlight: true } : {}),
+                }
+              : null,
+            sectionDiscountPct: item.sectionDiscountPct ?? null,
+            sectionDiscountLabel: item.sectionDiscountLabel ?? null,
+            // Per-SET currency override — only set on top-level SET rows.
+            // Sending it always (null for non-SET rows) lets the API reset
+            // stray values when a row changes type.
+            currency: item.itemType === 'SET' && !item.parentItemId
+              ? (item.currency ?? null)
+              : null,
+          };
+        });
 
         if (bulkItems.length > 0) {
           const itemsRes = await fetch(`/api/quotes/${quoteId}/items`, {
@@ -676,7 +772,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
           const itemsData = await itemsRes.json();
           if (itemsData.items) {
-            setItems(flattenSubRows(itemsData.items.map(mapApiItemToLocal)));
+            // Use the raw setter — a server-driven post-save reload
+            // shouldn't push the user's pre-save state onto the undo
+            // stack. Otherwise Ctrl+Z after save would revert the
+            // editor to the pre-save view while the DB stays saved.
+            setItemsRaw(flattenSubRows(itemsData.items.map(mapApiItemToLocal)));
           }
         }
       }
@@ -700,13 +800,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [quote, quoteId, headerFields, items, checkHeaderChanges]);
+  }, [quote, quoteId, headerFields, items, exchangeRates, checkHeaderChanges]);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
 
   const shortcuts = useMemo(() => ({
     'Ctrl+S': () => handleSave(),
-  }), [handleSave]);
+    'Ctrl+Z': () => handleUndo(),
+  }), [handleSave, handleUndo]);
 
   useKeyboardShortcuts(shortcuts);
 
@@ -740,7 +841,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
     isRecalculating.current = true;
     itemsDirtyRef.current = true;
-    setItems(prev => {
+    // Use the raw setter — this auto-sync is derived from the user's
+    // last edit, not its own undoable step. Without `setItemsRaw` the
+    // user would need two Ctrl+Z presses to fully revert one edit
+    // (one for the auto-sync, one for the original edit).
+    setItemsRaw(prev => {
       let result = prev;
       for (const parentId of parentIdsToUpdate) {
         result = recalculateParentTotals(result, parentId);
@@ -946,8 +1051,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         if (res.ok) {
           const data = await res.json();
           const newParentId = data.item.id;
-          // Replace temp ID with server-returned ID
-          setItems((prev) =>
+          // Replace temp ID with server-returned ID. Raw setter —
+          // ID resolution isn't a user action.
+          setItemsRaw((prev) =>
             prev.map((item) =>
               item.id === tempId ? mapApiItemToLocal(data.item) : item
             )
@@ -996,7 +1102,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             }
 
             if (replacements.size > 0) {
-              setItems((prev) =>
+              setItemsRaw((prev) =>
                 prev.map((item) => replacements.get(item.id) ?? item)
               );
             }
@@ -1121,6 +1227,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // Currency conversion: convert product price to target currency
       let convertedListPrice = product.listPrice;
       let convertedCostPrice = product.costPrice ?? null;
+      // Track the conversion factor (rate × (1 + protectionPct / 100))
+      // so we can pass it to the server. The server uses this to
+      // reconstruct the converted cost when a non-canViewCosts user
+      // posts (their `convertedCostPrice` is null because the catalog
+      // API hides costPrice). Defaults to 1 — same currency, no
+      // conversion, which is also the right multiplier when no rate
+      // is available.
+      let costConversionFactor = 1;
 
       if (productCurrency !== targetCurrency) {
         // Convert product price to target currency using raw TCMB rates.
@@ -1145,9 +1259,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
         if (rate) {
           // First convert at raw rate, then add protection buffer
-          convertedListPrice = product.listPrice * rate * (1 + protectionPct / 100);
+          costConversionFactor = rate * (1 + protectionPct / 100);
+          convertedListPrice = product.listPrice * costConversionFactor;
           if (convertedCostPrice != null) {
-            convertedCostPrice = convertedCostPrice * rate * (1 + protectionPct / 100);
+            convertedCostPrice = convertedCostPrice * costConversionFactor;
           }
         }
         // If no rate found at all, use 1:1 (fallback — user can adjust manually)
@@ -1221,6 +1336,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         vatRate: isSubItem ? 0 : defaultVatRate,
         sortOrder: newItem.sortOrder,
         costPrice: convertedCostPrice,
+        // For non-canViewCosts users, convertedCostPrice is null — the
+        // server uses costConversionFactor with the master cost to
+        // reconstruct the converted cost a manager would have written.
+        costConversionFactor,
       };
 
       try {
@@ -1232,16 +1351,25 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
         if (res.ok) {
           const data = await res.json();
-          // Replace temp ID with server-returned ID
-          setItems((prev) =>
+          // Replace temp ID with server-returned ID. Use raw setter —
+          // the optimistic insert above already snapshotted history;
+          // resolving the server ID isn't a separate undoable step.
+          setItemsRaw((prev) =>
             prev.map((item) => {
               if (item.id !== tempId) return item;
               return mapApiItemToLocal(data.item);
             })
           );
         } else {
-          // Remove optimistic item on failure
-          setItems((prev) => prev.filter((item) => item.id !== tempId));
+          // Remove optimistic item on failure. Pop the snapshot we
+          // pushed during the optimistic insert so the user doesn't
+          // see a phantom undo step pointing at pre-failed state.
+          setItemsRaw((prev) => prev.filter((item) => item.id !== tempId));
+          const stack = itemsHistoryRef.current;
+          if (stack.length > 0) {
+            stack.pop();
+            setUndoDepth(stack.length);
+          }
         }
       } catch (err) {
         console.error('Add product error:', err);
@@ -1491,7 +1619,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
-        setItems((prev) =>
+        setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
             return { ...item, ...serverItem, description: item.description };
@@ -1544,7 +1672,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
-        setItems((prev) =>
+        setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
             // Merge: keep user's local edits (e.g. description), only take server ID
@@ -1602,7 +1730,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
-        setItems((prev) =>
+        setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
             return { ...item, ...serverItem, description: item.description };
@@ -1672,7 +1800,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
-        setItems((prev) =>
+        setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
             return { ...item, ...serverItem, description: item.description };
@@ -1725,7 +1853,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
-        setItems((prev) =>
+        setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
             return { ...item, ...serverItem, description: item.description };
@@ -1784,7 +1912,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
-        setItems((prev) =>
+        setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
             return { ...item, ...serverItem, description: item.description };
@@ -2550,6 +2678,31 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           }
         }}
       />
+
+      {/* Undo bar — single-line toolbar above the items table.
+          Ctrl+Z also wired up via useKeyboardShortcuts. */}
+      {isEditable && (
+        <div className="flex items-center gap-3 text-xs">
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={!canUndo}
+            title="Son işlemi geri al (Ctrl+Z)"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border transition-colors ${
+              canUndo
+                ? 'border-primary-300 bg-white text-primary-700 hover:bg-primary-50 cursor-pointer'
+                : 'border-primary-200 bg-primary-50 text-primary-400 cursor-not-allowed'
+            }`}
+          >
+            ↶ Geri Al
+          </button>
+          {canUndo && (
+            <span className="text-primary-500">
+              {undoDepth} adım geri alınabilir (Ctrl+Z)
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Items table */}
       <QuoteItemsTable

@@ -120,6 +120,10 @@ interface Quote {
   items: QuoteItem[];
   commercialTerms: CommercialTerm[];
   createdBy: { id: string; fullName: string };
+  /** User who pulled the quote back to TASLAK from ONAYLANDI via the
+   *  status dropdown, if any. View page shows this as "Hazırlayan"
+   *  when set, falling back to `createdBy` otherwise. */
+  lastEditedBy?: { id: string; fullName: string } | null;
   createdAt: string;
   approvedAt?: string | null;
 }
@@ -1064,7 +1068,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               <div className="flex items-center gap-2">
                 <User className="w-3.5 h-3.5 text-primary-400" />
                 <span className="text-primary-500">Hazırlayan:</span>
-                <span className="font-medium text-primary-800">{quote.createdBy.fullName}</span>
+                <span className="font-medium text-primary-800">{quote.lastEditedBy?.fullName ?? quote.createdBy.fullName}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Globe className="w-3.5 h-3.5 text-primary-400" />
@@ -1140,12 +1144,18 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 <th className="px-3 py-2.5 text-left whitespace-nowrap">Açıklama</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap w-20">Miktar</th>
                 <th className="px-3 py-2.5 text-center whitespace-nowrap w-16">Birim</th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap w-28 bg-accent-700/90">
-                  {permissions.canViewCosts ? 'Maliyet' : 'Liste Fiyatı'}
-                </th>
-                <th className="px-3 py-2.5 text-right whitespace-nowrap w-20 bg-accent-700/90">Katsayı</th>
+                {/* Column order mirrors the editor:
+                    Birim Fiyat | Toplam Fiyat | Katsayı | Liste Fiyatı | Maliyet
+                    (the first two are the customer-facing prices, the
+                    next two are the internal preparation values, then
+                    cost). */}
                 <th className="px-3 py-2.5 text-right whitespace-nowrap w-28">Birim Fiyat</th>
                 <th className="px-3 py-2.5 text-right whitespace-nowrap w-28">Toplam Fiyat</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap w-20 bg-accent-700/90">Katsayı</th>
+                <th className="px-3 py-2.5 text-right whitespace-nowrap w-28 bg-accent-700/90">Liste Fiyatı</th>
+                {permissions.canViewCosts && (
+                  <th className="px-3 py-2.5 text-right whitespace-nowrap w-28 bg-accent-700/90">Maliyet</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -1164,7 +1174,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   return (
                     <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-accent-100')}>
                       <td className="px-3 py-2" />
-                      <td colSpan={7} className="px-3 py-2 font-bold text-primary-800 text-sm">
+                      <td colSpan={permissions.canViewCosts ? 8 : 7} className="px-3 py-2 font-bold text-primary-800 text-sm">
                         {item.description}
                       </td>
                     </tr>
@@ -1176,37 +1186,43 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   return (
                     <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-amber-50/50')}>
                       <td className="px-3 py-2" />
-                      <td colSpan={7} className="px-3 py-2 text-sm text-primary-700 italic">
+                      <td colSpan={permissions.canViewCosts ? 8 : 7} className="px-3 py-2 text-sm text-primary-700 italic">
                         {item.description}
                       </td>
                     </tr>
                   );
                 }
 
-                // SUBTOTAL row — inline section total band
+                // SUBTOTAL row — inline section total band.
+                // After the column reorder, amounts land under Toplam Fiyat
+                // (col 6). Trailing colspan covers Katsayı, Liste Fiyatı,
+                // and Maliyet (when present).
                 if (item.itemType === 'SUBTOTAL') {
                   const info = sectionBreakdownById.get(item.id);
                   const hasDiscount = Number(item.sectionDiscountPct ?? 0) > 0 && !!info;
                   const displayAmount = info ? info.sectionNet : (subtotalSumMap.get(item.id) ?? 0);
+                  const trailingCols = permissions.canViewCosts ? 3 : 2;
                   return (
                     <React.Fragment key={item.id}>
                       {hasDiscount && info && (
                         <tr className="bg-accent-50/50">
-                          <td colSpan={7} className="px-3 py-1 text-right text-sm text-accent-700">
+                          <td colSpan={5} className="px-3 py-1 text-right text-sm text-accent-700">
                             İskonto (%{info.discountPct})
                           </td>
                           <td className="px-2 py-1 text-right tabular-nums text-red-600 whitespace-nowrap">
                             - {formatPrice(info.discountAmount)}
                           </td>
+                          <td colSpan={trailingCols} />
                         </tr>
                       )}
                       <tr className="bg-accent-50 border-t-2 border-accent-300">
-                        <td colSpan={7} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
+                        <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium text-accent-700">
                           {item.description || 'Ara Toplam'}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
                           {formatPrice(displayAmount)}
                         </td>
+                        <td colSpan={trailingCols} />
                       </tr>
                     </React.Fragment>
                   );
@@ -1214,14 +1230,16 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
                 // GRAND_TOTAL row — inline grand total band
                 if (item.itemType === 'GRAND_TOTAL') {
+                  const trailingCols = permissions.canViewCosts ? 3 : 2;
                   return (
                     <tr key={item.id} className="bg-primary-50 border-t-2 border-primary-300">
-                      <td colSpan={7} className="px-3 py-2.5 text-right text-sm font-bold text-primary-900">
+                      <td colSpan={5} className="px-3 py-2.5 text-right text-sm font-bold text-primary-900">
                         {item.description || 'GENEL TOPLAM'}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums font-bold text-primary-900 whitespace-nowrap">
                         {formatPrice(grandTotalByItemId.get(item.id) ?? 0)}
                       </td>
+                      <td colSpan={trailingCols} />
                     </tr>
                   );
                 }
@@ -1325,29 +1343,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     >
                       {item.unit}
                     </td>
-                    {/* Internal-only column: Maliyet for cost-viewers, Liste
-                        Fiyatı for everyone else. Slate tint marks it as
-                        internal info — mirrors the editor convention. */}
-                    <td
-                      className={cn(
-                        'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
-                        isSubRow ? 'text-accent-500' : 'text-primary-800'
-                      )}
-                    >
-                      {permissions.canViewCosts
-                        ? (item.costPrice != null
-                            ? formatRowPrice(Number(item.costPrice))
-                            : '—')
-                        : formatRowPrice(Number(item.listPrice))}
-                    </td>
-                    <td
-                      className={cn(
-                        'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
-                        isSubRow ? 'text-accent-500' : 'text-primary-800'
-                      )}
-                    >
-                      {Number(item.katsayi).toFixed(3)}
-                    </td>
+                    {/* Customer-facing: Birim Fiyat then Toplam Fiyat */}
                     <td
                       className={cn(
                         'px-3 py-2.5 text-right tabular-nums',
@@ -1376,6 +1372,39 @@ export default function QuoteDetailPage({ params }: PageProps) {
                         formatRowPrice(Number(item.totalPrice))
                       )}
                     </td>
+                    {/* Internal preparation: Katsayı then Liste Fiyatı.
+                        Slate tint marks them as internal info,
+                        mirrors the editor. */}
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
+                        isSubRow ? 'text-accent-500' : 'text-primary-800'
+                      )}
+                    >
+                      {Number(item.katsayi).toFixed(3)}
+                    </td>
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
+                        isSubRow ? 'text-accent-500' : 'text-primary-800'
+                      )}
+                    >
+                      {formatRowPrice(Number(item.listPrice))}
+                    </td>
+                    {/* Maliyet — only canViewCosts users; placed at
+                        the end to mirror the editor's column order. */}
+                    {permissions.canViewCosts && (
+                      <td
+                        className={cn(
+                          'px-3 py-2.5 text-right tabular-nums bg-accent-50/60',
+                          isSubRow ? 'text-accent-500' : 'text-primary-800'
+                        )}
+                      >
+                        {item.costPrice != null
+                          ? formatRowPrice(Number(item.costPrice))
+                          : '—'}
+                      </td>
+                    )}
                   </tr>
                 );
                 };
@@ -1401,7 +1430,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
               {quote.items.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-accent-500">
+                  <td colSpan={permissions.canViewCosts ? 9 : 8} className="px-4 py-8 text-center text-accent-500">
                     Henüz kalem eklenmedi.
                   </td>
                 </tr>
@@ -1414,33 +1443,40 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 {/* Ara Toplam / İskonto / Genel Toplam — only when the quote
                     doesn't already carry inline SUBTOTAL/GRAND_TOTAL rows,
                     so we don't render duplicates. */}
+                {/* Ara Toplam / Genel Toplam: amount lands under
+                    Toplam Fiyat (col 6). Trailing colspan covers
+                    Katsayı, Liste Fiyatı, and Maliyet (when present). */}
                 {!hasInlineSubtotal && (
                   <tr className="border-t-2 border-accent-300">
-                    <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-700">
+                    <td colSpan={5} className="px-3 py-2 text-right font-medium text-accent-700">
                       Ara Toplam
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-accent-900 whitespace-nowrap">
                       {formatPrice(summary.subtotal)}
                     </td>
+                    <td colSpan={permissions.canViewCosts ? 3 : 2} />
                   </tr>
                 )}
 
                 {!hasInlineGrandTotal && (
                   <tr className="border-t-2 border-accent-400">
-                    <td colSpan={7} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
+                    <td colSpan={5} className="px-3 py-2.5 text-right text-base font-bold text-accent-900">
                       GENEL TOPLAM
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-base font-bold text-accent-900 whitespace-nowrap">
                       {formatPrice(summary.subtotal - summary.discountTotal)}
                     </td>
+                    <td colSpan={permissions.canViewCosts ? 3 : 2} />
                   </tr>
                 )}
 
-                {/* Cost / Profit summary (only for canViewCosts users) */}
+                {/* Cost / Profit summary (only for canViewCosts users).
+                    Amounts land under Maliyet (col 9, the last one) so
+                    they line up with the per-row Maliyet column. */}
                 {permissions.canViewCosts && profitSummary && (
                   <>
                     <tr className="border-t-2 border-accent-300">
-                      <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-600">
+                      <td colSpan={8} className="px-3 py-2 text-right font-medium text-accent-600">
                         Toplam Maliyet
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-accent-700 whitespace-nowrap">
@@ -1448,7 +1484,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-600">
+                      <td colSpan={8} className="px-3 py-2 text-right font-medium text-accent-600">
                         Toplam Kar
                       </td>
                       <td
@@ -1461,7 +1497,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={7} className="px-3 py-2 text-right font-medium text-accent-600">
+                      <td colSpan={8} className="px-3 py-2 text-right font-medium text-accent-600">
                         Kar Marjı %
                       </td>
                       <td

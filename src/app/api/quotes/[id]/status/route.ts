@@ -76,22 +76,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // ONAYLANDI → TASLAK ("Tekrar Onaya Gönder" → reopens for edits):
-    // creator-only. The approved quote drops back to draft so the
-    // creator can edit, then re-submit via the standard
-    // TASLAK → ONAY_BEKLIYOR. Approvers shouldn't be able to roll
-    // someone else's approved quote back to draft — that's not their
-    // workflow. Once GONDERILDI is reached the state machine itself
-    // blocks any path back, satisfying the client's "approval can't
-    // restart after sending" rule.
-    if (currentStatus === 'ONAYLANDI' && newStatus === 'TASLAK') {
-      if (user.id !== quote.createdById) {
-        return NextResponse.json(
-          { error: 'Sadece teklifi oluşturan kişi onaylı teklifi tekrar açabilir' },
-          { status: 403 }
-        );
-      }
-    }
+    // ONAYLANDI → TASLAK reopens an approved quote for edits. Per
+    // client request (29.04 meeting): anyone with quote access can do
+    // this — the team works collaboratively and any user might catch a
+    // last-minute issue. The mover's identity is stamped on
+    // lastEditedById/lastEditedAt so the view page's "Hazırlayan"
+    // field can show who pulled it back without overwriting the
+    // original creator. GONDERILDI still blocks any reopen path
+    // (state-machine level), satisfying the "no approval restart
+    // after sending" rule.
 
     // ONAY_BEKLIYOR → TASLAK is now strictly the creator's "Onayı
     // Geri Çek" path. The approver-rejection path moved to
@@ -188,12 +181,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(currentStatus === 'ONAYLANDI' && newStatus !== 'ONAYLANDI' && {
           validUntil: null,
         }),
+        // Stamp the user who reopened an approved quote (ONAYLANDI →
+        // TASLAK). View page shows this as "Hazırlayan" so the team
+        // sees who pulled it back. Original createdById is untouched.
+        ...(currentStatus === 'ONAYLANDI' && newStatus === 'TASLAK' && {
+          lastEditedBy: { connect: { id: user.id } },
+          lastEditedAt: new Date(),
+        }),
       },
       include: {
         company: true,
         project: true,
         createdBy: { select: { id: true, fullName: true } },
         approvedBy: { select: { id: true, fullName: true } },
+        lastEditedBy: { select: { id: true, fullName: true } },
       },
     });
 
@@ -437,16 +438,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       allowedTransitions = allowedTransitions.filter(s => s !== 'ONAY_BEKLIYOR');
     }
 
-    // Reopen-for-edits (ONAYLANDI → TASLAK) is intentionally only
-    // exposed via the dedicated "Tekrar Onaya Gönder" button on the
-    // view page — it shows a confirm dialog, writes an audit note,
-    // and drops the user into the editor afterwards. Picking "Taslak"
-    // from the status-badge dropdown would skip all of that, so we
-    // hide the option from the dropdown entirely (creator and
-    // non-creator alike) and let the button be the single path.
-    if (currentStatus === 'ONAYLANDI') {
-      allowedTransitions = allowedTransitions.filter(s => s !== 'TASLAK');
-    }
+    // Reopen-for-edits (ONAYLANDI → TASLAK) is exposed in two places:
+    // the dedicated "Tekrar Onaya Gönder" button (shows confirm,
+    // redirects to editor) AND the status-badge dropdown (silent
+    // transition). Per the 29.04 client request, anyone with quote
+    // access can pick Taslak from the dropdown — collaborative
+    // editing — and the mover gets stamped on lastEditedById in the
+    // PUT handler. No filter needed; state-machine TASLAK is a valid
+    // transition for ONAYLANDI.
 
     // Get approval check result for current quote items
     const quoteItems = await db.quoteItem.findMany({

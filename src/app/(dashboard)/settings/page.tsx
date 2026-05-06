@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { FileText, Tag, Settings as SettingsIcon, Users } from 'lucide-react';
+import { FileText, Tag, Settings as SettingsIcon, Users, Hash } from 'lucide-react';
 import { getSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -44,6 +44,13 @@ export default async function SettingsHubPage() {
       title: 'Fiyat Etiketleri',
       description: '"Tarafınızca sağlanacaktır" gibi fiyat yerine kullanılan etiket seçeneklerini yönetin.',
       icon: Tag,
+      visible: user.role.canManageSettings,
+    },
+    {
+      href: '/settings/fatura-kodlama',
+      title: 'Fatura Kodlama',
+      description: 'Teklif başlığındaki "Fatura Kodu" oluşturucunun A/B/C/D kategori listelerini düzenleyin.',
+      icon: Hash,
       visible: user.role.canManageSettings,
     },
     {

@@ -139,7 +139,9 @@ export function ProjectList({ canDelete }: ProjectListProps) {
       }
 
       setDeletingProject(null);
-      fetchProjects();
+      // Preserve current page — same fix as #17 for products. Don't
+      // yank the user back to page 1 after a CRUD action.
+      fetchProjects(pagination?.page ?? 1);
     } catch {
       setDeleteError('Bir hata olustu');
     } finally {
@@ -153,7 +155,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   };
 
   const handleFormSuccess = () => {
-    fetchProjects();
+    fetchProjects(pagination?.page ?? 1);
   };
 
   return (
