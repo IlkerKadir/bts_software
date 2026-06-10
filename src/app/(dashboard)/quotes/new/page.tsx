@@ -40,7 +40,7 @@ export default function NewQuotePage() {
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const response = await fetch('/api/companies?limit=100');
+        const response = await fetch('/api/companies?limit=0');
         const data = await response.json();
         setCompanies(data.companies || []);
       } catch (err) {
@@ -58,7 +58,7 @@ export default function NewQuotePage() {
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const response = await fetch('/api/projects?limit=100');
+        const response = await fetch('/api/projects?limit=0');
         const data = await response.json();
         setProjects(data.projects || []);
       } catch (err) {

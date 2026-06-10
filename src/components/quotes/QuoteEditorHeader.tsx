@@ -218,7 +218,7 @@ export function QuoteEditorHeader({
     async function fetchProjects() {
       setIsLoadingProjects(true);
       try {
-        const res = await fetch('/api/projects?status=TEKLIF_ASAMASINDA,ONAYLANDI,DEVAM_EDIYOR');
+        const res = await fetch('/api/projects?status=TEKLIF_ASAMASINDA,ONAYLANDI,DEVAM_EDIYOR&limit=0');
         if (res.ok) {
           const data = await res.json();
           setProjects(data.projects || []);

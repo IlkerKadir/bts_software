@@ -4,6 +4,7 @@ import { companySchema, companyQuerySchema } from '@/lib/validations/company';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 import { expandTurkishVariants } from '@/lib/search-helpers';
+import { paginationArgs, paginationMeta } from '@/lib/pagination';
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,20 +45,14 @@ export async function GET(request: NextRequest) {
       db.company.findMany({
         where,
         orderBy: { name: 'asc' },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
+        ...paginationArgs(query.page, query.limit),
       }),
       db.company.count({ where }),
     ]);
 
     return NextResponse.json({
       companies,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
+      pagination: paginationMeta(query.page, query.limit, total),
     });
   } catch (error) {
     console.error('Companies GET error:', error);

@@ -698,8 +698,8 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
     try {
       const [companiesRes, projectsRes] = await Promise.all([
-        fetch('/api/companies?limit=200'),
-        fetch('/api/projects?limit=200'),
+        fetch('/api/companies?limit=0'),
+        fetch('/api/projects?limit=0'),
       ]);
       if (companiesRes.ok) {
         const data = await companiesRes.json();

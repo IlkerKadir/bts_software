@@ -94,7 +94,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const response = await fetch('/api/companies?limit=100');
+        const response = await fetch('/api/companies?limit=0');
         const data = await response.json();
         setCompanies(data.companies || []);
       } catch (err) {

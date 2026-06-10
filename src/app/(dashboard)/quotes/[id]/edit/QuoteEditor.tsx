@@ -466,7 +466,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/companies?limit=500');
+        const res = await fetch('/api/companies?limit=0');
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {

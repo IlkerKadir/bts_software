@@ -4,6 +4,7 @@ import { projectSchema, projectQuerySchema } from '@/lib/validations/project';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 import { expandTurkishVariants } from '@/lib/search-helpers';
+import { paginationArgs, paginationMeta } from '@/lib/pagination';
 
 export async function GET(request: NextRequest) {
   try {
@@ -75,20 +76,14 @@ export async function GET(request: NextRequest) {
           _count: { select: { quotes: true } },
         },
         orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
+        ...paginationArgs(query.page, query.limit),
       }),
       db.project.count({ where }),
     ]);
 
     return NextResponse.json({
       projects,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
+      pagination: paginationMeta(query.page, query.limit, total),
     });
   } catch (error) {
     console.error('Projects GET error:', error);

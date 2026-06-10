@@ -166,7 +166,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const response = await fetch('/api/companies?limit=100');
+        const response = await fetch('/api/companies?limit=0');
         const data = await response.json();
         setCompanies(data.companies || []);
       } catch (err) {
@@ -217,7 +217,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const res = await fetch('/api/projects?limit=100');
+        const res = await fetch('/api/projects?limit=0');
         const data = await res.json();
         setProjects(data.projects || []);
       } catch (err) {

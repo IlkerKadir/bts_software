@@ -115,7 +115,7 @@ export default function ReportsPage() {
   const fetchFilters = useCallback(async () => {
     try {
       const [companiesRes, usersRes] = await Promise.all([
-        fetch('/api/companies?limit=100'),
+        fetch('/api/companies?limit=0'),
         fetch('/api/users?limit=100'),
       ]);
 
