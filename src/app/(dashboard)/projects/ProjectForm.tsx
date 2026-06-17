@@ -2,15 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { Button, Input, Select, Modal } from '@/components/ui';
+import { PROJECT_LOCATION_OPTIONS } from '@/lib/turkish-provinces';
 
 interface ProjectFormData {
   id?: string;
   name: string;
+  location?: string | null;
   status: string;
   estimatedStart?: string | null;
   estimatedEnd?: string | null;
   notes?: string | null;
 }
+
+const locationOptions = [
+  { value: '', label: 'Seçiniz...' },
+  ...PROJECT_LOCATION_OPTIONS.map((p) => ({ value: p, label: p })),
+];
 
 interface ProjectFormProps {
   isOpen: boolean;
@@ -34,6 +41,7 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
 
   const [formData, setFormData] = useState<ProjectFormData>({
     name: initialData?.name || '',
+    location: initialData?.location || '',
     status: initialData?.status || 'TEKLIF_ASAMASINDA',
     estimatedStart: initialData?.estimatedStart || '',
     estimatedEnd: initialData?.estimatedEnd || '',
@@ -45,6 +53,7 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
     if (initialData) {
       setFormData({
         name: initialData.name || '',
+        location: initialData.location || '',
         status: initialData.status || 'TEKLIF_ASAMASINDA',
         estimatedStart: initialData.estimatedStart ? initialData.estimatedStart.split('T')[0] : '',
         estimatedEnd: initialData.estimatedEnd ? initialData.estimatedEnd.split('T')[0] : '',
@@ -53,6 +62,7 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
     } else {
       setFormData({
         name: '',
+        location: '',
         status: 'TEKLIF_ASAMASINDA',
         estimatedStart: '',
         estimatedEnd: '',
@@ -72,6 +82,7 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
 
       const payload = {
         ...formData,
+        location: formData.location || null,
         estimatedStart: formData.estimatedStart || null,
         estimatedEnd: formData.estimatedEnd || null,
         notes: formData.notes || null,
@@ -133,6 +144,13 @@ export function ProjectForm({ isOpen, onClose, onSuccess, initialData }: Project
           onChange={(e) => handleChange('name', e.target.value)}
           placeholder="Proje adı"
           required
+        />
+
+        <Select
+          label="Proje Yeri"
+          value={formData.location || ''}
+          onChange={(e) => handleChange('location', e.target.value)}
+          options={locationOptions}
         />
 
         <Select

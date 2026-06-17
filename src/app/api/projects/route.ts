@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
     const project = await db.project.create({
       data: {
         name: validatedData.name,
+        location: validatedData.location || null,
         status: validatedData.status as any,
         clientId: validatedData.clientId || null,
         createdById: user.id,

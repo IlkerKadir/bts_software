@@ -472,6 +472,7 @@ export function BrandProfitSummary({
                   <>
                     <th className="pb-2 text-right font-medium">Toplam Satis</th>
                     <th className="pb-2 text-right font-medium">Toplam Maliyet</th>
+                    <th className="pb-2 text-right font-medium">Maliyet %</th>
                     <th className="pb-2 text-right font-medium">Kar</th>
                     <th className="pb-2 text-right font-medium">Kar %</th>
                   </>
@@ -498,6 +499,13 @@ export function BrandProfitSummary({
                       </td>
                       <td className="py-1.5 text-right tabular-nums text-accent-600">
                         {formatPrice(b.totalCost, currency)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-accent-600">
+                        {formatPct(
+                          managerData.totals.totalCost > 0
+                            ? (b.totalCost / managerData.totals.totalCost) * 100
+                            : 0
+                        )}
                       </td>
                       <td
                         className={cn(
@@ -580,6 +588,9 @@ export function BrandProfitSummary({
                     </td>
                     <td className="py-2 text-right tabular-nums text-accent-700">
                       {formatPrice(managerData.totals.totalCost, currency)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-accent-700">
+                      {formatPct(managerData.totals.totalCost > 0 ? 100 : 0)}
                     </td>
                     <td
                       className={cn(

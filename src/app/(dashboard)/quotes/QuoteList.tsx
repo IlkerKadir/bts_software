@@ -325,7 +325,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     );
   };
 
-  const colCount = canViewCosts ? 10 : 9;
+  const colCount = canViewCosts ? 11 : 10;
 
   const toggleQuoteSelection = (quoteId: string) => {
     setSelectedQuoteIds((prev) => {
@@ -507,6 +507,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                   </div>
                 </th>
                 <th>Proje</th>
+                <th>Teklif Adı</th>
                 <th
                   className="text-right cursor-pointer select-none"
                   onClick={() => handleSort('grandTotal')}
@@ -838,6 +839,9 @@ function QuoteGroupRows({
       <td className="text-xs">{quote.company.name}</td>
       <td className="text-xs text-primary-600">
         {quote.project?.name || '-'}
+      </td>
+      <td className="text-xs text-primary-600">
+        {quote.subject || '-'}
       </td>
       <td className="text-right text-xs tabular-nums font-medium">
         {formatCurrency(quote.grandTotal, quote.currency)}

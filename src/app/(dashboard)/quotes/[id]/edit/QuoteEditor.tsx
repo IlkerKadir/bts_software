@@ -1044,6 +1044,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             discountPct: duplicated.discountPct,
             vatRate: duplicated.vatRate,
             notes: duplicated.notes || undefined,
+            priceLabel: duplicated.priceLabel || undefined,
             sortOrder: duplicated.sortOrder,
           }),
         });
@@ -1158,6 +1159,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           vatRate: item.vatRate,
           costPrice: item.costPrice ?? null,
           notes: item.notes || '',
+          // Must include: the PUT writes `priceLabel: item.priceLabel || null`,
+          // so omitting it here wipes "dahildir"/"tarafınızca sağlanacaktır"
+          // labels on every reorder. (Other omitted fields use an undefined-guard
+          // in the route and are preserved; priceLabel is the only lossy one.)
+          priceLabel: item.priceLabel ?? null,
         }));
 
         try {

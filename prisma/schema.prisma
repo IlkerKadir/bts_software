@@ -108,6 +108,7 @@ enum ProjectVisibility {
 model Project {
   id             String            @id @default(cuid())
   name           String
+  location       String? // Proje Yeri: a Turkish province or "Yurtdışı"
   clientId       String?
   client         Company?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
   createdById    String?

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Edit,
+  MapPin,
   Building2,
   FileText,
   Folder,
@@ -30,6 +31,7 @@ import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { formatCurrency, formatDate, formatFileSize, formatDateTime } from '@/lib/utils/format';
 import { quoteStatusLabels } from '@/lib/validations/quote';
 import { getQuoteDisplayDate } from '@/lib/quote-display-date';
+import { PROJECT_LOCATION_OPTIONS } from '@/lib/turkish-provinces';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -69,6 +71,7 @@ interface ProjectActivity {
 interface Project {
   id: string;
   name: string;
+  location?: string | null;
   client?: { id: string; name: string } | null;
   status: string;
   estimatedStart?: string | null;
@@ -114,6 +117,11 @@ const statusOptions = [
   { value: 'DEVAM_EDIYOR', label: 'Devam Ediyor' },
   { value: 'TAMAMLANDI', label: 'Tamamlandi' },
   { value: 'IPTAL', label: 'Iptal' },
+];
+
+const locationOptions = [
+  { value: '', label: 'Seçiniz...' },
+  ...PROJECT_LOCATION_OPTIONS.map((p) => ({ value: p, label: p })),
 ];
 
 const actionLabels: Record<string, string> = {
@@ -167,6 +175,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
+    location: '',
     status: '',
     estimatedStart: '',
     estimatedEnd: '',
@@ -234,6 +243,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
     if (!project) return;
     setEditForm({
       name: project.name,
+      location: project.location || '',
       status: project.status,
       estimatedStart: project.estimatedStart
         ? new Date(project.estimatedStart).toISOString().split('T')[0]
@@ -260,6 +270,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editForm.name,
+          location: editForm.location || null,
           clientId: project.client?.id || null,
           status: editForm.status,
           estimatedStart: editForm.estimatedStart || null,
@@ -560,6 +571,14 @@ export default function ProjectDetailPage({ params }: PageProps) {
                   <span className="font-medium text-primary-400">Firma atanmamis</span>
                 )}
               </div>
+
+              {project.location && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-primary-400 shrink-0" />
+                  <span className="text-primary-500">Proje Yeri:</span>
+                  <span className="font-medium text-primary-800">{project.location}</span>
+                </div>
+              )}
 
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-primary-400 shrink-0" />
@@ -991,6 +1010,13 @@ export default function ProjectDetailPage({ params }: PageProps) {
             onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
             placeholder="Proje adi"
             required
+          />
+
+          <Select
+            label="Proje Yeri"
+            value={editForm.location}
+            onChange={(e) => setEditForm((prev) => ({ ...prev, location: e.target.value }))}
+            options={locationOptions}
           />
 
           <Select

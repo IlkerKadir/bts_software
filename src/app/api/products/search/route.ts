@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { expandTurkishVariants } from '@/lib/search-helpers';
+import { buildTokenizedSearchAND } from '@/lib/search-helpers';
+
+// Fields a product search term may match against (dotted paths cross relations).
+const PRODUCT_SEARCH_FIELDS = [
+  'code',
+  'shortCode',
+  'name',
+  'nameTr',
+  'model',
+  'brand.name',
+];
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,16 +34,12 @@ export async function GET(request: NextRequest) {
     const where: any = { isActive: true };
 
     if (query.length >= 2) {
-      const searchVariants = expandTurkishVariants(query);
-      if (searchVariants.length > 0) {
-        where.OR = searchVariants.flatMap((v) => [
-          { code: { contains: v, mode: 'insensitive' as const } },
-          { shortCode: { contains: v, mode: 'insensitive' as const } },
-          { name: { contains: v, mode: 'insensitive' as const } },
-          { nameTr: { contains: v, mode: 'insensitive' as const } },
-          { model: { contains: v, mode: 'insensitive' as const } },
-          { brand: { name: { contains: v, mode: 'insensitive' as const } } },
-        ]);
+      // Multi-word search: every whitespace-separated token must match (AND),
+      // each token matching any field (OR), Turkish-i variants expanded per token.
+      // So "DTS 2" matches "DTS 2KM 2 Kanal" and "smart 10" matches "...10 modül".
+      const tokenClauses = buildTokenizedSearchAND(query, PRODUCT_SEARCH_FIELDS);
+      if (tokenClauses.length > 0) {
+        where.AND = tokenClauses;
       }
     }
     if (brandId) where.brandId = brandId;
