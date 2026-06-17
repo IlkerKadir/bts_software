@@ -11,6 +11,7 @@ export default async function QuotesPage() {
       userId={user.id}
       canApprove={user.role.canApprove}
       canViewCosts={user.role.canViewCosts}
+      canManageUsers={user.role.canManageUsers}
     />
   );
 }

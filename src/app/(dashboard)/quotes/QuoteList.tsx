@@ -15,6 +15,7 @@ import {
   Trash2,
   ChevronRight,
   ChevronDown,
+  Download,
 } from 'lucide-react';
 import { Button, Input, Select, Card, Badge, Modal } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
@@ -52,6 +53,8 @@ interface QuoteListProps {
   userId: string;
   canApprove: boolean;
   canViewCosts: boolean;
+  /** Management-only: shows the Excel export on this screen. */
+  canManageUsers: boolean;
 }
 
 type SortField = 'quoteNumber' | 'company' | 'grandTotal' | 'status' | 'createdAt' | 'createdBy' | 'profitMargin';
@@ -84,7 +87,7 @@ const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'
 };
 
 
-export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) {
+export function QuoteList({ userId, canApprove, canViewCosts, canManageUsers }: QuoteListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -371,6 +374,18 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     }
   };
 
+  // Management-only Excel export of the currently filtered list.
+  const handleExport = () => {
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    if (statusFilter) params.set('status', statusFilter);
+    if (companyFilter) params.set('companyId', companyFilter);
+    if (createdByFilter) params.set('createdById', createdByFilter);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    window.location.href = `/api/quotes/export?${params}`;
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -379,10 +394,18 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
           <h1 className="text-2xl font-bold text-primary-900">Teklifler</h1>
           <p className="text-sm text-primary-500">Tüm teklifleri yönetin</p>
         </div>
-        <Button onClick={() => setIsNewQuoteModalOpen(true)}>
-          <Plus className="w-4 h-4" />
-          Yeni Teklif
-        </Button>
+        <div className="flex items-center gap-2">
+          {canManageUsers && (
+            <Button variant="secondary" onClick={handleExport}>
+              <Download className="w-4 h-4" />
+              Excel&apos;e Aktar
+            </Button>
+          )}
+          <Button onClick={() => setIsNewQuoteModalOpen(true)}>
+            <Plus className="w-4 h-4" />
+            Yeni Teklif
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
