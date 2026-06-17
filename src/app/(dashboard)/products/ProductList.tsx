@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Search, Pencil, Trash2, Upload, Download, Settings, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProductForm } from './ProductForm';
@@ -9,6 +9,7 @@ import { BulkPriceUpdateModal } from '@/components/products/BulkPriceUpdateModal
 import { BrandCoefficientTable } from '@/components/products/BrandCoefficientTable';
 import { formatCurrency } from '@/lib/utils/format';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { usePersistentState } from '@/lib/hooks/usePersistentState';
 import type { Pagination } from '@/lib/types/pagination';
 
 interface Brand {
@@ -53,10 +54,12 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [products, setProducts] = useState<Product[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  // Persist filters/sort/page so returning to the list keeps your place.
+  const [search, setSearch] = usePersistentState('products:search', '');
   const debouncedSearch = useDebouncedValue(search, 300);
-  const [brandFilter, setBrandFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [brandFilter, setBrandFilter] = usePersistentState('products:brand', '');
+  const [categoryFilter, setCategoryFilter] = usePersistentState('products:category', '');
+  const [page, setPage] = usePersistentState('products:page', 1);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -69,10 +72,13 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [isBulkPriceModalOpen, setIsBulkPriceModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [sortField, setSortField] = useState<SortField | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [sortField, setSortField] = usePersistentState<SortField | null>('products:sortField', null);
+  const [sortDirection, setSortDirection] = usePersistentState<SortDirection>('products:sortDirection', 'asc');
 
+  // Guards against out-of-order responses — only the latest fetch applies.
+  const fetchSeqRef = useRef(0);
   const fetchProducts = useCallback(async (page = 1) => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setFetchError(null);
     try {
@@ -87,6 +93,8 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
       const response = await fetch(`/api/products?${params}`);
       const data = await response.json();
 
+      if (seq !== fetchSeqRef.current) return;
+
       if (response.ok) {
         setProducts(data.products);
         setPagination(data.pagination);
@@ -95,9 +103,9 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
       }
     } catch (error) {
       console.error('Error fetching products:', error);
-      setFetchError('Sunucu ile bağlantı kurulamadı');
+      if (seq === fetchSeqRef.current) setFetchError('Sunucu ile bağlantı kurulamadı');
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [debouncedSearch, brandFilter, categoryFilter, sortField, sortDirection]);
 
@@ -120,9 +128,20 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     fetchLookups();
   }, []);
 
+  // Reset to page 1 when a filter/sort changes — but not on first mount, so a
+  // persisted page survives returning to the list.
+  const filtersInitialized = useRef(false);
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    if (!filtersInitialized.current) {
+      filtersInitialized.current = true;
+      return;
+    }
+    setPage(1);
+  }, [debouncedSearch, brandFilter, categoryFilter, sortField, sortDirection, setPage]);
+
+  useEffect(() => {
+    fetchProducts(page);
+  }, [fetchProducts, page]);
 
   const handleEdit = (product: Product) => {
     setEditingProduct({
@@ -566,7 +585,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === 1}
-                onClick={() => fetchProducts(pagination.page - 1)}
+                onClick={() => setPage(pagination.page - 1)}
               >
                 Önceki
               </Button>
@@ -574,7 +593,7 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === pagination.totalPages}
-                onClick={() => fetchProducts(pagination.page + 1)}
+                onClick={() => setPage(pagination.page + 1)}
               >
                 Sonraki
               </Button>

@@ -33,7 +33,7 @@ Status legend: ✅ done (branch `feature/client-notes-jun2026`, tested) · ⬜ t
 | B6 | Set cost in analysis | Bug + feature | Medium | No | ✅ (reviewed) |
 | A1 | Firma Tipi expansion | Enum migration | Medium | Yes (enum) | ✅ |
 | B1 | Notes newline / Word paste | UI/input | Medium | No | ⬜ |
-| B2 | Filter + pagination persistence | UI state | Medium | Maybe (SavedFilter exists) | ⬜ |
+| B2 | Filter + pagination persistence | UI state | Medium | No (sessionStorage) | ✅ |
 | B4 | Right-click "insert above" | Editor logic | Medium | No | ✅ |
 | B9 | Teklif Takip panel | New feature | High | Yes (2 tables) | ⬜ |
 

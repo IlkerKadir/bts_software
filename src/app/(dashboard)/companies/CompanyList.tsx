@@ -5,6 +5,7 @@ import { Plus, Search, Building2, Users, Pencil, Trash2, Download, Upload } from
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { CompanyForm } from './CompanyForm';
 import type { Pagination } from '@/lib/types/pagination';
+import { usePersistentState } from '@/lib/hooks/usePersistentState';
 import { COMPANY_TYPE_OPTIONS, companyTypeLabel, type CompanyTypeValue } from '@/lib/company-types';
 
 interface Company {
@@ -23,8 +24,9 @@ export function CompanyList() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('');
+  const [search, setSearch] = usePersistentState('companies:search', '');
+  const [typeFilter, setTypeFilter] = usePersistentState<string>('companies:type', '');
+  const [page, setPage] = usePersistentState('companies:page', 1);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [deletingCompany, setDeletingCompany] = useState<Company | null>(null);
@@ -35,7 +37,9 @@ export function CompanyList() {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const fetchSeqRef = useRef(0);
   const fetchCompanies = useCallback(async (page = 1) => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setFetchError(null);
     try {
@@ -47,6 +51,8 @@ export function CompanyList() {
       const response = await fetch(`/api/companies?${params}`);
       const data = await response.json();
 
+      if (seq !== fetchSeqRef.current) return;
+
       if (response.ok) {
         setCompanies(data.companies);
         setPagination(data.pagination);
@@ -55,19 +61,29 @@ export function CompanyList() {
       }
     } catch (error) {
       console.error('Error fetching companies:', error);
-      setFetchError('Sunucu ile bağlantı kurulamadı');
+      if (seq === fetchSeqRef.current) setFetchError('Sunucu ile bağlantı kurulamadı');
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [search, typeFilter]);
 
+  // Reset to page 1 on filter change, except on first mount (persisted page survives).
+  const filtersInitialized = useRef(false);
+  useEffect(() => {
+    if (!filtersInitialized.current) {
+      filtersInitialized.current = true;
+      return;
+    }
+    setPage(1);
+  }, [search, typeFilter, setPage]);
+
   useEffect(() => {
     const debounce = setTimeout(() => {
-      fetchCompanies();
+      fetchCompanies(page);
     }, 300);
 
     return () => clearTimeout(debounce);
-  }, [fetchCompanies]);
+  }, [fetchCompanies, page]);
 
   const handleEdit = (company: Company) => {
     setEditingCompany(company);
@@ -375,7 +391,7 @@ export function CompanyList() {
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === 1}
-                onClick={() => fetchCompanies(pagination.page - 1)}
+                onClick={() => setPage(pagination.page - 1)}
               >
                 Önceki
               </Button>
@@ -383,7 +399,7 @@ export function CompanyList() {
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === pagination.totalPages}
-                onClick={() => fetchCompanies(pagination.page + 1)}
+                onClick={() => setPage(pagination.page + 1)}
               >
                 Sonraki
               </Button>

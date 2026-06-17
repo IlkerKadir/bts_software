@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus,
@@ -22,6 +22,7 @@ import { BulkStatusModal } from '@/components/quotes/BulkStatusModal';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { usePersistentState } from '@/lib/hooks/usePersistentState';
 import type { Pagination } from '@/lib/types/pagination';
 
 interface Company {
@@ -99,15 +100,19 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  // Filters/sort/page persist across navigation (sessionStorage) so returning
+  // from a quote lands back on the same filtered page. statusFilter stays
+  // URL-driven (dashboard pipeline tiles link with ?status=...).
+  const [search, setSearch] = usePersistentState('quotes:search', '');
   const debouncedSearch = useDebouncedValue(search, 300);
   const [statusFilter, setStatusFilter] = useState(() =>
     sanitizeStatus(searchParams.get('status'))
   );
-  const [companyFilter, setCompanyFilter] = useState('');
-  const [createdByFilter, setCreatedByFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [companyFilter, setCompanyFilter] = usePersistentState('quotes:company', '');
+  const [createdByFilter, setCreatedByFilter] = usePersistentState('quotes:createdBy', '');
+  const [dateFrom, setDateFrom] = usePersistentState('quotes:dateFrom', '');
+  const [dateTo, setDateTo] = usePersistentState('quotes:dateTo', '');
+  const [page, setPage] = usePersistentState('quotes:page', 1);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [users, setUsers] = useState<{ id: string; fullName: string }[]>([]);
   const [isNewQuoteModalOpen, setIsNewQuoteModalOpen] = useState(false);
@@ -121,8 +126,8 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<SortField>('createdAt');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortField, setSortField] = usePersistentState<SortField>('quotes:sortField', 'createdAt');
+  const [sortDirection, setSortDirection] = usePersistentState<SortDirection>('quotes:sortDirection', 'desc');
   const [selectedQuoteIds, setSelectedQuoteIds] = useState<Set<string>>(new Set());
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [deletingQuote, setDeletingQuote] = useState<Quote | null>(null);
@@ -130,7 +135,11 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedQuotes, setExpandedQuotes] = useState<Set<string>>(new Set());
 
+  // Guards against out-of-order responses: a rapid filter/page change can have
+  // an older request resolve after a newer one. Only the latest fetch applies.
+  const fetchSeqRef = useRef(0);
   const fetchQuotes = useCallback(async (page = 1) => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setFetchError(null);
     try {
@@ -149,6 +158,9 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       const response = await fetch(`/api/quotes?${params}`);
       const data = await response.json();
 
+      // A newer fetch superseded this one — drop the stale response.
+      if (seq !== fetchSeqRef.current) return;
+
       if (response.ok) {
         setQuotes(data.quotes);
         setPagination(data.pagination);
@@ -157,9 +169,9 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
       }
     } catch (error) {
       console.error('Error fetching quotes:', error);
-      setFetchError('Sunucu ile bağlantı kurulamadı');
+      if (seq === fetchSeqRef.current) setFetchError('Sunucu ile bağlantı kurulamadı');
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [debouncedSearch, statusFilter, companyFilter, createdByFilter, dateFrom, dateTo, sortField, sortDirection]);
 
@@ -201,9 +213,21 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
     fetchUsers();
   }, []);
 
+  // Reset to page 1 when a filter/sort changes — but NOT on first mount, so a
+  // persisted page (e.g. 15) survives returning from a quote.
+  const filtersInitialized = useRef(false);
   useEffect(() => {
-    fetchQuotes();
-  }, [fetchQuotes]);
+    if (!filtersInitialized.current) {
+      filtersInitialized.current = true;
+      return;
+    }
+    setPage(1);
+  }, [debouncedSearch, statusFilter, companyFilter, createdByFilter, dateFrom, dateTo, sortField, sortDirection, setPage]);
+
+  // Fetch whenever the filters (via fetchQuotes identity) or the page change.
+  useEffect(() => {
+    fetchQuotes(page);
+  }, [fetchQuotes, page]);
 
   // Re-seed status filter when the URL changes (soft-nav from a dashboard tile).
   // Dropdown edits stay local; only URL changes overwrite them.
@@ -617,7 +641,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === 1}
-                onClick={() => fetchQuotes(pagination.page - 1)}
+                onClick={() => setPage(pagination.page - 1)}
               >
                 Önceki
               </Button>
@@ -625,7 +649,7 @@ export function QuoteList({ userId, canApprove, canViewCosts }: QuoteListProps) 
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === pagination.totalPages}
-                onClick={() => fetchQuotes(pagination.page + 1)}
+                onClick={() => setPage(pagination.page + 1)}
               >
                 Sonraki
               </Button>

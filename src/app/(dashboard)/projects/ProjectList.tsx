@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { ProjectForm } from './ProjectForm';
 import { formatDate } from '@/lib/utils/format';
 import type { Pagination } from '@/lib/types/pagination';
+import { usePersistentState } from '@/lib/hooks/usePersistentState';
 
 interface Company {
   id: string;
@@ -58,9 +59,10 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [clientFilter, setClientFilter] = useState('');
+  const [search, setSearch] = usePersistentState('projects:search', '');
+  const [statusFilter, setStatusFilter] = usePersistentState('projects:status', '');
+  const [clientFilter, setClientFilter] = usePersistentState('projects:client', '');
+  const [page, setPage] = usePersistentState('projects:page', 1);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -68,7 +70,9 @@ export function ProjectList({ canDelete }: ProjectListProps) {
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const fetchSeqRef = useRef(0);
   const fetchProjects = useCallback(async (page = 1) => {
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
@@ -80,6 +84,8 @@ export function ProjectList({ canDelete }: ProjectListProps) {
       const response = await fetch(`/api/projects?${params}`);
       const data = await response.json();
 
+      if (seq !== fetchSeqRef.current) return;
+
       if (response.ok) {
         setProjects(data.projects);
         setPagination(data.pagination);
@@ -87,7 +93,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
     } catch (error) {
       console.error('Error fetching projects:', error);
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     }
   }, [search, statusFilter, clientFilter]);
 
@@ -105,13 +111,23 @@ export function ProjectList({ canDelete }: ProjectListProps) {
     fetchCompanies();
   }, []);
 
+  // Reset to page 1 on filter change, except on first mount (persisted page survives).
+  const filtersInitialized = useRef(false);
+  useEffect(() => {
+    if (!filtersInitialized.current) {
+      filtersInitialized.current = true;
+      return;
+    }
+    setPage(1);
+  }, [search, statusFilter, clientFilter, setPage]);
+
   useEffect(() => {
     const debounce = setTimeout(() => {
-      fetchProjects();
+      fetchProjects(page);
     }, 300);
 
     return () => clearTimeout(debounce);
-  }, [fetchProjects]);
+  }, [fetchProjects, page]);
 
   const handleEdit = (project: Project) => {
     setEditingProject({
@@ -286,7 +302,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === 1}
-                onClick={() => fetchProjects(pagination.page - 1)}
+                onClick={() => setPage(pagination.page - 1)}
               >
                 Önceki
               </Button>
@@ -294,7 +310,7 @@ export function ProjectList({ canDelete }: ProjectListProps) {
                 variant="secondary"
                 size="sm"
                 disabled={pagination.page === pagination.totalPages}
-                onClick={() => fetchProjects(pagination.page + 1)}
+                onClick={() => setPage(pagination.page + 1)}
               >
                 Sonraki
               </Button>
