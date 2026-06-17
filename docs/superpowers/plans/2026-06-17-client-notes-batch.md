@@ -264,7 +264,7 @@ Two secondary observations from the data:
 # RESUME HANDOFF (for a fresh session)
 
 **Branch:** `feature/client-notes-jun2026` (7 commits, NOT pushed — local only; user will push). Working tree clean.
-**Done (10/12):** A1, A2, A3, B2, B3, B4, B5, B6, B7, B8(column). All on the branch, 616 tests passing.
+**Done (11/12):** A1, A2, A3, B1(newlines), B2, B3, B4, B5, B6, B7, B8(column). All on the branch, 620 tests passing. Only **B9** remains (+ optional B1 bold/bullets part 2).
 **Reviews:** A3, B6, A1 reviewed (clean / fixes applied). **B4 and B2 code-reviews are still OWED** — both attempts failed on transient Anthropic API 529 (overload), not a code problem. RE-RUN a `superpowers:code-reviewer` on commits `f5a3dcf` (B4) and `24c8fcb` (B2) at the start of the next session; review prompts are in this conversation's history. Until then treat B4/B2 as un-reviewed.
 **Local DB:** migrations `20260617000000_add_project_location` and `20260617010000_add_company_types` applied locally + recorded. Production picks them up via `prisma migrate deploy` (both additive/safe). Local Postgres: `/opt/homebrew/opt/postgresql@16/bin`, DB `btsteklif` (no password). Prod backup → SQL: `pg_restore -f /tmp/bts_prod.sql ~/Downloads/bts_backup_10.06.2026/bts_backup_2026-06-10_0906.dump`.
 **Reusable helpers added this batch:** `src/lib/search-helpers.ts` (buildTokenizedSearchAND, escapeLike), `src/lib/pagination.ts` (prior), `src/lib/brand-profit-summary.ts`, `src/lib/quote-item-order.ts` (insertItemBefore), `src/lib/company-types.ts`, `src/lib/turkish-provinces.ts`, `src/lib/hooks/usePersistentState.ts`. Tests live beside each. Test env for hooks/components: `@vitest-environment happy-dom` docblock.
