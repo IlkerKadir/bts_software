@@ -30,7 +30,7 @@ Status legend: ✅ done (branch `feature/client-notes-jun2026`, tested) · ⬜ t
 | B7 | Marka Kar Özeti "Maliyet %" | Additive calc/UI | Low | No | ✅ |
 | B8 | Teklif Adı column | Additive UI | Low | No | ✅ (export part → with B9) |
 | B5 | "Dahildir" revert + not shown | Bug fix | Medium | No | ✅ |
-| B6 | Set cost in analysis | Bug + feature | Medium | No | ⬜ |
+| B6 | Set cost in analysis | Bug + feature | Medium | No | ✅ (reviewed) |
 | A1 | Firma Tipi expansion | Enum migration | Medium | Yes (enum) | ⬜ |
 | B1 | Notes newline / Word paste | UI/input | Medium | No | ⬜ |
 | B2 | Filter + pagination persistence | UI state | Medium | Maybe (SavedFilter exists) | ⬜ |

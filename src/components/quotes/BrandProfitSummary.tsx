@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { QuoteItemData } from './QuoteItemRow';
-import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { computeManagerProfitSummary } from '@/lib/brand-profit-summary';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -84,15 +84,6 @@ function getSubtotalSections(items: QuoteItemData[]): SubtotalSection[] {
 // ---------------------------------------------------------------------------
 // Manager mode: cost-based brand summary
 // ---------------------------------------------------------------------------
-
-interface BrandCostSummary {
-  brand: string;
-  itemCount: number;
-  totalRevenue: number;
-  totalCost: number;
-  profit: number;
-  margin: number;
-}
 
 // ---------------------------------------------------------------------------
 // Sales mode: katsayi-based brand summary
@@ -195,70 +186,17 @@ export function BrandProfitSummary({
   }, [items]);
 
   // ---- Manager mode computation (cost-based) ----
-  const managerData = useMemo(() => {
-    if (canViewCosts) {
-      const grouped: Record<string, { revenue: number; cost: number; count: number }> = {};
-
-      for (const item of filteredItems) {
-        if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
-        if (item.priceLabel) continue;
-
-        // Top-level priced rows contribute revenue; children never do
-        // (SET parent's totalPrice already includes them). Costs
-        // contribute from EVERY priced row except the SET parent
-        // itself — children of a TRY-priced SET hold TRY costs, and
-        // we need them converted to quote currency here.
-        const isTopLevelPriced = !item.parentItemId
-          && (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET');
-        const isSetParent = item.itemType === 'SET' && !item.parentItemId;
-
-        const brandKey = item.brand || 'Diger';
-        if (!grouped[brandKey]) {
-          grouped[brandKey] = { revenue: 0, cost: 0, count: 0 };
-        }
-
-        if (isTopLevelPriced) {
-          const qty = Number(item.quantity) || 0;
-          const up = Number(item.unitPrice) || 0;
-          const disc = Number(item.discountPct) || 0;
-          const sectionPct = itemIdToSectionDiscountPct.get(item.id) ?? 0;
-          const itemRevenue = qty * up * (1 - disc / 100) * (1 - sectionPct / 100);
-          grouped[brandKey].revenue += convertRowToQuoteCurrency(item, itemRevenue);
-          grouped[brandKey].count += 1;
-        }
-
-        if (!isSetParent) {
-          const qty = Number(item.quantity) || 0;
-          const effectiveCost = getEffectiveCostPrice(item);
-          if (effectiveCost != null) {
-            grouped[brandKey].cost += convertRowToQuoteCurrency(item, effectiveCost * qty);
-          }
-        }
-      }
-
-      const brandList: BrandCostSummary[] = Object.entries(grouped)
-        .map(([brand, data]) => {
-          const revenue = data.revenue;
-          const cost = data.cost;
-          const profit = revenue - cost;
-          const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-          return { brand, itemCount: data.count, totalRevenue: revenue, totalCost: cost, profit, margin };
-        })
-        .sort((a, b) => b.totalRevenue - a.totalRevenue);
-
-      const totalRevenue = brandList.reduce((s, b) => s + b.totalRevenue, 0);
-      const totalCost = brandList.reduce((s, b) => s + b.totalCost, 0);
-      const totalProfit = totalRevenue - totalCost;
-      const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-      const totalItems = brandList.reduce((s, b) => s + b.itemCount, 0);
-
-      return {
-        brands: brandList,
-        totals: { itemCount: totalItems, totalRevenue, totalCost, profit: totalProfit, margin: totalMargin },
-      };
-    }
-    return null;
-  }, [filteredItems, canViewCosts, itemIdToSectionDiscountPct, baseForeignRate, currency, setCurrencyByParentId]);
+  // Delegated to a pure, unit-tested helper (src/lib/brand-profit-summary.ts).
+  // It also fixes cross-brand SET cost attribution (a SET child's cost is
+  // booked to the parent SET's brand, not the child's) and returns a per-set
+  // sale/cost/profit breakdown.
+  const managerData = useMemo(
+    () =>
+      canViewCosts
+        ? computeManagerProfitSummary(items, filteredItems, { currency, exchangeRate, protectionPct })
+        : null,
+    [items, filteredItems, canViewCosts, currency, exchangeRate, protectionPct]
+  );
 
   // ---- Sales mode computation (katsayi-based) ----
   const salesData = useMemo(() => {
@@ -631,6 +569,57 @@ export function BrandProfitSummary({
               </tr>
             </tfoot>
           </table>
+
+          {/* Per-set breakdown (B6): each Set's own sale / cost / profit, so
+              bundle margins are visible instead of being scattered across
+              brand rows. Manager view only. */}
+          {canViewCosts && managerData && managerData.sets.length > 0 && (
+            <div className="mt-4">
+              <div className="text-accent-500 uppercase tracking-wider text-[11px] font-medium mb-1">
+                Set Analizi
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-accent-500 uppercase tracking-wider border-b border-accent-200">
+                    <th className="pb-2 text-left font-medium">Set</th>
+                    <th className="pb-2 text-right font-medium">Satis</th>
+                    <th className="pb-2 text-right font-medium">Maliyet</th>
+                    <th className="pb-2 text-right font-medium">Kar</th>
+                    <th className="pb-2 text-right font-medium">Kar %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-accent-100">
+                  {managerData.sets.map((s) => (
+                    <tr key={s.id} className="hover:bg-accent-50 transition-colors">
+                      <td className="py-1.5 font-medium text-accent-800">{s.name}</td>
+                      <td className="py-1.5 text-right tabular-nums text-accent-700">
+                        {formatPrice(s.totalRevenue, currency)}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-accent-600">
+                        {formatPrice(s.totalCost, currency)}
+                      </td>
+                      <td
+                        className={cn(
+                          'py-1.5 text-right tabular-nums font-medium',
+                          s.profit < 0 ? 'text-red-600' : 'text-green-700'
+                        )}
+                      >
+                        {formatPrice(s.profit, currency)}
+                      </td>
+                      <td
+                        className={cn(
+                          'py-1.5 text-right tabular-nums font-medium',
+                          marginColor(s.margin)
+                        )}
+                      >
+                        {formatPct(s.margin)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
