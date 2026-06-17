@@ -50,6 +50,12 @@ export interface QuoteItemsTableProps {
    *  productId. Optional so callers that don't want the feature can
    *  omit it. */
   onSwapProductRequest?: (itemId: string) => void;
+  /** Right-click "Üstüne Ürün Ekle" — open the catalog and insert the chosen
+   *  product above this row. Offered on top-level rows only. */
+  onInsertProductAbove?: (beforeId: string) => void;
+  /** Right-click "Üstüne Başlık Ekle" — insert a header above this row.
+   *  Offered on top-level rows only. */
+  onInsertHeaderAbove?: (beforeId: string) => void;
   /** Bulk apply the same katsayı value to multiple items in one
    *  setItems pass. Avoids the O(N×items) cost of calling onItemUpdate
    *  per row when the user bulk-applies on a large quote. When omitted
@@ -141,6 +147,8 @@ export function QuoteItemsTable({
   onReorder,
   onAddProduct,
   onSwapProductRequest,
+  onInsertProductAbove,
+  onInsertHeaderAbove,
   onBulkKatsayiApply,
   onBulkDelete,
   onBulkDuplicate,
@@ -1563,7 +1571,12 @@ export function QuoteItemsTable({
                         ? () => onShowPriceHistory(item.productId!)
                         : undefined
                     }
-                    onInsertHeaderAbove={onAddHeader}
+                    onInsertHeaderAbove={
+                      onInsertHeaderAbove ? () => onInsertHeaderAbove(item.id) : onAddHeader
+                    }
+                    onInsertProductAbove={
+                      onInsertProductAbove ? () => onInsertProductAbove(item.id) : undefined
+                    }
                     onSwapProduct={
                       // Restricted to PRODUCT rows. A SET parent's price is
                       // derived from its children, so swapping its product

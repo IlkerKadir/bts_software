@@ -18,6 +18,7 @@ import { roundUnitPrice, computeRowTotal, round2 } from '@/lib/quote-rounding';
 import { buildRateMatrix, maxRateDriftPct, type TcmbDirectRate } from '@/lib/services/tcmb-service';
 import { reconvertEkMaliyetTotal, type EkMaliyetEntryLike } from '@/lib/ek-maliyet-reconvert';
 import { isRateSensitiveRow } from '@/lib/quote-item-classification';
+import { insertItemBefore } from '@/lib/quote-item-order';
 import { RateDriftBanner } from '@/components/quotes/RateDriftBanner';
 import { RateUpdateDialog } from '@/components/quotes/RateUpdateDialog';
 
@@ -266,6 +267,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const [hasChanges, setHasChanges] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [subItemParentId, setSubItemParentId] = useState<string | null>(null);
+  // When set, the next catalog product is inserted ABOVE this row id
+  // (right-click → "Üstüne Ürün Ekle") instead of appended.
+  const [insertBeforeId, setInsertBeforeId] = useState<string | null>(null);
   const [ekMaliyetOpen, setEkMaliyetOpen] = useState(false);
   const [setCreationMode, setSetCreationMode] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -1116,6 +1120,54 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     [items, quoteId]
   );
 
+  // Build the bulk PUT payload for /items. Used by both drag-reorder and
+  // positional insert so persisted `sortOrder` values stay consistent.
+  // NOTE: priceLabel MUST be included — the PUT writes `priceLabel || null`,
+  // so omitting it wipes "dahildir"/"tarafınızca sağlanacaktır" labels.
+  // (Other fields omitted here use an undefined-guard in the route.)
+  const buildBulkItemsPayload = useCallback((flatItems: QuoteItemData[]) => {
+    return flatItems.map((item) => ({
+      id: item.id,
+      itemType: item.itemType,
+      sortOrder: item.sortOrder,
+      productId: item.productId,
+      parentItemId: item.parentItemId || null,
+      code: item.code || '',
+      brand: item.brand || '',
+      model: item.model || '',
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit,
+      listPrice: item.listPrice,
+      katsayi: item.katsayi,
+      unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice,
+      isManualPrice: item.isManualPrice || false,
+      discountPct: item.discountPct,
+      vatRate: item.vatRate,
+      costPrice: item.costPrice ?? null,
+      notes: item.notes || '',
+      priceLabel: item.priceLabel ?? null,
+    }));
+  }, []);
+
+  // Persist the current ordering of `flatItems` immediately (bulk PUT).
+  const persistItemsOrder = useCallback(
+    async (flatItems: QuoteItemData[]) => {
+      try {
+        await fetch(`/api/quotes/${quoteId}/items`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: buildBulkItemsPayload(flatItems) }),
+        });
+        itemsDirtyRef.current = false;
+      } catch (err) {
+        console.error('Persist items order error:', err);
+      }
+    },
+    [quoteId, buildBulkItemsPayload]
+  );
+
   const handleReorder = useCallback(
     (reorderedItems: QuoteItemData[]) => {
       // Flatten: reorderedItems may have nested subRows from topLevelItems.
@@ -1137,48 +1189,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (reorderTimerRef.current) {
         clearTimeout(reorderTimerRef.current);
       }
-      reorderTimerRef.current = setTimeout(async () => {
-        const bulkItems = flatItems.map((item) => ({
-          id: item.id,
-          itemType: item.itemType,
-          sortOrder: item.sortOrder,
-          productId: item.productId,
-          parentItemId: item.parentItemId || null,
-          code: item.code || '',
-          brand: item.brand || '',
-          model: item.model || '',
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          listPrice: item.listPrice,
-          katsayi: item.katsayi,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          isManualPrice: item.isManualPrice || false,
-          discountPct: item.discountPct,
-          vatRate: item.vatRate,
-          costPrice: item.costPrice ?? null,
-          notes: item.notes || '',
-          // Must include: the PUT writes `priceLabel: item.priceLabel || null`,
-          // so omitting it here wipes "dahildir"/"tarafınızca sağlanacaktır"
-          // labels on every reorder. (Other omitted fields use an undefined-guard
-          // in the route and are preserved; priceLabel is the only lossy one.)
-          priceLabel: item.priceLabel ?? null,
-        }));
-
-        try {
-          await fetch(`/api/quotes/${quoteId}/items`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: bulkItems }),
-          });
-          itemsDirtyRef.current = false;
-        } catch (err) {
-          console.error('Reorder persist error:', err);
-        }
+      reorderTimerRef.current = setTimeout(() => {
+        void persistItemsOrder(flatItems);
       }, 1000);
     },
-    [quoteId]
+    [persistItemsOrder]
   );
 
   const handleSectionDiscountPctChange = useCallback((subtotalItemId: string, pct: number) => {
@@ -1214,6 +1229,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       const quoteCurrency = headerFields.currency;
       const productCurrency = product.currency;
       const isSubItem = !!subItemParentId;
+      // Right-click → "Üstüne Ürün Ekle": insert above this row instead of
+      // appending. Only for top-level rows (never while adding a sub-item).
+      const doInsertAbove = !isSubItem && !!insertBeforeId;
+      const insertIdx = doInsertAbove ? items.findIndex((i) => i.id === insertBeforeId) : -1;
+      const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : items.length + 1;
 
       // When the new row is a sub-item of a SET with a per-SET
       // currency override, prices must be converted into the SET's
@@ -1288,7 +1308,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         productId: product.id,
         parentItemId: isSubItem ? subItemParentId : undefined,
         itemType: setCreationMode ? 'SET' : 'PRODUCT',
-        sortOrder: items.length + 1,
+        sortOrder: newSortOrder,
         code: product.code,
         brand: product.brandName ?? null,
         model: product.model ?? null,
@@ -1322,8 +1342,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         setSetCreationMode(false);
       }
 
-      // Add to local state
-      setItems((prev) => [...prev, newItem]);
+      // Add to local state — splice above the target row, or append.
+      // `insertedList` (renumbered) is reused below to persist the new order.
+      const insertedList = doInsertAbove
+        ? insertItemBefore(items, newItem, insertBeforeId)
+        : null;
+      if (insertedList) {
+        setItems(() => insertedList);
+      } else {
+        setItems((prev) => [...prev, newItem]);
+      }
 
       // POST to API
       const postBody: CreateItemPayload = {
@@ -1340,7 +1368,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         katsayi: defaultKatsayi,
         discountPct: 0,
         vatRate: isSubItem ? 0 : defaultVatRate,
-        sortOrder: newItem.sortOrder,
+        sortOrder: newSortOrder,
         costPrice: convertedCostPrice,
         // For non-canViewCosts users, convertedCostPrice is null — the
         // server uses costConversionFactor with the master cost to
@@ -1357,15 +1385,21 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
         if (res.ok) {
           const data = await res.json();
+          const serverItem = mapApiItemToLocal(data.item);
           // Replace temp ID with server-returned ID. Use raw setter —
           // the optimistic insert above already snapshotted history;
           // resolving the server ID isn't a separate undoable step.
           setItemsRaw((prev) =>
-            prev.map((item) => {
-              if (item.id !== tempId) return item;
-              return mapApiItemToLocal(data.item);
-            })
+            prev.map((item) => (item.id === tempId ? serverItem : item))
           );
+          // When inserted above a row, the renumbered sortOrder of every
+          // shifted row must be persisted (the POST only saved the new row).
+          if (insertedList) {
+            const persisted = insertedList.map((item) =>
+              item.id === tempId ? serverItem : item
+            );
+            await persistItemsOrder(persisted);
+          }
         } else {
           // Remove optimistic item on failure. Pop the snapshot we
           // pushed during the optimistic insert so the user doesn't
@@ -1381,7 +1415,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         console.error('Add product error:', err);
       }
     },
-    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items.length, subItemParentId, setCreationMode, defaultVatRate]
+    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items, subItemParentId, insertBeforeId, setCreationMode, defaultVatRate, persistItemsOrder]
   );
 
   // ── Bulk delete + duplicate for the multi-row toolbar (#5) ───────────────
@@ -1584,14 +1618,23 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     setCatalogOpen(true);
   }, []);
 
+  // Right-click → "Üstüne Ürün Ekle": open the catalog, remembering the row to
+  // insert above. handleAddProduct reads insertBeforeId to place the new row.
+  const handleInsertProductAbove = useCallback((beforeId: string) => {
+    setInsertBeforeId(beforeId);
+    setCatalogOpen(true);
+  }, []);
+
   // ── Add header row ─────────────────────────────────────────────────────────
 
-  const handleAddHeader = useCallback(async () => {
+  const handleAddHeader = useCallback(async (beforeId?: string | null) => {
     const tempId = generateId();
+    const insertIdx = beforeId ? items.findIndex((i) => i.id === beforeId) : -1;
+    const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : items.length + 1;
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'HEADER',
-      sortOrder: items.length + 1,
+      sortOrder: newSortOrder,
       description: 'Yeni Başlık',
       quantity: 0,
       unit: 'Adet',
@@ -1603,7 +1646,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       totalPrice: 0,
     };
 
-    setItems((prev) => [...prev, newItem]);
+    const insertedList = insertIdx >= 0 ? insertItemBefore(items, newItem, beforeId!) : null;
+    if (insertedList) {
+      setItems(() => insertedList);
+    } else {
+      setItems((prev) => [...prev, newItem]);
+    }
 
     try {
       const res = await fetch(`/api/quotes/${quoteId}/items`, {
@@ -1618,7 +1666,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           katsayi: 1,
           discountPct: 0,
           vatRate: 0,
-          sortOrder: newItem.sortOrder,
+          sortOrder: newSortOrder,
         }),
       });
 
@@ -1631,11 +1679,17 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             return { ...item, ...serverItem, description: item.description };
           })
         );
+        if (insertedList) {
+          const persisted = insertedList.map((item) =>
+            item.id === tempId ? { ...item, ...serverItem, description: item.description } : item
+          );
+          await persistItemsOrder(persisted);
+        }
       }
     } catch (err) {
       console.error('Add header error:', err);
     }
-  }, [quoteId, items.length]);
+  }, [quoteId, items, persistItemsOrder]);
 
   // ── Add note row ───────────────────────────────────────────────────────────
 
@@ -2727,6 +2781,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         onSectionDiscountLabelChange={handleSectionDiscountLabelChange}
         onAddProduct={() => setCatalogOpen(true)}
         onSwapProductRequest={handleSwapProductRequest}
+        onInsertProductAbove={handleInsertProductAbove}
+        onInsertHeaderAbove={handleAddHeader}
         onBulkKatsayiApply={handleBulkKatsayiApply}
         onBulkDelete={handleBulkDelete}
         onBulkDuplicate={handleBulkDuplicate}
@@ -2796,6 +2852,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           setSubItemParentId(null);
           setSetCreationMode(false);
           setSwapTargetItemId(null);
+          setInsertBeforeId(null);
         }}
         companyId={quote.company.id}
         quoteLanguage={headerFields.language}

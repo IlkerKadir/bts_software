@@ -101,6 +101,7 @@ export interface QuoteItemRowProps {
   onDrop: (e: React.DragEvent) => void;
   onShowPriceHistory?: () => void;
   onInsertHeaderAbove?: () => void;
+  onInsertProductAbove?: () => void;
   /** Right-click "Ürün Değiştir" — swaps the underlying product on this
    *  row, keeping quantity/katsayı/etc. Only meaningful for PRODUCT and
    *  SET rows; the parent decides when to wire it. */
@@ -341,6 +342,7 @@ export function QuoteItemRow({
   onDrop,
   onShowPriceHistory,
   onInsertHeaderAbove,
+  onInsertProductAbove,
   onSwapProduct,
   isSelected,
   onToggleSelected,
@@ -503,6 +505,7 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onInsertProductAbove={onInsertProductAbove ? () => { onInsertProductAbove(); setContextMenu(null); } : undefined}
             onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
             isHighlighted={!!item.highlight}
           />
@@ -587,6 +590,7 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onInsertProductAbove={onInsertProductAbove ? () => { onInsertProductAbove(); setContextMenu(null); } : undefined}
             onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
             isHighlighted={!!item.highlight}
           />
@@ -706,6 +710,7 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onInsertProductAbove={onInsertProductAbove ? () => { onInsertProductAbove(); setContextMenu(null); } : undefined}
             onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
             isHighlighted={!!item.highlight}
           />
@@ -795,6 +800,7 @@ export function QuoteItemRow({
             onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
             onDelete={() => { onDelete(); setContextMenu(null); }}
             onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+            onInsertProductAbove={onInsertProductAbove ? () => { onInsertProductAbove(); setContextMenu(null); } : undefined}
             onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
             isHighlighted={!!item.highlight}
           />
@@ -1248,6 +1254,7 @@ export function QuoteItemRow({
           onDuplicate={() => { onDuplicate(); setContextMenu(null); }}
           onDelete={() => { onDelete(); setContextMenu(null); }}
           onInsertHeaderAbove={onInsertHeaderAbove ? () => { onInsertHeaderAbove(); setContextMenu(null); } : undefined}
+          onInsertProductAbove={onInsertProductAbove ? () => { onInsertProductAbove(); setContextMenu(null); } : undefined}
           onSwapProduct={onSwapProduct ? () => { onSwapProduct(); setContextMenu(null); } : undefined}
           onToggleHighlight={() => { onUpdate({ highlight: !item.highlight }); setContextMenu(null); }}
           isHighlighted={!!item.highlight}
@@ -1271,6 +1278,7 @@ interface ContextMenuOverlayProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onInsertHeaderAbove?: () => void;
+  onInsertProductAbove?: () => void;
   /** Right-click → "Ürün Değiştir". When omitted, the menu item is hidden. */
   onSwapProduct?: () => void;
   onToggleHighlight?: () => void;
@@ -1289,6 +1297,7 @@ function ContextMenuOverlay({
   onDuplicate,
   onDelete,
   onInsertHeaderAbove,
+  onInsertProductAbove,
   onSwapProduct,
   onToggleHighlight,
   isHighlighted,
@@ -1309,6 +1318,15 @@ function ContextMenuOverlay({
       >
         <Copy className="h-3.5 w-3.5" /> Kopyala
       </button>
+      {onInsertProductAbove && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-accent-700 hover:bg-accent-100 transition-colors"
+          onClick={onInsertProductAbove}
+        >
+          <Plus className="h-3.5 w-3.5" /> Üstüne Ürün Ekle
+        </button>
+      )}
       {onInsertHeaderAbove && (
         <button
           type="button"
