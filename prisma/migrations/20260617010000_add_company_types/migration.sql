@@ -1,0 +1,11 @@
+-- Add 8 new firma tipi options alongside the existing CLIENT / PARTNER.
+-- Additive only: existing rows keep their CLIENT/PARTNER values untouched.
+-- `ALTER TYPE ... ADD VALUE` is non-destructive; IF NOT EXISTS makes it idempotent.
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'MUTEAHHIT';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'SON_KULLANICI';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'SOZLESMELI_BAYI';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'ENTEGRATOR';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'DANISMAN';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'PROJE_FIRMASI';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'DISTRIBUTOR';
+ALTER TYPE "CompanyType" ADD VALUE IF NOT EXISTS 'URETICI';

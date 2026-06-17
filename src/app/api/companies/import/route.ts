@@ -1,34 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { COMPANY_TYPES, COMPANY_TYPE_LABELS, type CompanyTypeValue } from '@/lib/company-types';
 import ExcelJS from 'exceljs';
 
 /**
  * Normalize a type string from the Excel file to a valid CompanyType.
- * Accepts Turkish labels (MUSTERI, IS ORTAGI, MÜŞTERI, İŞ ORTAĞI)
- * as well as enum values (CLIENT, PARTNER).
+ * Accepts the enum value (CLIENT, MUTEAHHIT, ...), the Turkish label
+ * (Müşteri, Müteahhit, ...), and legacy ASCII aliases for the original two.
  */
-function normalizeCompanyType(raw: string): 'CLIENT' | 'PARTNER' | null {
-  const value = raw.trim().toUpperCase();
+function normalizeCompanyType(raw: string): CompanyTypeValue | null {
+  const upper = raw.trim().toLocaleUpperCase('tr-TR');
 
-  if (
-    value === 'CLIENT' ||
-    value === 'MUSTERI' ||
-    value === 'MÜŞTERİ' ||
-    value === 'MÜSTERI'
-  ) {
-    return 'CLIENT';
-  }
+  // Direct enum value (e.g. "CLIENT", "MUTEAHHIT").
+  const asEnum = COMPANY_TYPES.find((t) => t === upper);
+  if (asEnum) return asEnum;
 
-  if (
-    value === 'PARTNER' ||
-    value === 'IS ORTAGI' ||
-    value === 'İŞ ORTAĞI' ||
-    value === 'İŞ ORTAGI' ||
-    value === 'IS ORTAĞI'
-  ) {
-    return 'PARTNER';
-  }
+  // Turkish label (e.g. "MÜTEAHHİT" from "Müteahhit").
+  const byLabel = COMPANY_TYPES.find(
+    (t) => COMPANY_TYPE_LABELS[t].toLocaleUpperCase('tr-TR') === upper
+  );
+  if (byLabel) return byLabel;
+
+  // Legacy ASCII aliases for the original two types.
+  if (['MUSTERI', 'MÜŞTERİ', 'MÜSTERI'].includes(upper)) return 'CLIENT';
+  if (['IS ORTAGI', 'İŞ ORTAĞI', 'İŞ ORTAGI', 'IS ORTAĞI'].includes(upper)) return 'PARTNER';
 
   return null;
 }
@@ -159,7 +155,7 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
     const rowsToProcess: Array<{
       name: string;
-      type: 'CLIENT' | 'PARTNER';
+      type: CompanyTypeValue;
       address: string | null;
       taxNumber: string | null;
       phone: string | null;
@@ -179,7 +175,7 @@ export async function POST(request: NextRequest) {
       const type = typeRaw ? normalizeCompanyType(typeRaw) : 'CLIENT';
 
       if (type === null) {
-        errors.push(`Satir ${rowNumber}: Gecersiz firma tipi "${typeRaw}". CLIENT veya PARTNER olmali.`);
+        errors.push(`Satir ${rowNumber}: Gecersiz firma tipi "${typeRaw}".`);
         return;
       }
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button, Input, Select, Modal } from '@/components/ui';
+import { COMPANY_TYPE_OPTIONS, type CompanyTypeValue } from '@/lib/company-types';
 
 interface Contact {
   name: string;
@@ -14,7 +15,7 @@ interface Contact {
 interface CompanyFormData {
   id?: string;
   name: string;
-  type: 'CLIENT' | 'PARTNER';
+  type: CompanyTypeValue;
   address?: string | null;
   taxNumber?: string | null;
   phone?: string | null;
@@ -184,11 +185,8 @@ export function CompanyForm({ isOpen, onClose, onSuccess, initialData }: Company
           <Select
             label="Firma Tipi *"
             value={formData.type}
-            onChange={(e) => handleChange('type', e.target.value as 'CLIENT' | 'PARTNER')}
-            options={[
-              { value: 'CLIENT', label: 'Müşteri' },
-              { value: 'PARTNER', label: 'İş Ortağı' },
-            ]}
+            onChange={(e) => handleChange('type', e.target.value as CompanyTypeValue)}
+            options={COMPANY_TYPE_OPTIONS}
           />
         </div>
 

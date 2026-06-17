@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { COMPANY_TYPES } from '@/lib/company-types';
 
 export const companySchema = z.object({
   name: z.string().min(1, 'Firma adı gereklidir'),
-  type: z.enum(['CLIENT', 'PARTNER'], {
+  type: z.enum(COMPANY_TYPES, {
     message: 'Firma tipi geçersiz',
   }),
   address: z.string().optional().nullable(),
@@ -31,7 +32,7 @@ export type CompanyInput = z.infer<typeof companySchema>;
 
 export const companyQuerySchema = z.object({
   search: z.string().optional(),
-  type: z.enum(['CLIENT', 'PARTNER']).optional(),
+  type: z.enum(COMPANY_TYPES).optional(),
   isActive: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
   page: z.coerce.number().default(1),
   limit: z.coerce.number().default(20),

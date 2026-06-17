@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
 import { Button, Input, Select, Spinner } from '@/components/ui';
+import { COMPANY_TYPE_OPTIONS, type CompanyTypeValue } from '@/lib/company-types';
 
 interface Contact {
   name: string;
@@ -15,7 +16,7 @@ interface Contact {
 interface CompanyData {
   id: string;
   name: string;
-  type: 'CLIENT' | 'PARTNER';
+  type: CompanyTypeValue;
   address: string | null;
   taxNumber: string | null;
   phone: string | null;
@@ -228,11 +229,8 @@ export default function CompanyEditPage() {
             <Select
               label="Firma Tipi *"
               value={formData.type}
-              onChange={(e) => handleChange('type', e.target.value as 'CLIENT' | 'PARTNER')}
-              options={[
-                { value: 'CLIENT', label: 'Müşteri' },
-                { value: 'PARTNER', label: 'İş Ortağı' },
-              ]}
+              onChange={(e) => handleChange('type', e.target.value as CompanyTypeValue)}
+              options={COMPANY_TYPE_OPTIONS}
             />
             <Input
               label="Vergi No"

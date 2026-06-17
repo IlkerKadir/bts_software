@@ -20,6 +20,7 @@ import {
 import { Button, Card, CardHeader, CardBody, Badge, Spinner } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { quoteStatusLabels } from '@/lib/validations/quote';
+import { companyTypeLabel, type CompanyTypeValue } from '@/lib/company-types';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -48,7 +49,7 @@ interface CompanyProject {
 interface Company {
   id: string;
   name: string;
-  type: 'CLIENT' | 'PARTNER';
+  type: CompanyTypeValue;
   address?: string | null;
   taxNumber?: string | null;
   phone?: string | null;
@@ -189,7 +190,7 @@ export default function CompanyDetailPage({ params }: PageProps) {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-primary-900">{company.name}</h1>
               <Badge variant={company.type === 'CLIENT' ? 'info' : 'default'}>
-                {company.type === 'CLIENT' ? 'Müşteri' : 'İş Ortağı'}
+                {companyTypeLabel(company.type)}
               </Badge>
               <Badge variant={company.isActive ? 'success' : 'error'}>
                 {company.isActive ? 'Aktif' : 'Pasif'}

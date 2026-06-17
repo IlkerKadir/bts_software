@@ -5,11 +5,12 @@ import { Plus, Search, Building2, Users, Pencil, Trash2, Download, Upload } from
 import { Button, Select, Card, Badge, Modal } from '@/components/ui';
 import { CompanyForm } from './CompanyForm';
 import type { Pagination } from '@/lib/types/pagination';
+import { COMPANY_TYPE_OPTIONS, companyTypeLabel, type CompanyTypeValue } from '@/lib/company-types';
 
 interface Company {
   id: string;
   name: string;
-  type: 'CLIENT' | 'PARTNER';
+  type: CompanyTypeValue;
   address?: string | null;
   taxNumber?: string | null;
   phone?: string | null;
@@ -238,11 +239,7 @@ export function CompanyList() {
           <Select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            options={[
-              { value: '', label: 'Tüm Tipler' },
-              { value: 'CLIENT', label: 'Müşteri' },
-              { value: 'PARTNER', label: 'İş Ortağı' },
-            ]}
+            options={[{ value: '', label: 'Tüm Tipler' }, ...COMPANY_TYPE_OPTIONS]}
             className="w-full sm:w-48"
           />
         </div>
@@ -331,7 +328,7 @@ export function CompanyList() {
                     </td>
                     <td>
                       <Badge variant={company.type === 'CLIENT' ? 'info' : 'default'}>
-                        {company.type === 'CLIENT' ? 'Müşteri' : 'İş Ortağı'}
+                        {companyTypeLabel(company.type)}
                       </Badge>
                     </td>
                     <td>{company.taxNumber || '-'}</td>

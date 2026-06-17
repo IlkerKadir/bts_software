@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { companyTypeLabel } from '@/lib/company-types';
 import ExcelJS from 'exceljs';
 
 export async function GET() {
@@ -46,7 +47,7 @@ export async function GET() {
 
     // Add data rows
     for (const company of companies) {
-      const typeLabel = company.type === 'CLIENT' ? 'MUSTERI' : 'IS ORTAGI';
+      const typeLabel = companyTypeLabel(company.type);
 
       sheet.addRow({
         name: company.name,
