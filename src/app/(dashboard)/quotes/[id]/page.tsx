@@ -38,6 +38,7 @@ import { QuoteDocuments } from '@/components/quotes/QuoteDocuments';
 import { QuoteHistory } from '@/components/quotes/QuoteHistory';
 import { QuoteVersionPanel } from '@/components/quotes/QuoteVersionPanel';
 import { AddReminderButton } from '@/components/reminders/AddReminderButton';
+import { QuoteTrackingPanel } from '@/components/quotes/QuoteTrackingPanel';
 import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
@@ -127,6 +128,12 @@ interface Quote {
   lastEditedBy?: { id: string; fullName: string } | null;
   createdAt: string;
   approvedAt?: string | null;
+  // Teklif Takip (sales tracking) — overwrite-on-save fields
+  priority?: string | null;
+  successPct?: number | null;
+  expectedOrderDate?: string | null;
+  lostReason?: string | null;
+  lostCompetitor?: string | null;
 }
 
 interface ProfitSummary {
@@ -176,6 +183,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
   const router = useRouter();
 
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const [profitSummary, setProfitSummary] = useState<ProfitSummary | null>(null);
   const [permissions, setPermissions] = useState<UserPermissions>({
     canViewCosts: false,
@@ -984,9 +992,32 @@ export default function QuoteDetailPage({ params }: PageProps) {
             <Printer className="w-4 h-4" />
             Yazdır
           </Button>
+          <Button variant="secondary" onClick={() => setIsTrackingOpen(true)}>
+            <BarChart3 className="w-4 h-4" />
+            Teklif Takip
+          </Button>
           <AddReminderButton quoteId={id} />
         </div>
       </div>
+
+      {quote && (
+        <QuoteTrackingPanel
+          quoteId={id}
+          status={quote.status}
+          isOpen={isTrackingOpen}
+          onClose={() => setIsTrackingOpen(false)}
+          initial={{
+            priority: quote.priority ?? null,
+            successPct: quote.successPct ?? null,
+            expectedOrderDate: quote.expectedOrderDate ?? null,
+            lostReason: quote.lostReason ?? null,
+            lostCompetitor: quote.lostCompetitor ?? null,
+          }}
+          onSaved={(v) =>
+            setQuote((prev) => (prev ? { ...prev, ...v } : prev))
+          }
+        />
+      )}
 
       {/* Error banner */}
       {error && (
