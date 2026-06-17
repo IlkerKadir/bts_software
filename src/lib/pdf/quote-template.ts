@@ -178,6 +178,14 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => escapeMap[char]);
 }
 
+/**
+ * Escape HTML and convert newlines to <br/> so multi-line notes/descriptions
+ * keep their line breaks in the PDF (plain HTML collapses "\n" to a space).
+ */
+export function escapeHtmlMultiline(text: string): string {
+  return escapeHtml(text).replace(/\r?\n/g, '<br/>');
+}
+
 function unitAbbr(unit: string): string {
   switch (unit) {
     case 'Adet': return 'Ad.';
@@ -277,7 +285,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
       const pozLabel = item.customPozNo || 'NOT:';
       return `<tr style="height:15pt;${highlightStyle(item)}">
         <td><p class="s1" style="text-align:center;">${escapeHtml(pozLabel)}</p></td>
-        <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtml(item.description)}</p></td>
+        <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtmlMultiline(item.description)}</p></td>
       </tr>`;
     }
 
@@ -361,7 +369,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
     if (item.priceLabel) {
       return `<tr style="${highlightStyle(item)}">
       <td><p class="s1" style="text-align:center;">${pozText}</p></td>
-      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtmlMultiline(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
       <td colspan="2"><p class="s1" style="text-align:center;padding:0 4pt;">${escapeHtml(item.priceLabel)}</p></td>
     </tr>`;
@@ -376,7 +384,7 @@ export function generateQuoteHtml(data: QuoteDataForPdf): string {
 
     return `<tr style="${highlightStyle(item)}">
       <td><p class="s1" style="text-align:center;">${pozText}</p></td>
-      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtmlMultiline(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;white-space:nowrap;">${qtyStr}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:14pt;white-space:nowrap;">${formatCurrency(item.unitPrice, rowCurrency)}</p></td>
       <td><p class="s2" style="text-align:right;white-space:nowrap;">${formatCurrency(item.totalPrice, rowCurrency)}</p></td>

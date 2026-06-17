@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateQuoteHtml, QuoteDataForPdf, formatCurrency, escapeHtml } from './quote-template';
+import { generateQuoteHtml, QuoteDataForPdf, formatCurrency, escapeHtml, escapeHtmlMultiline } from './quote-template';
 
 describe('Quote PDF Template — Proforma Fatura', () => {
   const mockQuoteData: QuoteDataForPdf = {
@@ -683,6 +683,24 @@ describe('Quote PDF Template — Proforma Fatura', () => {
 
     it('escapes quotes', () => {
       expect(escapeHtml('"test"')).toBe('&quot;test&quot;');
+    });
+  });
+
+  describe('escapeHtmlMultiline', () => {
+    it('converts newlines to <br/>', () => {
+      expect(escapeHtmlMultiline('line1\nline2')).toBe('line1<br/>line2');
+    });
+
+    it('handles Windows CRLF newlines', () => {
+      expect(escapeHtmlMultiline('a\r\nb')).toBe('a<br/>b');
+    });
+
+    it('still escapes HTML in multi-line text', () => {
+      expect(escapeHtmlMultiline('<b>x</b>\ny & z')).toBe('&lt;b&gt;x&lt;/b&gt;<br/>y &amp; z');
+    });
+
+    it('leaves single-line text unchanged (aside from escaping)', () => {
+      expect(escapeHtmlMultiline('plain text')).toBe('plain text');
     });
   });
 });

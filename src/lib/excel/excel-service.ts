@@ -504,7 +504,11 @@ export class ExcelService {
         descCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true, indent: 1 };
         styleMergedRange(sheet, currentRow, 2, TOTAL_COLUMNS);
 
-        const lineCount = Math.max(1, Math.ceil(item.description.length / 85));
+        const lineCount = Math.max(
+          item.description.split('\n').length,
+          Math.ceil(item.description.length / 85),
+          1,
+        );
         sheet.getRow(currentRow).height = 12 * lineCount + 2;
       } else if (item.itemType === 'GRAND_TOTAL') {
         // A:G merged label, H value. Gray fill like the template's row 25.
@@ -667,7 +671,11 @@ export class ExcelService {
 
         // Roughly fit long descriptions into a taller row. Column E
         // (AÇIKLAMA) at width ~40 holds about 65 chars per line.
-        const lineCount = Math.max(1, Math.ceil(item.description.length / 65));
+        const lineCount = Math.max(
+          item.description.split('\n').length,
+          Math.ceil(item.description.length / 65),
+          1,
+        );
         sheet.getRow(currentRow).height = lineCount > 1 ? 13 * lineCount : 14;
       }
 

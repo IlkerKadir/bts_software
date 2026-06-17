@@ -1193,7 +1193,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   return (
                     <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-amber-50/50')}>
                       <td className="px-3 py-2" />
-                      <td colSpan={permissions.canViewCosts ? 8 : 7} className="px-3 py-2 text-sm text-primary-700 italic">
+                      <td colSpan={permissions.canViewCosts ? 8 : 7} className="px-3 py-2 text-sm text-primary-700 italic whitespace-pre-wrap break-words">
                         {item.description}
                       </td>
                     </tr>
@@ -1311,7 +1311,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
                           )}
                           <span
                             className={cn(
-                              'text-sm',
+                              'text-sm whitespace-pre-wrap break-words',
                               isSubRow ? 'text-accent-600' : 'text-primary-900'
                             )}
                           >

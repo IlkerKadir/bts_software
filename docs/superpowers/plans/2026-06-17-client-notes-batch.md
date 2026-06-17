@@ -32,7 +32,7 @@ Status legend: ✅ done (branch `feature/client-notes-jun2026`, tested) · ⬜ t
 | B5 | "Dahildir" revert + not shown | Bug fix | Medium | No | ✅ |
 | B6 | Set cost in analysis | Bug + feature | Medium | No | ✅ (reviewed) |
 | A1 | Firma Tipi expansion | Enum migration | Medium | Yes (enum) | ✅ |
-| B1 | Notes newline / Word paste | UI/input | Medium | No | ⬜ |
+| B1 | Notes newline / Word paste | UI/input | Medium | No | ✅ newlines (bold/bullets deferred) |
 | B2 | Filter + pagination persistence | UI state | Medium | No (sessionStorage) | ✅ |
 | B4 | Right-click "insert above" | Editor logic | Medium | No | ✅ |
 | B9 | Teklif Takip panel | New feature | High | Yes (2 tables) | ⬜ |
@@ -269,9 +269,9 @@ Two secondary observations from the data:
 **Local DB:** migrations `20260617000000_add_project_location` and `20260617010000_add_company_types` applied locally + recorded. Production picks them up via `prisma migrate deploy` (both additive/safe). Local Postgres: `/opt/homebrew/opt/postgresql@16/bin`, DB `btsteklif` (no password). Prod backup → SQL: `pg_restore -f /tmp/bts_prod.sql ~/Downloads/bts_backup_10.06.2026/bts_backup_2026-06-10_0906.dump`.
 **Reusable helpers added this batch:** `src/lib/search-helpers.ts` (buildTokenizedSearchAND, escapeLike), `src/lib/pagination.ts` (prior), `src/lib/brand-profit-summary.ts`, `src/lib/quote-item-order.ts` (insertItemBefore), `src/lib/company-types.ts`, `src/lib/turkish-provinces.ts`, `src/lib/hooks/usePersistentState.ts`. Tests live beside each. Test env for hooks/components: `@vitest-environment happy-dom` docblock.
 
-## B1 — Notes rich text (TODO)
-**Ask (not2 p.1):** newline/alt+enter in notes; paste a formatted Word paragraph keeping line breaks; or a "Paragraf Ekle" button. **Decision: bold + bullets OK if not too complex.**
-**Plan:** audit note/description inputs (quote item NOTE rows in QuoteItemRow/QuoteEditor; quote `notes`; project `notes`). Introduce a minimal sanitized rich subset (newlines + `<b>`/`<strong>`, `<ul><li>`, `<p>`/`<br>`). On paste, prefer sanitized `text/html`, fall back to `text/plain` with `\n`. **Critical:** verify it round-trips through the customer PDF (`src/lib/pdf/quote-template.ts`, `assemble-quote-data.ts`) and Excel (`src/lib/excel/excel-service.ts`) — not just the web view. Keep the allowed-tag set tiny + sanitize (avoid a heavy editor dep). Test: multi-line+bold+bullet note → reload identical → renders in editor, preview, PDF; pasted Word para keeps structure; disallowed HTML stripped.
+## B1 — Notes rich text
+**DONE (newlines), commit pending in this session:** `EditableCell` got a `multiline` prop → textarea (Enter = newline), and the display + view page use `whitespace-pre-wrap`. PDF: new `escapeHtmlMultiline` (`\n`→`<br/>`) used for NOTE + product description rows. Excel: description cells already wrapText; row-height calcs now count `\n`. Word CRLF normalized to `\n` on input. Applied to quote item NOTE rows and product descriptions in `QuoteItemRow`. Tests: escapeHtmlMultiline (4) + suite green.
+**DEFERRED — bold/bullets (B1 part 2):** full rich text (store sanitized HTML/markdown subset `<b>/<ul><li>/<p>`, paste sanitized `text/html`, render in web + PDF + Excel rich-text runs) is genuinely PDF/Excel-risky and was scoped out under the "if not too complex" caveat. Still applies to: quote `notes` field and project `notes` (only the line-item description got multiline so far — extend if the client wants the quote-level Notlar box multiline/rich too).
 
 ## B9 — Teklif Takip + admin-only B8 Excel export (TODO, largest)
 **Ask (not2 p.4-5):** a "Teklif Takip" button on the quote detail opening a panel with —
@@ -279,7 +279,7 @@ Two secondary observations from the data:
 - Append-only interaction log: who (auto=current user), Son İletişim Tarihi (default today), İletişim Tipi (Telefon/E-mail/Yüz Yüze Ziyaret/Online Toplantı/Fuar), İletişim Notu (textarea), Hatırlatıcı (future date → create a `Reminder`).
 - When status=Kaybedildi: reason dropdown (Bütçe Yetersizliği, Rakipten Pahalı Kalmak, Rakip Marka Tercihi, Teknik Şartname/Yetersizlik, Proje İptali, Ödeme Koşulları) + preferred-competitor text.
 **Plan:** additive schema — add static fields to `Quote` (or 1:1 `QuoteTracking`) + a new `QuoteInteraction` table (id, quoteId, userId, date, type enum, note, reminderDate, createdAt) + a `LostReason` enum + `lostCompetitor`. Reuse existing `Reminder` model for Hatırlatıcı. UI: panel/drawer on quote detail (`src/app/(dashboard)/quotes/[id]/page.tsx`). Then **B8 admin-only Excel export**: add a management-gated (role `canManageUsers`) "Excel'e Aktar" on the Teklifler list that exports the filtered list incl. the new tracking columns (the client wanted these columns optional/exportable). Migration must be additive; new enum values only ADDED.
-**Open question still pending:** B6 bundle-cost — when a SET parent has its own costPrice, keep ignoring it (use children) + surface in UI? (recommended default; not yet decided.)
+**B6 bundle-cost — RESOLVED (2026-06-17):** keep using the children's costs; the SET parent's own costPrice stays ignored. This is already how `brand-profit-summary.ts` behaves — no code change needed.
 
 ---
 

@@ -163,6 +163,9 @@ interface EditableCellProps {
   onChange: (value: string | number) => void;
   displayValue?: string;
   readOnly?: boolean;
+  /** Multi-line text (notes / descriptions): edits in a textarea where Enter
+   *  inserts a newline, and the display preserves line breaks (pre-wrap). */
+  multiline?: boolean;
 }
 
 function PozNoInput({ value, onCommit, fallback }: { value: string; onCommit: (val: string) => void; fallback: string }) {
@@ -207,10 +210,11 @@ function EditableCell({
   onChange,
   displayValue,
   readOnly = false,
+  multiline = false,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setDraft(String(value));
@@ -257,10 +261,14 @@ function EditableCell({
         data-editable="true"
         className={cn(
           'tabular-nums cursor-pointer rounded px-1 -mx-1 hover:bg-blue-50 transition-colors',
+          // Preserve newlines in multi-line text (notes/descriptions).
+          multiline && 'whitespace-pre-wrap break-words block',
           className,
         )}
         onClick={() => setEditing(true)}
         onKeyDown={(e) => {
+          // In single-line cells Enter/Space opens the editor; multi-line
+          // cells still open on Enter (the textarea then handles newlines).
           if (e.key === 'Enter' || e.key === ' ') setEditing(true);
         }}
       >
@@ -269,9 +277,35 @@ function EditableCell({
     );
   }
 
+  if (multiline) {
+    return (
+      <textarea
+        ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+        data-editable="true"
+        rows={Math.min(Math.max(draft.split('\n').length, 2), 12)}
+        value={draft}
+        // Normalize Word/Windows CRLF to \n so the PDF/Excel renderers and the
+        // newline-count heuristics stay consistent.
+        onChange={(e) => setDraft(e.target.value.replace(/\r\n/g, '\n'))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          // Enter inserts a newline (native). Escape cancels; commit on blur.
+          if (e.key === 'Escape') {
+            setDraft(String(value));
+            setEditing(false);
+          }
+        }}
+        className={cn(
+          'w-full resize-y rounded border border-blue-400 bg-white px-1 py-0.5 text-sm outline-none ring-2 ring-blue-200 whitespace-pre-wrap',
+          className,
+        )}
+      />
+    );
+  }
+
   return (
     <input
-      ref={inputRef}
+      ref={inputRef as React.RefObject<HTMLInputElement>}
       type={type === 'number' ? 'text' : 'text'}
       inputMode={type === 'number' ? 'decimal' : 'text'}
       data-editable="true"
@@ -569,6 +603,7 @@ export function QuoteItemRow({
               value={item.description}
               onChange={(v) => onUpdate({ description: String(v) })}
               className="italic"
+              multiline
             />
           </td>
           <td className="w-10 border border-accent-200 bg-white px-1 py-1.5 text-center">
@@ -915,8 +950,9 @@ export function QuoteItemRow({
             <EditableCell
               value={item.description}
               onChange={(v) => onUpdate({ description: String(v) })}
+              multiline
               className={cn(
-                'text-sm whitespace-normal break-words block',
+                'text-sm break-words block',
                 isSubRow ? 'text-accent-500' : 'text-accent-900',
               )}
             />
