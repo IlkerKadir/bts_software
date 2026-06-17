@@ -41,3 +41,30 @@ export const COMPANY_TYPE_OPTIONS = COMPANY_TYPES.map((value) => ({
 export function companyTypeLabel(type: string): string {
   return COMPANY_TYPE_LABELS[type as CompanyTypeValue] ?? type;
 }
+
+/**
+ * Normalize a free-text type string (from Excel import) to a CompanyType.
+ * Accepts the enum value (CLIENT, MUTEAHHIT, ...), the Turkish label
+ * (Müşteri, Müteahhit, ...), and legacy ASCII aliases for the original two.
+ * Returns null when nothing matches.
+ */
+export function normalizeCompanyType(raw: string): CompanyTypeValue | null {
+  // Plain (non-locale) upper-case applied symmetrically to input and labels.
+  // Avoids the Turkish tr-TR quirk where ASCII "i" → "İ" (which would stop a
+  // lowercase enum value like "distributor" from matching "DISTRIBUTOR").
+  const upper = raw.trim().toUpperCase();
+
+  const asEnum = COMPANY_TYPES.find((t) => t === upper);
+  if (asEnum) return asEnum;
+
+  const byLabel = COMPANY_TYPES.find(
+    (t) => COMPANY_TYPE_LABELS[t].toUpperCase() === upper
+  );
+  if (byLabel) return byLabel;
+
+  // Legacy ASCII aliases for the original two types.
+  if (['MUSTERI', 'MÜŞTERI', 'MÜSTERI'].includes(upper)) return 'CLIENT';
+  if (['IS ORTAGI', 'İŞ ORTAĞI', 'İŞ ORTAGI', 'IS ORTAĞI'].includes(upper)) return 'PARTNER';
+
+  return null;
+}

@@ -1,33 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { COMPANY_TYPES, COMPANY_TYPE_LABELS, type CompanyTypeValue } from '@/lib/company-types';
+import {
+  COMPANY_TYPE_OPTIONS,
+  normalizeCompanyType,
+  type CompanyTypeValue,
+} from '@/lib/company-types';
 import ExcelJS from 'exceljs';
 
-/**
- * Normalize a type string from the Excel file to a valid CompanyType.
- * Accepts the enum value (CLIENT, MUTEAHHIT, ...), the Turkish label
- * (Müşteri, Müteahhit, ...), and legacy ASCII aliases for the original two.
- */
-function normalizeCompanyType(raw: string): CompanyTypeValue | null {
-  const upper = raw.trim().toLocaleUpperCase('tr-TR');
-
-  // Direct enum value (e.g. "CLIENT", "MUTEAHHIT").
-  const asEnum = COMPANY_TYPES.find((t) => t === upper);
-  if (asEnum) return asEnum;
-
-  // Turkish label (e.g. "MÜTEAHHİT" from "Müteahhit").
-  const byLabel = COMPANY_TYPES.find(
-    (t) => COMPANY_TYPE_LABELS[t].toLocaleUpperCase('tr-TR') === upper
-  );
-  if (byLabel) return byLabel;
-
-  // Legacy ASCII aliases for the original two types.
-  if (['MUSTERI', 'MÜŞTERİ', 'MÜSTERI'].includes(upper)) return 'CLIENT';
-  if (['IS ORTAGI', 'İŞ ORTAĞI', 'İŞ ORTAGI', 'IS ORTAĞI'].includes(upper)) return 'PARTNER';
-
-  return null;
-}
+// Human-readable list of accepted firma tipi labels, for import error messages.
+const VALID_TYPE_LABELS = COMPANY_TYPE_OPTIONS.map((o) => o.label).join(', ');
 
 /**
  * Convert an ExcelJS cell value to a plain string. The tricky cases
@@ -175,7 +157,7 @@ export async function POST(request: NextRequest) {
       const type = typeRaw ? normalizeCompanyType(typeRaw) : 'CLIENT';
 
       if (type === null) {
-        errors.push(`Satir ${rowNumber}: Gecersiz firma tipi "${typeRaw}".`);
+        errors.push(`Satir ${rowNumber}: Gecersiz firma tipi "${typeRaw}". Gecerli tipler: ${VALID_TYPE_LABELS}.`);
         return;
       }
 
