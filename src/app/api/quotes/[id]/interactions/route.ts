@@ -2,10 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { quoteInteractionSchema } from '@/lib/validations/quote-tracking';
+import { canUserAccessQuote } from '@/lib/quote-access';
+import type { ZodError } from 'zod';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
+
+const QUOTE_ACCESS_SELECT = {
+  id: true,
+  quoteNumber: true,
+  createdById: true,
+  project: { select: { visibility: true, visibleTo: { select: { userId: true } } } },
+} as const;
 
 /** List a quote's interaction log (newest first). */
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -16,6 +25,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+    const quote = await db.quote.findUnique({ where: { id }, select: QUOTE_ACCESS_SELECT });
+    if (!quote) {
+      return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
+    }
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canUserAccessQuote(user.id, isManager, quote)) {
+      return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
+    }
+
     const interactions = await db.quoteInteraction.findMany({
       where: { quoteId: id },
       include: { user: { select: { id: true, fullName: true } } },
@@ -45,12 +63,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const data = quoteInteractionSchema.parse(body);
 
-    const quote = await db.quote.findUnique({
-      where: { id },
-      select: { id: true, quoteNumber: true },
-    });
+    const quote = await db.quote.findUnique({ where: { id }, select: QUOTE_ACCESS_SELECT });
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
+    }
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canUserAccessQuote(user.id, isManager, quote)) {
+      return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
     }
 
     const interaction = await db.quoteInteraction.create({
@@ -81,7 +100,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ interaction }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.name === 'ZodError') {
-      return NextResponse.json({ error: 'Geçersiz veri', details: error }, { status: 400 });
+      return NextResponse.json({ error: 'Geçersiz veri', details: (error as ZodError).issues }, { status: 400 });
     }
     console.error('Quote interactions POST error:', error);
     return NextResponse.json({ error: 'İletişim kaydı eklenirken bir hata oluştu' }, { status: 500 });

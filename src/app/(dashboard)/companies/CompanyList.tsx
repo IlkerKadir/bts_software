@@ -56,6 +56,9 @@ export function CompanyList() {
       if (response.ok) {
         setCompanies(data.companies);
         setPagination(data.pagination);
+        if (data.pagination?.totalPages > 0 && data.pagination.page > data.pagination.totalPages) {
+          setPage(1);
+        }
       } else {
         setFetchError(data.error || 'Firmalar yüklenirken bir hata oluştu');
       }

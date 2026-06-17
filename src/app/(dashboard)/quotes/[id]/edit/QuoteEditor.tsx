@@ -1395,6 +1395,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           // When inserted above a row, the renumbered sortOrder of every
           // shifted row must be persisted (the POST only saved the new row).
           if (insertedList) {
+            // One-shot: clear the target so the next catalog add appends
+            // normally instead of stacking above the same row.
+            setInsertBeforeId(null);
             const persisted = insertedList.map((item) =>
               item.id === tempId ? serverItem : item
             );

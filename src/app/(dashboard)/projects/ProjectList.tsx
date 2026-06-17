@@ -89,6 +89,9 @@ export function ProjectList({ canDelete }: ProjectListProps) {
       if (response.ok) {
         setProjects(data.projects);
         setPagination(data.pagination);
+        if (data.pagination?.totalPages > 0 && data.pagination.page > data.pagination.totalPages) {
+          setPage(1);
+        }
       }
     } catch (error) {
       console.error('Error fetching projects:', error);

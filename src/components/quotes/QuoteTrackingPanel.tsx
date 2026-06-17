@@ -204,6 +204,7 @@ export function QuoteTrackingPanel({
               type="number"
               min={0}
               max={100}
+              step={1}
               value={successPct}
               onChange={(e) => setSuccessPct(e.target.value)}
               placeholder="0-100"

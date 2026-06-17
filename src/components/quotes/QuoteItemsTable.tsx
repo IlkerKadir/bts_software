@@ -1185,7 +1185,7 @@ export function QuoteItemsTable({
           <Plus className="h-4 w-4" />
           Ürün Ekle
         </Button>
-        <Button variant="secondary" size="sm" onClick={onAddHeader}>
+        <Button variant="secondary" size="sm" onClick={() => onAddHeader()}>
           <Type className="h-4 w-4" />
           Başlık Ekle
         </Button>

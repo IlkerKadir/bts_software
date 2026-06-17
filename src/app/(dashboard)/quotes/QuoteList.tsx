@@ -167,6 +167,11 @@ export function QuoteList({ userId, canApprove, canViewCosts, canManageUsers }: 
       if (response.ok) {
         setQuotes(data.quotes);
         setPagination(data.pagination);
+        // A persisted page can fall out of range when the filtered set
+        // shrinks (e.g. arriving via a ?status= deep link). Snap back to 1.
+        if (data.pagination?.totalPages > 0 && data.pagination.page > data.pagination.totalPages) {
+          setPage(1);
+        }
       } else {
         setFetchError(data.error || 'Teklifler yüklenirken bir hata oluştu');
       }

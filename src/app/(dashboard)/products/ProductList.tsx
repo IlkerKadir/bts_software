@@ -98,6 +98,9 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
       if (response.ok) {
         setProducts(data.products);
         setPagination(data.pagination);
+        if (data.pagination?.totalPages > 0 && data.pagination.page > data.pagination.totalPages) {
+          setPage(1);
+        }
       } else {
         setFetchError(data.error || 'Ürünler yüklenirken bir hata oluştu');
       }

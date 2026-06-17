@@ -30,9 +30,17 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom') || '';
     const dateTo = searchParams.get('dateTo') || '';
 
+    // Non-managers reach this only if gated above; but keep the visibility
+    // floor consistent with the list for safety.
     const where: Prisma.QuoteWhereInput = {};
     if (search) {
-      where.AND = buildTokenizedSearchAND(search, ['quoteNumber', 'subject', 'company.name']);
+      // Same fields as the Teklifler list (includes project.name).
+      where.AND = buildTokenizedSearchAND(search, [
+        'quoteNumber',
+        'subject',
+        'company.name',
+        'project.name',
+      ]);
     }
     if (status) {
       const statuses = status.split(',').map((s) => s.trim()).filter(Boolean) as QuoteStatus[];
@@ -42,14 +50,14 @@ export async function GET(request: NextRequest) {
     if (createdById) where.createdById = createdById;
     if (dateFrom || dateTo) {
       where.createdAt = {};
+      // Match the list API's UTC day boundaries so export == on-screen set.
       if (dateFrom) (where.createdAt as Prisma.DateTimeFilter).gte = new Date(dateFrom);
-      if (dateTo) {
-        const end = new Date(dateTo);
-        end.setHours(23, 59, 59, 999);
-        (where.createdAt as Prisma.DateTimeFilter).lte = end;
-      }
+      if (dateTo) (where.createdAt as Prisma.DateTimeFilter).lte = new Date(`${dateTo}T23:59:59.999Z`);
     }
 
+    // NOTE: unlike the on-screen list (which collapses revision chains into
+    // one row), this management export intentionally lists EVERY version so
+    // the full revision history is auditable in the spreadsheet.
     const quotes = await db.quote.findMany({
       where,
       include: {
