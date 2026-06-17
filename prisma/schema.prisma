@@ -61,6 +61,7 @@ model User {
   reminders      Reminder[]
   projectAccess  ProjectUserAccess[]
   projectsCreated Project[]            @relation("ProjectCreatedBy")
+  quoteInteractions QuoteInteraction[]
 }
 
 // ==================== COMPANIES ====================
@@ -318,6 +319,13 @@ model Quote {
    * the editor falls back to live TCMB, same as legacy behavior.
    */
   rateSnapshot    Json?
+  // ── Teklif Takip (sales tracking) — overwritten on each update ──
+  priority          QuotePriority?
+  successPct        Int? // Başarı yüzdesi 0–100
+  expectedOrderDate DateTime?
+  // Set when status = KAYBEDILDI
+  lostReason        LostReason?
+  lostCompetitor    String?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   items              QuoteItem[]
@@ -328,11 +336,54 @@ model Quote {
   priceHistories     PriceHistory[]
   ekMaliyetler       QuoteEkMaliyet[]
   reminders          Reminder[]
+  interactions       QuoteInteraction[]
 
   @@index([companyId])
   @@index([projectId])
   @@index([status])
   @@index([createdById])
+}
+
+// ==================== TEKLİF TAKİP (quote tracking) ====================
+
+enum QuotePriority {
+  A
+  B
+  C
+  D
+}
+
+enum LostReason {
+  BUTCE_YETERSIZ // Bütçe Yetersizliği
+  RAKIPTEN_PAHALI // Rakipten Pahalı Kalmak
+  RAKIP_MARKA_TERCIHI // Rakip Marka Tercihi
+  TEKNIK_YETERSIZLIK // Teknik Şartname / Yetersizlik
+  PROJE_IPTALI // Proje İptali
+  ODEME_KOSULLARI // Ödeme Koşulları
+}
+
+enum QuoteInteractionType {
+  TELEFON
+  EMAIL
+  YUZ_YUZE // Yüz Yüze Ziyaret
+  ONLINE_TOPLANTI // Online Toplantı
+  FUAR
+}
+
+/// One row per logged contact in a quote's "İletişim Geçmişi" (cumulative).
+model QuoteInteraction {
+  id              String               @id @default(cuid())
+  quoteId         String
+  quote           Quote                @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id])
+  interactionDate DateTime             @default(now())
+  type            QuoteInteractionType
+  note            String
+  reminderDate    DateTime? // optional follow-up; mirrored into a Reminder
+  createdAt       DateTime             @default(now())
+
+  @@index([quoteId])
 }
 
 enum QuoteItemType {
