@@ -2,19 +2,38 @@ import { describe, it, expect } from 'vitest';
 import { footerDefaultsFromTerms } from './stf-footer-defaults';
 
 describe('footerDefaultsFromTerms', () => {
-  it('maps known categories to footer fields', () => {
+  it('maps the real (Turkish) category keys to footer fields', () => {
     const r = footerDefaultsFromTerms([
-      { category: 'payment', value: '30 gün' },
-      { category: 'delivery', value: 'BTS depo' },
-      { category: 'warranty', value: '2 yıl' },
-      { category: 'vat', value: 'KDV dahil değildir' },
+      { category: 'odeme', value: '30 gün' },
+      { category: 'garanti', value: '2 yıl' },
+      { category: 'kdv', value: 'KDV dahil değildir' },
       { category: 'teslim_yeri', value: 'İstanbul' },
     ]);
     expect(r.paymentTerms).toBe('30 gün');
     expect(r.warranty).toBe('2 yıl');
     expect(r.vatNote).toBe('KDV dahil değildir');
-    // teslim_yeri preferred over delivery for deliveryPlace
     expect(r.deliveryPlace).toBe('İstanbul');
+  });
+
+  it('parses uretici_firmalar JSON into "BRAND - systems" lines', () => {
+    const r = footerDefaultsFromTerms([
+      { category: 'uretici_firmalar', value: '{"SENSITRON":["CCTV Sistemi"],"TYCO ZETTLER":["Yangın","Söndürme"]}' },
+    ]);
+    expect(r.manufacturers).toBe('SENSITRON - CCTV Sistemi\nTYCO ZETTLER - Yangın, Söndürme');
+  });
+
+  it('renders a brand with no systems as just the brand name', () => {
+    const r = footerDefaultsFromTerms([
+      { category: 'uretici_firmalar', value: '{"BTS":[]}' },
+    ]);
+    expect(r.manufacturers).toBe('BTS');
+  });
+
+  it('falls back to raw text when uretici_firmalar is not JSON', () => {
+    const r = footerDefaultsFromTerms([
+      { category: 'uretici_firmalar', value: 'GLT ZETA' },
+    ]);
+    expect(r.manufacturers).toBe('GLT ZETA');
   });
 
   it('falls back to delivery when teslim_yeri is absent', () => {
@@ -24,15 +43,15 @@ describe('footerDefaultsFromTerms', () => {
 
   it('joins multiple terms in the same category with newlines', () => {
     const r = footerDefaultsFromTerms([
-      { category: 'payment', value: 'A' },
-      { category: 'payment', value: 'B' },
+      { category: 'odeme', value: 'A' },
+      { category: 'odeme', value: 'B' },
     ]);
     expect(r.paymentTerms).toBe('A\nB');
   });
 
   it('returns all-null for empty input', () => {
     expect(footerDefaultsFromTerms([])).toEqual({
-      paymentTerms: null, deliveryPlace: null, warranty: null, vatNote: null,
+      manufacturers: null, paymentTerms: null, deliveryPlace: null, warranty: null, vatNote: null,
     });
   });
 });

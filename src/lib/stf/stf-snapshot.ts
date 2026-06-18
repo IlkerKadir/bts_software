@@ -44,6 +44,7 @@ export interface StfHeader {
   currency: string;
   discountTotal: number;
   grandTotal: number;
+  manufacturers: string | null;
   paymentTerms: string | null;
   deliveryPlace: string | null;
   warranty: string | null;

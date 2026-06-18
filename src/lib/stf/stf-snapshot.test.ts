@@ -14,7 +14,7 @@ const quote: QuoteForSnapshot = {
     { itemType: 'PRODUCT', sortOrder: 2, code: 'MKII-OP', brand: 'Fyreye', model: 'MKII', description: 'Optik Dedektör', quantity: 1, unit: 'Adet', unitPrice: 31.4, totalPrice: 31.4, priceLabel: null, parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
     { itemType: 'CUSTOM', sortOrder: 3, code: null, brand: null, model: null, description: 'Montaj', quantity: 1, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: 'tarafınızca sağlanacaktır', parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
   ],
-  commercialTerms: [{ category: 'payment', value: '30 gün' }],
+  commercialTerms: [{ category: 'odeme', value: '30 gün' }],
 };
 
 describe('buildStfSnapshot', () => {
