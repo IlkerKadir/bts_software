@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { OrderStatus, QuoteItemType } from '@prisma/client';
 import { stfUpdateSchema } from '@/lib/validations/stf';
+import { computeStfTotals } from '@/lib/stf/stf-totals';
 import type { ZodError } from 'zod';
 
 const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
@@ -151,12 +152,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const { items, formDate, ...header } = data;
 
+    const { grandTotal, discountTotal } = computeStfTotals(
+      items.map((it) => ({
+        itemType: it.itemType,
+        totalPrice: it.totalPrice,
+        priceLabel: it.priceLabel,
+        parentItemId: it.parentItemId,
+        sectionDiscountPct: it.sectionDiscountPct,
+      }))
+    );
+
     const order = await db.$transaction(async (tx) => {
       await tx.orderItem.deleteMany({ where: { orderId: id } });
       return tx.orderConfirmation.update({
         where: { id },
         data: {
           ...header,
+          grandTotal,
+          discountTotal,
           formDate: formDate ? new Date(formDate) : null,
           items: {
             create: items.map((it) => ({
@@ -175,6 +188,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
               parentItemId: it.parentItemId,
               discountPct: it.discountPct,
               sectionNote: it.sectionNote,
+              sectionDiscountPct: it.sectionDiscountPct,
+              sectionDiscountLabel: it.sectionDiscountLabel,
             })),
           },
         },

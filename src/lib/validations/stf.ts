@@ -19,6 +19,8 @@ export const stfItemSchema = z.object({
   parentItemId: nullableStr,
   discountPct: z.coerce.number().default(0),
   sectionNote: nullableStr,
+  sectionDiscountPct: z.coerce.number().nullish().transform((v) => (v == null ? null : v)),
+  sectionDiscountLabel: nullableStr,
 });
 
 export const stfUpdateSchema = z.object({
