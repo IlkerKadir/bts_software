@@ -88,6 +88,17 @@ In `src/app/(dashboard)/orders/page.tsx`:
 
 Each phase ships on its own commit(s) with tests, code-reviewed where logic-bearing, and is independently deployable.
 
+## 8b. Phase 1 status (2026-06-18) + carried-forward follow-ups
+
+**Phase 1 COMPLETE** on branch `feature/client-notes-jun2026` (9 tasks, commits prefixed `STF (`, ending at `220399f`). Additive migration `20260618000000_add_stf_fields`, snapshot create + STF-6000 numbering, editable StfEditor, GET/PUT, "STF Oluştur" button, Siparişler list columns. 632 tests pass; typecheck clean. Every task got spec + code-quality review; a final integration review confirmed end-to-end coherence.
+
+**⚠ Dev-server note:** after the schema migration + `prisma generate`, a long-running `next dev` must be RESTARTED to load the regenerated Prisma client — otherwise POST /api/orders 500s with `PrismaClientValidationError: Unknown argument customerName`. The code is correct; this is environment-only.
+
+**Follow-ups for Phase 2 (PDF) or a hardening pass:**
+1. **Order-level totals recompute (Phase 2):** StfEditor edits per-row `totalPrice` but never recomputes the order's `grandTotal`/`discountTotal` — they round-trip stale. Not user-visible in Phase 1 (editor doesn't show them). Recompute server-side in PUT (or derive read-only) before the PDF renders totals; design alongside section subtotals/discounts + multi-currency.
+2. **Type-aware row rendering (Phase 2):** StfEditor renders HEADER/SUBTOTAL/NOTE/SET rows as editable product rows. Data round-trips correctly (itemType preserved); needs type-aware rendering when the sectioned PDF layout is built.
+3. **Access control hardening:** orders GET/PATCH/PUT are session-only; the spec's "quote-derived visibility + managers" rule (§10.3) isn't enforced anywhere in the orders read/edit path (pre-existing across the module). Add a shared `canAccessOrder(order, user)` mirroring `quotes/[id]`'s `canAccessQuote`, applied to GET/PATCH/PUT.
+
 ## 9. Risks & mitigations
 
 - **Live data:** migration is additive only (new nullable columns + new `OrderItem` table + self-relation); existing `SIP-*` orders untouched. Applied locally + recorded; production via `prisma migrate deploy`.
