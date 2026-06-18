@@ -34,20 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const order = await db.orderConfirmation.findUnique({
       where: { id },
       include: {
-        quote: {
-          include: {
-            company: true,
-            project: { select: { id: true, name: true } },
-            items: {
-              where: { parentItemId: null },
-              orderBy: { sortOrder: 'asc' },
-            },
-            commercialTerms: {
-              orderBy: { sortOrder: 'asc' },
-            },
-          },
-        },
-        company: true,
+        items: { orderBy: { sortOrder: 'asc' } },
         createdBy: { select: { id: true, fullName: true } },
       },
     });
@@ -68,52 +55,43 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const headerBase64 = loadImageBase64('public/header/BTS_teklif_form.png') || loadImageBase64('pdf/header/BTS_teklif_form.png');
     const logoBase64 = headerBase64 ? undefined : loadImageBase64('public/btslogo.png');
 
-    // Prepare data for template
+    // Prepare data for template from the STF snapshot (NOT the live quote).
     const pdfData: OrderDataForPdf = {
       order: {
         orderNumber: order.orderNumber,
-        status: order.status,
+        customerName: order.customerName,
+        customerAddress: order.customerAddress,
+        customerPhone: order.customerPhone,
+        customerTaxInfo: order.customerTaxInfo,
+        projectName: order.projectName,
+        quoteNo: order.quoteNo,
+        refNo: order.refNo,
+        formDate: order.formDate,
+        siparisNo: order.siparisNo,
+        currency: order.currency,
+        manufacturers: order.manufacturers,
+        warranty: order.warranty,
+        deliveryPlace: order.deliveryPlace,
+        paymentTerms: order.paymentTerms,
+        vatNote: order.vatNote,
         notes: order.notes,
-        deliveryDate: order.deliveryDate,
-        createdAt: order.createdAt,
+        customerApprovalName: order.customerApprovalName,
+        btsResponsibleName: order.btsResponsibleName,
       },
-      quote: {
-        quoteNumber: order.quote.quoteNumber,
-        refNo: (order.quote as any).refNo || null,
-        subject: order.quote.subject,
-        currency: order.quote.currency,
-        grandTotal: Number(order.quote.grandTotal),
-      },
-      company: {
-        name: order.company.name,
-        address: order.company.address,
-        taxNumber: order.company.taxNumber,
-        phone: order.company.phone,
-        email: order.company.email,
-      },
-      project: order.quote.project ? { name: order.quote.project.name } : null,
-      items: order.quote.items
-        .filter(item => item.itemType !== 'SUBTOTAL')
-        .map(item => {
-          const meta = item.serviceMeta as Record<string, unknown> | null;
-          const customPozNo = meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : null;
-          const highlight = meta && meta.highlight === true;
-          return {
-            itemType: item.itemType,
-            code: item.code,
-            brand: item.brand,
-            description: item.description,
-            quantity: Number(item.quantity),
-            unit: item.unit,
-            unitPrice: Number(item.unitPrice),
-            totalPrice: Number(item.totalPrice),
-            customPozNo,
-            highlight,
-          };
-        }),
-      commercialTerms: order.quote.commercialTerms.map(term => ({
-        category: term.category,
-        value: term.value,
+      items: order.items.map((it) => ({
+        itemType: it.itemType,
+        pozNo: it.pozNo,
+        code: it.code,
+        brand: it.brand,
+        description: it.description,
+        quantity: Number(it.quantity),
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice),
+        totalPrice: Number(it.totalPrice),
+        priceLabel: it.priceLabel,
+        parentItemId: it.parentItemId,
+        sectionDiscountPct: it.sectionDiscountPct === null ? null : Number(it.sectionDiscountPct),
+        sectionDiscountLabel: it.sectionDiscountLabel,
       })),
       headerBase64,
       logoBase64,

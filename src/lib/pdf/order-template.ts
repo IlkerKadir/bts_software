@@ -1,123 +1,85 @@
 // ---------------------------------------------------------------------------
-// Siparis Teyit Formu (Order Confirmation) PDF Template
-// Generates HTML for Puppeteer PDF export.
-// Simpler format than the proforma invoice — focuses on order number,
-// company info, linked quote reference, item list, totals, delivery date,
-// payment terms, and notes.
+// Sipariş Teyit Formu (STF) — Customer PDF Template
+// Renders the editable STF SNAPSHOT (OrderConfirmation header/footer +
+// OrderItem rows), NOT the live quote. Layout mirrors the sample proforma
+// (client_notes/stf örnekler/STF-4721-5833.1 …). Sectioned subtotal +
+// `*`-child rendering mirrors quote-template.ts.
 // ---------------------------------------------------------------------------
 
-export interface OrderDataForPdf {
-  order: {
-    orderNumber: string;
-    status: string;
-    notes?: string | null;
-    deliveryDate?: Date | null;
-    createdAt: Date;
-  };
-  quote: {
-    quoteNumber: string;
-    refNo?: string | null;
-    subject?: string | null;
-    currency: string;
-    grandTotal: number;
-  };
-  company: {
-    name: string;
-    address?: string | null;
-    taxNumber?: string | null;
-    phone?: string | null;
-    email?: string | null;
-  };
-  project?: {
-    name: string;
-  } | null;
-  items: OrderItemForPdf[];
-  commercialTerms: {
-    category: string;
-    value: string;
-  }[];
-  headerBase64?: string;
-  logoBase64?: string;
+export interface OrderHeaderForPdf {
+  orderNumber: string;
+  customerName: string | null;
+  customerAddress: string | null;
+  customerPhone: string | null;
+  customerTaxInfo: string | null;
+  projectName: string | null;
+  quoteNo: string | null;
+  refNo: string | null;
+  formDate: Date | null;
+  siparisNo: string | null;
+  currency: string;
+  manufacturers: string | null;
+  warranty: string | null;
+  deliveryPlace: string | null;
+  paymentTerms: string | null;
+  vatNote: string | null;
+  notes: string | null;
+  customerApprovalName: string | null;
+  btsResponsibleName: string | null;
 }
 
 export interface OrderItemForPdf {
   itemType: string;
-  code?: string | null;
-  brand?: string | null;
+  pozNo: string | null;
+  code: string | null;
+  brand: string | null;
   description: string;
   quantity: number;
   unit: string;
   unitPrice: number;
   totalPrice: number;
-  /** When set on a NOTE row, replaces the default "NOT:" label in the
-   *  position column. */
-  customPozNo?: string | null;
-  /** When true, the row is rendered with a yellow background to mirror
-   *  the editor's right-click "Vurgula" toggle. */
-  highlight?: boolean | null;
+  priceLabel: string | null;
+  parentItemId: string | null;
+  sectionDiscountPct: number | null;
+  sectionDiscountLabel: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+export interface OrderDataForPdf {
+  order: OrderHeaderForPdf;
+  items: OrderItemForPdf[];
+  headerBase64?: string;
+  logoBase64?: string;
+}
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
-  EUR: '\u20AC',
-  USD: '$',
-  GBP: '\u00A3',
-  TRY: '\u20BA',
+  EUR: '€', USD: '$', GBP: '£', TRY: '₺',
+};
+const CURRENCY_NAMES: Record<string, string> = {
+  EUR: 'EURO', USD: 'USD', GBP: 'GBP', TRY: 'TL',
 };
 
-const ORDER_STATUS_LABELS: Record<string, string> = {
-  HAZIRLANIYOR: 'Hazirlanıyor',
-  ONAYLANDI: 'Onaylandı',
-  GONDERILDI: 'Gonderildi',
-  TAMAMLANDI: 'Tamamlandı',
-  IPTAL: 'Iptal',
-};
-
-const COMMERCIAL_TERM_LABELS: Record<string, string> = {
-  URETICI: 'Uretici Firmalar',
-  ONAY: 'Onaylar',
-  GARANTI: 'Garanti',
-  TESLIM_YERI: 'Teslim Yeri',
-  ODEME: 'Odeme',
-  KDV: 'KDV',
-  TESLIMAT: 'Teslimat',
-  OPSIYON: 'Opsiyon',
-  NOTLAR: 'Notlar',
-};
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 function formatCurrency(amount: number, currency: string): string {
   const formatted = amount.toLocaleString('tr-TR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
-  const symbol = CURRENCY_SYMBOLS[currency] || currency;
-  return `${formatted} ${symbol}`;
+  return `${formatted} ${CURRENCY_SYMBOLS[currency] || currency}`;
 }
 
 function formatDate(date: Date): string {
-  return date.toLocaleDateString('tr-TR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function escapeHtml(text: string): string {
   const map: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
   };
   return text.replace(/[&<>"']/g, (c) => map[c]);
+}
+
+function escapeHtmlMultiline(text: string): string {
+  return escapeHtml(text).replace(/\r?\n/g, '<br/>');
 }
 
 function unitAbbr(unit: string): string {
@@ -129,13 +91,33 @@ function unitAbbr(unit: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Main HTML generator
-// ---------------------------------------------------------------------------
+// Child-inclusion decision: unlike stf-totals.ts (the order-level totals
+// helper, which excludes SET children because in that model the SET parent
+// already carries the rolled-up total), the customer PDF sums the actual
+// printed LINE totals. The sample proforma prints each child line with its
+// own price and every printed line total contributes to the section gross.
+// Therefore the PDF's section sum INCLUDES SET children (parentItemId set);
+// it only skips SUBTOTAL boundaries and priceLabel'd rows (e.g.
+// "TARAFINIZCA SAĞLANACAKTIR", which contribute 0).
+const isPriced = (it: OrderItemForPdf) =>
+  !it.priceLabel &&
+  (it.itemType === 'PRODUCT' || it.itemType === 'CUSTOM' || it.itemType === 'SET');
+
+/** Sum of priced rows since the previous SUBTOTAL (mirrors quote-template). */
+function computeSubtotalSum(items: OrderItemForPdf[], subtotalIndex: number): number {
+  let sum = 0;
+  for (let i = subtotalIndex - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.itemType === 'SUBTOTAL') break;
+    if (isPriced(it)) sum += Number(it.totalPrice) || 0;
+  }
+  return sum;
+}
 
 export function generateOrderHtml(data: OrderDataForPdf): string {
-  const { order, quote, company, project, items, commercialTerms, headerBase64, logoBase64 } = data;
-  const currency = quote.currency;
+  const { order, items, headerBase64, logoBase64 } = data;
+  const currency = order.currency;
+  const currencyName = CURRENCY_NAMES[currency] || currency;
 
   // ---------- Header image ----------
   const headerImgSrc = headerBase64 || logoBase64;
@@ -143,111 +125,95 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     ? `<img src="${headerImgSrc}" style="width:100%;height:auto;display:block;" alt="BTS">`
     : '<p style="font-size:14pt;font-weight:bold;color:#cc0000;padding:10pt;">BTS YANGIN</p>';
 
-  // ---------- Build item rows ----------
-  // Mirror the quote-template row highlight: when an item is flagged
-  // `highlight`, the row gets a yellow background. We use a CSS class
-  // (`highlight-row`) instead of inline style so the rule's `!important`
-  // beats `.section-hdr td`'s green on highlighted HEADER rows.
-  const trClass = (item: OrderItemForPdf, base = '') => {
-    const classes = [base, item.highlight ? 'highlight-row' : ''].filter(Boolean).join(' ');
-    return classes ? ` class="${classes}"` : '';
-  };
-
-  let itemNumber = 0;
-  const itemRows = items.map((item) => {
+  // ---------- Item rows ----------
+  const itemRows = items.map((item, index) => {
     if (item.itemType === 'HEADER') {
-      return `<tr${trClass(item, 'section-hdr')}>
+      return `<tr class="section-hdr" style="page-break-after:avoid; break-after:avoid;">
         <td><p><br></p></td>
         <td colspan="4"><p class="s1" style="text-align:center;">${escapeHtml(item.description)}</p></td>
       </tr>`;
     }
 
     if (item.itemType === 'NOTE') {
-      const pozLabel = item.customPozNo || 'NOT:';
-      return `<tr${trClass(item)}>
+      const pozLabel = item.pozNo || 'NOT:';
+      return `<tr>
         <td><p class="s1" style="text-align:center;">${escapeHtml(pozLabel)}</p></td>
-        <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtml(item.description)}</p></td>
+        <td colspan="4"><p class="s2" style="padding-left:1pt;">${escapeHtmlMultiline(item.description)}</p></td>
       </tr>`;
     }
 
     if (item.itemType === 'SUBTOTAL') {
-      return ''; // Skip subtotals in order form
+      const gross = computeSubtotalSum(items, index);
+      const pct = Number(item.sectionDiscountPct ?? 0);
+      const discAmt = pct > 0 ? round2(gross * (pct / 100)) : 0;
+      const net = round2(gross - discAmt);
+      const sysLabel = item.description?.trim()
+        ? `${escapeHtml(item.description.trim())} GENEL TOPLAM`
+        : 'GENEL TOPLAM';
+      const discLabel = escapeHtml(item.sectionDiscountLabel?.trim() || 'FİRMANIZA ÖZEL İNDİRİM');
+      const netLabel = item.description?.trim()
+        ? `${escapeHtml(item.description.trim())} NET TOPLAM`
+        : 'NET TOPLAM';
+
+      if (pct > 0) {
+        return `<tr style="height:12pt">
+          <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${sysLabel} (${currencyName})</p></td>
+          <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(gross, currency)}</p></td>
+        </tr>
+        <tr style="height:12pt">
+          <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${discLabel} (${currencyName})</p></td>
+          <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(discAmt, currency)}</p></td>
+        </tr>
+        <tr style="height:12pt">
+          <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${netLabel} (${currencyName})</p></td>
+          <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(net, currency)}</p></td>
+        </tr>`;
+      }
+      return `<tr style="height:12pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${sysLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(gross, currency)}</p></td>
+      </tr>`;
     }
 
-    // PRODUCT, CUSTOM, SET -- numbered rows
-    itemNumber++;
+    // PRODUCT / CUSTOM / SET — and SET children (parentItemId set) get "*"
+    const pozCell = item.parentItemId ? '*' : (item.pozNo || '');
+    const priceCol = item.priceLabel
+      ? `<td colspan="2"><p class="s2" style="text-align:center;">${escapeHtml(item.priceLabel)}</p></td>`
+      : `<td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
+         <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>`;
     const qtyStr = `${item.quantity} ${unitAbbr(item.unit)}`;
+    const codePrefix = item.code ? `<b>${escapeHtml(item.code)}</b> ` : '';
 
-    return `<tr${trClass(item)}>
-      <td><p class="s1" style="text-align:center;">${itemNumber}</p></td>
-      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtml(item.description)}${item.brand ? ` <span style="color:#666;">(${escapeHtml(item.brand)})</span>` : ''}</p></td>
+    return `<tr>
+      <td><p class="s1" style="text-align:center;">${escapeHtml(pozCell)}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${codePrefix}${escapeHtmlMultiline(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;">${qtyStr}</p></td>
-      <td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
-      <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>
+      ${priceCol}
     </tr>`;
   }).join('\n');
 
-  // ---------- Commercial terms rows ----------
-  const termsByCategory = new Map<string, string[]>();
-  for (const term of commercialTerms) {
-    const existing = termsByCategory.get(term.category) || [];
-    existing.push(term.value);
-    termsByCategory.set(term.category, existing);
-  }
+  // ---------- Header info box ----------
+  const fmtDate = order.formDate ? formatDate(order.formDate) : '';
+  const teklifRef = [order.quoteNo, order.refNo].filter(Boolean).join(' / ');
 
-  let termsHtml = '';
-  if (commercialTerms.length > 0) {
-    termsHtml += `<tr class="terms-row"><td colspan="5"><p class="s3" style="padding-top:8pt;">TİCARİ ŞARTLAR</p></td></tr>\n`;
-    for (const [catKey, values] of Array.from(termsByCategory.entries())) {
-      const label = COMMERCIAL_TERM_LABELS[catKey] || catKey;
-      termsHtml += `<tr class="terms-row"><td colspan="5"><p class="s3" style="padding-left:20pt;">${escapeHtml(label)}</p></td></tr>\n`;
-      for (const val of values) {
-        termsHtml += `<tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:20pt;line-height:110%;">${escapeHtml(val)}</p></td></tr>\n`;
-      }
-    }
-  }
+  // ---------- Footer label table ----------
+  const footerRow = (label: string, value: string | null) =>
+    value && value.trim()
+      ? `<tr>
+          <td class="ft-label"><p class="s3">${label}</p></td>
+          <td class="ft-val"><p class="s4" style="line-height:118%;">${escapeHtmlMultiline(value)}</p></td>
+        </tr>`
+      : '';
 
-  // ---------- Notes ----------
-  let notesHtml = '';
-  if (order.notes) {
-    notesHtml = `<tr class="terms-row"><td colspan="5"><p class="s3" style="padding-top:8pt;">NOTLAR</p></td></tr>
-    <tr class="terms-row"><td colspan="5"><p class="s4" style="padding-left:20pt;line-height:110%;white-space:pre-wrap;">${escapeHtml(order.notes)}</p></td></tr>`;
-  }
+  const footerTable = [
+    footerRow('ÜRETİCİ FİRMALAR', order.manufacturers),
+    footerRow('GARANTİ', order.warranty),
+    footerRow('TESLİM YERİ', order.deliveryPlace),
+    footerRow('ÖDEME', order.paymentTerms),
+    footerRow('KDV', order.vatNote),
+    footerRow('NOTLAR', order.notes),
+  ].join('\n');
 
-  // ---------- Company info ----------
-  let companyHtml = `<p class="s1">${escapeHtml(company.name)}</p>`;
-  if (company.address) {
-    companyHtml += `<p class="s2">${escapeHtml(company.address)}</p>`;
-  }
-  if (company.taxNumber) {
-    companyHtml += `<p class="s2">Vergi No: ${escapeHtml(company.taxNumber)}</p>`;
-  }
-  if (company.phone) {
-    companyHtml += `<p class="s2">Tel: ${escapeHtml(company.phone)}</p>`;
-  }
-  if (company.email) {
-    companyHtml += `<p class="s2">E-posta: ${escapeHtml(company.email)}</p>`;
-  }
-  if (project) {
-    companyHtml += `<p class="s1" style="padding-top:6pt;">Proje: ${escapeHtml(project.name)}</p>`;
-  }
-  if (quote.subject) {
-    companyHtml += `<p class="s1" style="padding-top:1pt;">Konu: ${escapeHtml(quote.subject)}</p>`;
-  }
-
-  // ---------- Right-side info rows ----------
-  let rightRows = '';
-  rightRows += `<tr><td class="info-label"><p class="s1">Tarih</p></td><td class="info-val"><p class="s1">: ${formatDate(order.createdAt)}</p></td></tr>`;
-  rightRows += `<tr><td class="info-label"><p class="s1">Siparis No</p></td><td class="info-val"><p class="s1">: ${escapeHtml(order.orderNumber)}</p></td></tr>`;
-  rightRows += `<tr><td class="info-label"><p class="s1">Teklif No</p></td><td class="info-val"><p class="s1">: ${escapeHtml(quote.quoteNumber)}</p></td></tr>`;
-  if (quote.refNo) {
-    rightRows += `<tr><td class="info-label"><p class="s1">Ref. No</p></td><td class="info-val"><p class="s1">: ${escapeHtml(quote.refNo)}</p></td></tr>`;
-  }
-  if (order.deliveryDate) {
-    rightRows += `<tr><td class="info-label"><p class="s1">Teslim Tarihi</p></td><td class="info-val"><p class="s1">: ${formatDate(order.deliveryDate)}</p></td></tr>`;
-  }
-
-  // ---------- Full HTML ----------
   return `<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -258,140 +224,103 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
 * { margin:0; padding:0; text-indent:0; }
 body { font-family: Arial, sans-serif; color: black; padding: 5mm 10mm 15mm 10mm; }
 
-.s1 { font-family:Arial,sans-serif; font-weight:bold; font-size:6.5pt; color:black; }
-.s2 { font-family:Arial,sans-serif; font-weight:normal; font-size:6.5pt; color:black; }
-.s3 { font-family:Arial,sans-serif; font-weight:bold; font-size:7.2pt; color:black; }
-.s4 { font-family:Arial,sans-serif; font-weight:normal; font-size:7.2pt; color:black; }
-
-p { font-family:Arial,sans-serif; font-weight:normal; font-size:6.5pt; color:black; margin:0; }
+.s1 { font-weight:bold; font-size:6.5pt; color:black; }
+.s2 { font-weight:normal; font-size:6.5pt; color:black; }
+.s3 { font-weight:bold; font-size:7pt; color:black; }
+.s4 { font-weight:normal; font-size:7pt; color:black; }
+p { font-size:6.5pt; color:black; margin:0; }
 
 table.main { width:100%; border-collapse:collapse; }
 thead { display: table-header-group; }
+col.c1 { width: 8.7%; } col.c2 { width: 57.2%; } col.c3 { width: 9.5%; }
+col.c4 { width: 11.5%; } col.c5 { width: 13.1%; }
 
-/* Column widths */
-col.c1 { width: 8.7%; }
-col.c2 { width: 57.2%; }
-col.c3 { width: 9.5%; }
-col.c4 { width: 11.5%; }
-col.c5 { width: 13.1%; }
-
-/* Header image row */
-.hdr-img-cell {
-  border: 1.2pt solid black;
-  padding: 0;
-}
+.hdr-img-cell { border: 1.2pt solid black; padding: 0; }
 .hdr-img-cell img { width:100%; height:auto; display:block; }
 
-/* Client info box cells */
-.info-left, .info-right { border: 1.2pt solid black; }
-.info-right table td { border: none; }
-.info-label { padding: 2pt 2pt 1pt 8pt; border: none; }
-.info-val { padding: 2pt 2pt 1pt 2pt; border: none; }
+.info-label { border: 1.2pt solid black; padding: 3pt 4pt; vertical-align: middle; }
+.info-val   { border: 1.2pt solid black; padding: 3pt 4pt; vertical-align: middle; }
 
-/* Column header cells */
-.col-hdr {
-  border: 1.2pt solid black;
-  padding: 3pt 2pt;
-  background: white;
-}
+.col-hdr { border: 1.2pt solid black; padding: 3pt 2pt; background: white; }
 
-/* Item rows */
 table.main tbody td {
-  border-left: 0.25pt solid black;
-  border-right: 0.25pt solid black;
-  border-bottom: 0.25pt solid black;
-  padding: 3pt 4pt;
-  vertical-align: top;
+  border-left: 0.25pt solid black; border-right: 0.25pt solid black;
+  border-bottom: 0.25pt solid black; padding: 3pt 4pt; vertical-align: top;
 }
-table.main tbody td:nth-child(4),
-table.main tbody td:nth-child(5) {
-  white-space: nowrap;
-}
+table.main tbody td:nth-child(4), table.main tbody td:nth-child(5) { white-space: nowrap; }
 
-/* Section header (green) */
 .section-hdr td {
   background-color: #C6E0B4;
-  border-left: 0.25pt solid black !important;
-  border-right: 0.25pt solid black !important;
+  border-left: 0.25pt solid black !important; border-right: 0.25pt solid black !important;
   border-bottom: 0.25pt solid black !important;
 }
+.sys-total-label { border: 1.2pt solid black !important; padding: 3pt 6pt 3pt 2pt; }
+.sys-total-val   { border: 1.2pt solid black !important; padding: 3pt 2pt; }
 
-/* Row highlight — must beat .section-hdr td's bg on highlighted HEADER rows */
-.highlight-row td {
-  background-color: #FFF9C4 !important;
-}
-
-/* System total row */
-.sys-total-label {
-  border: 1.2pt solid black !important;
-  padding: 3pt 6pt 3pt 2pt;
-}
-.sys-total-val {
-  border: 1.2pt solid black !important;
-  padding: 3pt 2pt;
-}
-
-/* Commercial terms rows */
-.terms-row td {
-  border: none !important;
-  padding: 1pt 2pt;
-  vertical-align: top;
-}
-.last-row td {
-  border-bottom: none !important;
-}
+/* Footer label table */
+table.footer { width:100%; border-collapse:collapse; margin-top:6pt; }
+table.footer td { border: 0.75pt solid black; padding: 3pt 5pt; vertical-align: top; }
+.ft-label { width: 18%; }
+.sig td { border: 0.75pt solid black; padding: 8pt 5pt 14pt 5pt; text-align:center; }
 </style>
 </head>
 <body>
 
 <table class="main">
-  <colgroup>
-    <col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5">
-  </colgroup>
-
+  <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
   <thead>
-    <!-- Row 1: Header banner image -->
+    <tr><td colspan="5" class="hdr-img-cell">${headerImgHtml}</td></tr>
+
+    <!-- Header info box: left labels/values + right labels/values -->
     <tr>
-      <td colspan="5" class="hdr-img-cell">${headerImgHtml}</td>
+      <td class="info-label"><p class="s1">FİRMA ADI / İLGİLİ KİŞİ</p></td>
+      <td class="info-val"><p class="s2">${escapeHtml(order.customerName || '')}</p></td>
+      <td class="info-label"><p class="s1">TARİH</p></td>
+      <td class="info-val" colspan="2"><p class="s2">${fmtDate}</p></td>
+    </tr>
+    <tr>
+      <td class="info-label"><p class="s1">FİRMA ADRESİ</p></td>
+      <td class="info-val"><p class="s2">${escapeHtmlMultiline(order.customerAddress || '')}</p></td>
+      <td class="info-label"><p class="s1">STF NO</p></td>
+      <td class="info-val" colspan="2"><p class="s2">${escapeHtml(order.orderNumber)}</p></td>
+    </tr>
+    <tr>
+      <td class="info-label"><p class="s1">FİRMA TELEFON</p></td>
+      <td class="info-val"><p class="s2">${escapeHtml(order.customerPhone || '')}</p></td>
+      <td class="info-label"><p class="s1">TEKLİF NO / REF NO</p></td>
+      <td class="info-val" colspan="2"><p class="s2">${escapeHtml(teklifRef)}</p></td>
+    </tr>
+    <tr>
+      <td class="info-label"><p class="s1">FİRMA V.D./ VERGİ NO</p></td>
+      <td class="info-val"><p class="s2">${escapeHtml(order.customerTaxInfo || '')}</p></td>
+      <td class="info-label"><p class="s1">PROJE ADI</p></td>
+      <td class="info-val" colspan="2"><p class="s2">${escapeHtml(order.projectName || '')}</p></td>
+    </tr>
+    <tr>
+      <td class="info-label" colspan="2"><p class="s1" style="text-align:center;">SİPARİŞ TEYİT FORMU</p></td>
+      <td class="info-label"><p class="s1">SİPARİŞ NO</p></td>
+      <td class="info-val" colspan="2"><p class="s2">${escapeHtml(order.siparisNo || '')}</p></td>
     </tr>
 
-    <!-- Row 2: Client info box -->
-    <tr>
-      <td colspan="3" class="info-left" style="border:1.2pt solid black; border-right:1.2pt solid black; vertical-align:top; padding:2pt 4pt 4pt 8pt;">
-        ${companyHtml}
-      </td>
-      <td colspan="2" class="info-right" style="border:1.2pt solid black; border-left:none; vertical-align:top; padding:0;">
-        <p class="s1" style="text-align:center; padding:6pt 0 6pt 0; border-bottom:1.2pt solid black;">SİPARİŞ TEYİT FORMU</p>
-        <table cellspacing="0" style="width:100%; border-collapse:collapse;">
-          ${rightRows}
-        </table>
-      </td>
-    </tr>
-
-    <!-- Column headers -->
     <tr style="height:14pt">
-      <td class="col-hdr"><p class="s1" style="text-align:center;">POZ NO</p></td>
-      <td class="col-hdr"><p class="s1" style="text-align:center;">AÇIKLAMA</p></td>
-      <td class="col-hdr"><p class="s1" style="text-align:center;">MİKTAR</p></td>
-      <td class="col-hdr"><p class="s1" style="text-align:center;">BİRİM FİYAT</p></td>
-      <td class="col-hdr"><p class="s1" style="text-align:center;">TOPLAM FİYAT</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">Poz No</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">Ürün Adı</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">Miktar</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">Birim Fiyat</p></td>
+      <td class="col-hdr"><p class="s1" style="text-align:center;">Toplam Fiyat</p></td>
     </tr>
   </thead>
-
   <tbody>
     ${itemRows}
-
-    <!-- Grand Total -->
-    <tr style="height:12pt">
-      <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">GENEL TOPLAM (${CURRENCY_SYMBOLS[currency] || currency})</p></td>
-      <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(quote.grandTotal, currency)}</p></td>
-    </tr>
-
-${termsHtml}
-
-${notesHtml}
-
   </tbody>
+</table>
+
+<table class="footer">
+  ${footerTable}
+  <tr class="sig">
+    <td style="width:50%;"><p class="s1">MÜŞTERİ ONAYI</p><br><p class="s2">${escapeHtml(order.customerApprovalName || '')}</p></td>
+    <td><p class="s1">BTS SORUMLUSU</p><br><p class="s2">${escapeHtml(order.btsResponsibleName || '')}</p></td>
+  </tr>
 </table>
 
 </body>
