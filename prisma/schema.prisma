@@ -753,6 +753,10 @@ model OrderItem {
   unitPrice    Decimal       @default(0) @db.Decimal(12, 2)
   totalPrice   Decimal       @default(0) @db.Decimal(12, 2)
   priceLabel   String?
+  /// Snapshot-only copy of the source QuoteItem's parentItemId (SET grouping).
+  /// NOT a live FK to OrderItem — values reference the originating quote items,
+  /// kept for fidelity. How sectioned/SET groups render is settled in the PDF
+  /// phase; do not add an FK here without remapping these ids first.
   parentItemId String?
   discountPct  Decimal       @default(0) @db.Decimal(5, 2)
   sectionNote  String?
