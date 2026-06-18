@@ -28,6 +28,7 @@ import {
   Shield,
   ShoppingCart,
   MessageSquareWarning,
+  BarChart3,
 } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Badge, Spinner, Modal, Select } from '@/components/ui';
 import { quoteStatusLabels } from '@/lib/validations/quote';
