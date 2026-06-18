@@ -111,7 +111,16 @@ export function StfEditor({ stfId }: { stfId: string }) {
       const items = p.items.map((it, i) => {
         if (i !== idx) return it;
         const next = { ...it, ...patch };
-        if (!next.priceLabel) next.totalPrice = Number(next.quantity) * Number(next.unitPrice);
+        // Recompute the line total like the quote's computeRowTotal
+        // (qty × unitPrice × (1 − discountPct/100), 2dp). Skip when a
+        // priceLabel replaces the price, and skip SET parents — their
+        // totalPrice is the rolled-up sum of their children, not
+        // qty×unitPrice, so recomputing it would corrupt section/grand totals.
+        if (!next.priceLabel && next.itemType !== 'SET') {
+          const gross = Number(next.quantity) * Number(next.unitPrice);
+          const net = gross * (1 - Number(next.discountPct) / 100);
+          next.totalPrice = Math.round((net + Number.EPSILON) * 100) / 100;
+        }
         return next;
       });
       return { ...p, items };
