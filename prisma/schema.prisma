@@ -759,6 +759,12 @@ model OrderItem {
   /// phase; do not add an FK here without remapping these ids first.
   parentItemId String?
   discountPct  Decimal       @default(0) @db.Decimal(5, 2)
+  /// Snapshot of the source QuoteItem.sectionDiscountPct. Only meaningful on
+  /// SUBTOTAL rows; null/0 = no per-section discount. Hand-editable on the STF.
+  sectionDiscountPct   Decimal? @db.Decimal(5, 2)
+  /// Snapshot of QuoteItem.sectionDiscountLabel. Custom label for the section
+  /// discount line (default "İskonto"). Only meaningful on SUBTOTAL rows.
+  sectionDiscountLabel String?
   sectionNote  String?
   createdAt    DateTime      @default(now())
 
