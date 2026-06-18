@@ -197,16 +197,14 @@ describe('POST /api/orders', () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 
-  it('returns 400 if an active order already exists for this quoteId', async () => {
+  it('returns 409 with the existing orderId if an active order already exists for this quoteId', async () => {
     // Dedup check runs INSIDE the transaction now
     vi.mocked(db.$transaction).mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           orderConfirmation: {
             findFirst: vi.fn().mockResolvedValue({
-              id: 'existing-order',
-              orderNumber: 'SIP-2026-0001',
-              quoteId: 'quote1',
+              id: 'existing-order-1',
               status: 'HAZIRLANIYOR',
             }),
             create: vi.fn(),
@@ -217,9 +215,10 @@ describe('POST /api/orders', () => {
     );
 
     const res = await POST(makeRequest({ quoteId: 'quote1' }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     const data = await res.json();
-    expect(data.error).toBe('Bu teklif için zaten bir sipariş oluşturulmuş.');
+    expect(data.orderId).toBe('existing-order-1');
+    expect(data.error).toContain('zaten');
   });
 
   it('allows order creation if existing order for quote is IPTAL', async () => {

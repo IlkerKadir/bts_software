@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
             });
 
             if (existingOrder) {
-              throw new Error('DUPLICATE_ORDER');
+              throw new Error('DUPLICATE_ORDER:' + existingOrder.id);
             }
 
             const orderNumber = await getNextOrderNumber(tx);
@@ -246,10 +246,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ order }, { status: 201 });
       } catch (error) {
         // Duplicate order check thrown from inside transaction
-        if (error instanceof Error && error.message === 'DUPLICATE_ORDER') {
+        if (error instanceof Error && error.message.startsWith('DUPLICATE_ORDER')) {
+          const existingId = error.message.split(':')[1] || null;
           return NextResponse.json(
-            { error: 'Bu teklif için zaten bir sipariş oluşturulmuş.' },
-            { status: 400 }
+            { error: 'Bu teklif için zaten bir STF var', orderId: existingId },
+            { status: 409 }
           );
         }
         lastError = error;

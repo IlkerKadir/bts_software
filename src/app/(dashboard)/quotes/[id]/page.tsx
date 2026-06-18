@@ -777,19 +777,22 @@ export default function QuoteDetailPage({ params }: PageProps) {
     setIsCreatingOrder(true);
     setError(null);
     try {
-      const response = await fetch('/api/orders', {
+      const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quoteId: quote.id }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Siparis olusturulamadi');
+      const data = await res.json().catch(() => null);
+      // An STF already exists for this quote — open it instead of erroring.
+      if (res.status === 409 && data?.orderId) {
+        router.push(`/orders/${data.orderId}`);
+        return;
       }
-      router.push('/orders');
+      if (!res.ok) throw new Error(data?.error || 'STF oluşturulamadı');
+      router.push(`/orders/${data.order.id}`);
     } catch (err) {
-      console.error('Create order error:', err);
-      setError(err instanceof Error ? err.message : 'Siparis olusturulurken bir hata olustu');
+      console.error('Create STF error:', err);
+      setError(err instanceof Error ? err.message : 'STF oluşturulurken bir hata oluştu');
     } finally {
       setIsCreatingOrder(false);
     }
@@ -896,7 +899,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               disabled={isCreatingOrder}
             >
               <ShoppingCart className="w-4 h-4" />
-              Sipariş Oluştur
+              STF Oluştur
             </Button>
           )}
 
