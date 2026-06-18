@@ -95,8 +95,8 @@ Each phase ships on its own commit(s) with tests, code-reviewed where logic-bear
 - **Numbering concurrency:** reuse the existing serializable + P2002 retry loop.
 - **Section/SET fidelity:** copy itemType/parentItemId/sortOrder verbatim so multi-section forms render identically; covered by tests with a multi-section sample.
 
-## 10. Open questions (decide before/within plan)
+## 10. Resolved decisions
 
-1. **Footer defaults:** should üretici/garanti/teslim/ödeme/kdv default from the quote's commercial terms, from a settings template, or start empty? (Recommend: pull from quote commercial terms where a matching category exists, else empty.)
-2. **Status set:** keep the current `OrderStatus` (HAZIRLANIYOR/ONAYLANDI/GONDERILDI/TAMAMLANDI/IPTAL) for STFs, or add STF-specific statuses? (Recommend: keep as-is for now.)
-3. **Who can create/edit STF:** any authenticated user, or gated (e.g. canApprove/canManageUsers)? (Recommend: same visibility rule as the quote it derives from.)
+1. **Footer defaults:** pull üretici/garanti/teslim/ödeme/kdv from the quote's commercial terms where a matching category exists; otherwise start empty.
+2. **Status set:** keep the current `OrderStatus` (HAZIRLANIYOR/ONAYLANDI/GONDERILDI/TAMAMLANDI/IPTAL) for STFs — no STF-specific statuses.
+3. **Access:** same visibility rule as the quote the STF derives from (creator / project visibility), and managers (`canApprove` || `canManageUsers`) can create/edit any STF — consistent with the rest of the app.
