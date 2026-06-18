@@ -42,7 +42,6 @@ export const stfUpdateSchema = z.object({
   notes: nullableStr,
   customerApprovalName: nullableStr,
   btsResponsibleName: nullableStr,
-  status: z.enum(['HAZIRLANIYOR', 'ONAYLANDI', 'GONDERILDI', 'TAMAMLANDI', 'IPTAL']).optional(),
   items: z.array(stfItemSchema),
 });
 

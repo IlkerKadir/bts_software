@@ -149,7 +149,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const existing = await db.orderConfirmation.findUnique({ where: { id }, select: { id: true } });
     if (!existing) return NextResponse.json({ error: 'STF bulunamadı' }, { status: 404 });
 
-    const { items, formDate, status, ...header } = data;
+    const { items, formDate, ...header } = data;
 
     const order = await db.$transaction(async (tx) => {
       await tx.orderItem.deleteMany({ where: { orderId: id } });
@@ -158,7 +158,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         data: {
           ...header,
           formDate: formDate ? new Date(formDate) : null,
-          ...(status ? { status } : {}),
           items: {
             create: items.map((it) => ({
               sortOrder: it.sortOrder,
