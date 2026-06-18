@@ -213,6 +213,9 @@ export async function POST(request: NextRequest) {
                   priceLabel: i.priceLabel,
                   parentItemId: i.parentItemId,
                   discountPct: Number(i.discountPct),
+                  sectionDiscountPct:
+                    i.sectionDiscountPct == null ? null : Number(i.sectionDiscountPct),
+                  sectionDiscountLabel: i.sectionDiscountLabel,
                 })),
                 commercialTerms: quote.commercialTerms,
               },

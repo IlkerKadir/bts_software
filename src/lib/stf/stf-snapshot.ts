@@ -14,6 +14,8 @@ export interface QuoteItemForSnapshot {
   priceLabel: string | null;
   parentItemId: string | null;
   discountPct: number;
+  sectionDiscountPct: number | null;
+  sectionDiscountLabel: string | null;
 }
 
 export interface QuoteForSnapshot {
@@ -63,6 +65,8 @@ export interface StfItem {
   priceLabel: string | null;
   parentItemId: string | null;
   discountPct: number;
+  sectionDiscountPct: number | null;
+  sectionDiscountLabel: string | null;
 }
 
 export function buildStfSnapshot(
@@ -108,6 +112,8 @@ export function buildStfSnapshot(
         priceLabel: it.priceLabel,
         parentItemId: it.parentItemId,
         discountPct: it.discountPct,
+        sectionDiscountPct: it.sectionDiscountPct,
+        sectionDiscountLabel: it.sectionDiscountLabel,
       };
     });
 
