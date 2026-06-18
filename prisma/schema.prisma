@@ -701,8 +701,64 @@ model OrderConfirmation {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
+  // Revision chain (STF-####-R#)
+  parentOrderId String?
+  parentOrder   OrderConfirmation?  @relation("OrderRevisions", fields: [parentOrderId], references: [id])
+  revisions     OrderConfirmation[] @relation("OrderRevisions")
+  revisionNo    Int                 @default(0)
+
+  // Snapshotted, editable header (all nullable)
+  customerName     String?
+  customerAddress  String?
+  customerPhone    String?
+  customerTaxInfo  String?
+  projectName      String?
+  quoteNo          String?
+  refNo            String?
+  formDate         DateTime?
+  siparisNo        String?
+  currency         String    @default("TRY")
+  discountTotal    Decimal   @default(0) @db.Decimal(12, 2)
+  grandTotal       Decimal   @default(0) @db.Decimal(12, 2)
+
+  // Footer blocks (editable text)
+  manufacturers        String?
+  warranty             String?
+  deliveryPlace        String?
+  paymentTerms         String?
+  vatNote              String?
+  customerApprovalName String?
+  btsResponsibleName   String?
+
+  items         OrderItem[]
+
   @@index([quoteId])
   @@index([companyId])
+  @@index([parentOrderId])
+}
+
+model OrderItem {
+  id           String        @id @default(cuid())
+  orderId      String
+  order        OrderConfirmation @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sortOrder    Int
+  itemType     QuoteItemType @default(PRODUCT)
+  pozNo        String?
+  code         String?
+  brand        String?
+  model        String?
+  description  String        @default("")
+  quantity     Decimal       @default(0) @db.Decimal(12, 2)
+  unit         String        @default("Adet")
+  unitPrice    Decimal       @default(0) @db.Decimal(12, 2)
+  totalPrice   Decimal       @default(0) @db.Decimal(12, 2)
+  priceLabel   String?
+  parentItemId String?
+  discountPct  Decimal       @default(0) @db.Decimal(5, 2)
+  sectionNote  String?
+  createdAt    DateTime      @default(now())
+
+  @@index([orderId])
 }
 
 // ==================== REMINDERS ====================
