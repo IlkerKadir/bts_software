@@ -243,6 +243,62 @@ describe('POST /api/orders', () => {
     expect(res.status).toBe(201);
   });
 
+  it('maps a non-empty items array into the order snapshot', async () => {
+    const quoteWithItems = {
+      ...mockQuote,
+      items: [
+        {
+          itemType: 'PRODUCT',
+          sortOrder: 1,
+          code: 'X1',
+          brand: null,
+          model: null,
+          description: 'Test Ürün',
+          quantity: 2,
+          unit: 'Adet',
+          unitPrice: 100,
+          totalPrice: 200,
+          priceLabel: null,
+          parentItemId: null,
+          discountPct: 0,
+        },
+      ],
+    };
+    vi.mocked(db.quote.findUnique).mockResolvedValue(quoteWithItems as never);
+
+    let capturedCreateArgs: { data: { items: { create: unknown[] } } } | undefined;
+    vi.mocked(db.$transaction).mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          orderConfirmation: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            findMany: vi.fn().mockResolvedValue([]),
+            create: vi.fn().mockImplementation(async (args: typeof capturedCreateArgs) => {
+              capturedCreateArgs = args;
+              return mockOrder;
+            }),
+          },
+        };
+        return fn(tx);
+      }
+    );
+
+    const res = await POST(makeRequest({ quoteId: 'quote1' }));
+    expect(res.status).toBe(201);
+
+    const created = capturedCreateArgs!.data.items.create as Array<{
+      pozNo: string | null;
+      description: string;
+      code: string | null;
+      itemType: string;
+    }>;
+    expect(created).toHaveLength(1);
+    expect(created[0].pozNo).toBe('1');
+    expect(created[0].description).toBe('Test Ürün');
+    expect(created[0].code).toBe('X1');
+    expect(created[0].itemType).toBe('PRODUCT');
+  });
+
   it('generates sequential order number within the transaction', async () => {
     vi.mocked(db.$transaction).mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {

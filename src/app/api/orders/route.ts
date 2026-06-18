@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { Prisma, OrderStatus } from '@prisma/client';
+import { Prisma, OrderStatus, QuoteItemType } from '@prisma/client';
 import { expandTurkishVariants } from '@/lib/search-helpers';
 import { nextStfNumber } from '@/lib/stf/stf-number';
 import { buildStfSnapshot } from '@/lib/stf/stf-snapshot';
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
                 createdById: user.id,
                 ...header,
                 items: {
-                  create: items as Prisma.OrderItemCreateWithoutOrderInput[],
+                  create: items.map((it) => ({ ...it, itemType: it.itemType as QuoteItemType })),
                 },
               },
               include: {
