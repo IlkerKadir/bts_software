@@ -20,6 +20,8 @@ interface StfItem {
   parentItemId: string | null;
   discountPct: number;
   sectionNote: string | null;
+  sectionDiscountPct: number | null;
+  sectionDiscountLabel: string | null;
 }
 
 interface StfData {
@@ -181,36 +183,88 @@ export function StfEditor({ stfId }: { stfId: string }) {
             </tr>
           </thead>
           <tbody>
-            {stf.items.map((it, idx) => (
-              <tr key={it.id ?? idx} className="border-t border-primary-100">
-                <td className="px-2 py-1">{it.pozNo ?? ''}</td>
-                <td className="px-2 py-1">
-                  <input className="w-full bg-transparent" value={it.description}
-                    onChange={(e) => setItem(idx, { description: e.target.value })} />
-                </td>
-                <td className="px-2 py-1 text-right">
-                  <input className="w-16 bg-transparent text-right" type="number" value={it.quantity}
-                    onChange={(e) => setItem(idx, { quantity: parseNum(e.target.value, it.quantity) })} />
-                </td>
-                <td className="px-2 py-1">
-                  <input className="w-16 bg-transparent" value={it.unit}
-                    onChange={(e) => setItem(idx, { unit: e.target.value })} />
-                </td>
-                <td className="px-2 py-1 text-right">
-                  <input className="w-24 bg-transparent text-right" type="number" value={it.unitPrice}
-                    onChange={(e) => setItem(idx, { unitPrice: parseNum(e.target.value, it.unitPrice) })} />
-                </td>
-                <td className="px-2 py-1 text-right tabular-nums">
-                  {it.priceLabel ? it.priceLabel : Number(it.totalPrice).toFixed(2)}
-                </td>
-                <td className="px-2 py-1">
-                  <input className="w-full bg-transparent" value={it.sectionNote ?? ''}
-                    onChange={(e) => setItem(idx, { sectionNote: e.target.value })} />
-                </td>
-              </tr>
-            ))}
+            {stf.items.map((it, idx) => {
+              if (it.itemType === 'HEADER') {
+                return (
+                  <tr key={it.id ?? idx} className="border-t border-primary-100 bg-green-50">
+                    <td className="px-2 py-1"></td>
+                    <td className="px-2 py-1" colSpan={6}>
+                      <input className="w-full bg-transparent font-semibold uppercase" value={it.description}
+                        onChange={(e) => setItem(idx, { description: e.target.value })} />
+                    </td>
+                  </tr>
+                );
+              }
+              if (it.itemType === 'NOTE') {
+                return (
+                  <tr key={it.id ?? idx} className="border-t border-primary-100">
+                    <td className="px-2 py-1 text-center text-xs text-primary-500">{it.pozNo || 'NOT:'}</td>
+                    <td className="px-2 py-1" colSpan={6}>
+                      <input className="w-full bg-transparent italic" value={it.description}
+                        onChange={(e) => setItem(idx, { description: e.target.value })} />
+                    </td>
+                  </tr>
+                );
+              }
+              if (it.itemType === 'SUBTOTAL') {
+                return (
+                  <tr key={it.id ?? idx} className="border-t border-primary-200 bg-primary-50">
+                    <td className="px-2 py-1 text-xs font-medium text-primary-600" colSpan={2}>
+                      Ara Toplam / İndirim
+                    </td>
+                    <td className="px-2 py-1" colSpan={2}>
+                      <input className="w-full bg-transparent text-xs" placeholder="İndirim etiketi"
+                        value={it.sectionDiscountLabel ?? ''}
+                        onChange={(e) => setItem(idx, { sectionDiscountLabel: e.target.value })} />
+                    </td>
+                    <td className="px-2 py-1 text-right" colSpan={3}>
+                      <input className="w-16 bg-transparent text-right" type="number" placeholder="%"
+                        value={it.sectionDiscountPct ?? ''}
+                        onChange={(e) => setItem(idx, {
+                          sectionDiscountPct: e.target.value === '' ? null : parseNum(e.target.value, it.sectionDiscountPct ?? 0),
+                        })} />
+                      <span className="ml-1 text-xs text-primary-500">% indirim</span>
+                    </td>
+                  </tr>
+                );
+              }
+              // PRODUCT / SET / CUSTOM
+              return (
+                <tr key={it.id ?? idx} className="border-t border-primary-100">
+                  <td className="px-2 py-1">{it.parentItemId ? '*' : (it.pozNo ?? '')}</td>
+                  <td className="px-2 py-1">
+                    <input className="w-full bg-transparent" value={it.description}
+                      onChange={(e) => setItem(idx, { description: e.target.value })} />
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    <input className="w-16 bg-transparent text-right" type="number" value={it.quantity}
+                      onChange={(e) => setItem(idx, { quantity: parseNum(e.target.value, it.quantity) })} />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input className="w-16 bg-transparent" value={it.unit}
+                      onChange={(e) => setItem(idx, { unit: e.target.value })} />
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    <input className="w-24 bg-transparent text-right" type="number" value={it.unitPrice}
+                      onChange={(e) => setItem(idx, { unitPrice: parseNum(e.target.value, it.unitPrice) })} />
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums">
+                    {it.priceLabel ? it.priceLabel : Number(it.totalPrice).toFixed(2)}
+                  </td>
+                  <td className="px-2 py-1">
+                    <input className="w-full bg-transparent" value={it.sectionNote ?? ''}
+                      onChange={(e) => setItem(idx, { sectionNote: e.target.value })} />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex justify-end gap-6 text-sm">
+        <span className="text-primary-600">İndirim: <b className="tabular-nums">{Number(stf.discountTotal).toFixed(2)}</b></span>
+        <span className="text-primary-900">Genel Toplam: <b className="tabular-nums">{Number(stf.grandTotal).toFixed(2)} {stf.currency}</b></span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-primary-200 p-4">
