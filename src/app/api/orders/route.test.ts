@@ -43,22 +43,23 @@ const mockQuote = {
   id: 'quote1',
   companyId: 'company1',
   quoteNumber: 'BTS-2026-0001',
+  refNo: null,
+  currency: 'EUR',
+  discountTotal: 0,
+  grandTotal: 1000,
   status: 'KAZANILDI',
+  company: { name: 'Test Co', address: null, phone: null, taxNumber: null },
+  project: null,
+  items: [],
+  commercialTerms: [],
 };
 
 const mockOrder = {
   id: 'order1',
-  orderNumber: 'SIP-2026-0001',
+  orderNumber: 'STF-6000',
   quoteId: 'quote1',
   companyId: 'company1',
   status: 'HAZIRLANIYOR',
-  quote: {
-    id: 'quote1',
-    quoteNumber: 'BTS-2026-0001',
-    subject: 'Test',
-    currency: 'EUR',
-    grandTotal: 1000,
-  },
   company: { id: 'company1', name: 'Test Co' },
   createdBy: { id: 'user1', fullName: 'Test User' },
 };
@@ -121,6 +122,7 @@ describe('POST /api/orders', () => {
         const tx = {
           orderConfirmation: {
             findFirst: vi.fn().mockResolvedValue(null),
+            findMany: vi.fn().mockResolvedValue([]),
             create: vi.fn().mockResolvedValue(mockOrder),
           },
         };
@@ -131,7 +133,7 @@ describe('POST /api/orders', () => {
     const res = await POST(makeRequest({ quoteId: 'quote1' }));
     expect(res.status).toBe(201);
     const data = await res.json();
-    expect(data.order.orderNumber).toBe('SIP-2026-0001');
+    expect(data.order.orderNumber).toBe('STF-6000');
     expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 
@@ -150,15 +152,13 @@ describe('POST /api/orders', () => {
           throw error;
         }
         // Second attempt: succeed
-        const findFirstMock = vi.fn()
-          .mockResolvedValueOnce(null)  // dedup check
-          .mockResolvedValueOnce({ orderNumber: 'SIP-2026-0001' });  // number generation
         const tx = {
           orderConfirmation: {
-            findFirst: findFirstMock,
+            findFirst: vi.fn().mockResolvedValue(null),  // dedup check
+            findMany: vi.fn().mockResolvedValue([{ orderNumber: 'STF-6000' }]),  // number generation
             create: vi.fn().mockResolvedValue({
               ...mockOrder,
-              orderNumber: 'SIP-2026-0002',
+              orderNumber: 'STF-6001',
             }),
           },
         };
@@ -231,6 +231,7 @@ describe('POST /api/orders', () => {
         const tx = {
           orderConfirmation: {
             findFirst: vi.fn().mockResolvedValue(null),
+            findMany: vi.fn().mockResolvedValue([]),
             create: vi.fn().mockResolvedValue(mockOrder),
           },
         };
@@ -245,16 +246,14 @@ describe('POST /api/orders', () => {
   it('generates sequential order number within the transaction', async () => {
     vi.mocked(db.$transaction).mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const findFirstMock = vi.fn()
-          .mockResolvedValueOnce(null)  // 1st call: dedup check — no existing order
-          .mockResolvedValueOnce({ orderNumber: 'SIP-2026-0005' });  // 2nd call: number generation
         const tx = {
           orderConfirmation: {
-            findFirst: findFirstMock,
+            findFirst: vi.fn().mockResolvedValue(null),  // dedup check — no existing order
+            findMany: vi.fn().mockResolvedValue([{ orderNumber: 'STF-6005' }]),  // number generation
             create: vi.fn().mockImplementation(async (args: { data: { orderNumber: string } }) => {
               // Verify the generated order number is sequential
-              expect(args.data.orderNumber).toBe('SIP-2026-0006');
-              return { ...mockOrder, orderNumber: 'SIP-2026-0006' };
+              expect(args.data.orderNumber).toBe('STF-6006');
+              return { ...mockOrder, orderNumber: 'STF-6006' };
             }),
           },
         };

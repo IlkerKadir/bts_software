@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { Prisma, OrderStatus } from '@prisma/client';
 import { expandTurkishVariants } from '@/lib/search-helpers';
+import { nextStfNumber } from '@/lib/stf/stf-number';
+import { buildStfSnapshot } from '@/lib/stf/stf-snapshot';
 
 export async function GET(request: NextRequest) {
   try {
@@ -103,32 +105,17 @@ export async function GET(request: NextRequest) {
 const MAX_ORDER_RETRIES = 3;
 
 /**
- * Generate the next order number inside a transaction context.
+ * Generate the next STF number inside a transaction context.
  * Uses the transaction client (tx) so the read+write is atomic
  * under Serializable isolation.
  */
 async function getNextOrderNumber(
   tx: Prisma.TransactionClient
 ): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `SIP-${year}-`;
-
-  const lastOrder = await tx.orderConfirmation.findFirst({
-    where: {
-      orderNumber: { startsWith: prefix },
-    },
-    orderBy: { orderNumber: 'desc' },
+  const all = await tx.orderConfirmation.findMany({
+    select: { orderNumber: true },
   });
-
-  let nextSequence = 1;
-  if (lastOrder) {
-    const match = lastOrder.orderNumber.match(/SIP-\d{4}-(\d+)$/);
-    if (match) {
-      nextSequence = parseInt(match[1], 10) + 1;
-    }
-  }
-
-  return `${prefix}${String(nextSequence).padStart(4, '0')}`;
+  return nextStfNumber(all.map((o) => o.orderNumber));
 }
 
 /**
@@ -162,11 +149,11 @@ export async function POST(request: NextRequest) {
     // Verify the quote exists (outside the retry loop — immutable check)
     const quote = await db.quote.findUnique({
       where: { id: quoteId },
-      select: {
-        id: true,
-        companyId: true,
-        quoteNumber: true,
-        status: true,
+      include: {
+        company: { select: { name: true, address: true, phone: true, taxNumber: true } },
+        project: { select: { name: true } },
+        items: { orderBy: { sortOrder: 'asc' } },
+        commercialTerms: { select: { category: true, value: true } },
       },
     });
 
@@ -202,6 +189,34 @@ export async function POST(request: NextRequest) {
             }
 
             const orderNumber = await getNextOrderNumber(tx);
+            const { header, items } = buildStfSnapshot(
+              {
+                quoteNumber: quote.quoteNumber,
+                refNo: quote.refNo,
+                currency: quote.currency,
+                discountTotal: Number(quote.discountTotal),
+                grandTotal: Number(quote.grandTotal),
+                company: quote.company,
+                project: quote.project,
+                items: quote.items.map((i) => ({
+                  itemType: i.itemType,
+                  sortOrder: i.sortOrder,
+                  code: i.code,
+                  brand: i.brand,
+                  model: i.model,
+                  description: i.description,
+                  quantity: Number(i.quantity),
+                  unit: i.unit,
+                  unitPrice: Number(i.unitPrice),
+                  totalPrice: Number(i.totalPrice),
+                  priceLabel: i.priceLabel,
+                  parentItemId: i.parentItemId,
+                  discountPct: Number(i.discountPct),
+                })),
+                commercialTerms: quote.commercialTerms,
+              },
+              new Date()
+            );
 
             return tx.orderConfirmation.create({
               data: {
@@ -212,17 +227,12 @@ export async function POST(request: NextRequest) {
                 notes: notes || null,
                 deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
                 createdById: user.id,
+                ...header,
+                items: {
+                  create: items as Prisma.OrderItemCreateWithoutOrderInput[],
+                },
               },
               include: {
-                quote: {
-                  select: {
-                    id: true,
-                    quoteNumber: true,
-                    subject: true,
-                    currency: true,
-                    grandTotal: true,
-                  },
-                },
                 company: { select: { id: true, name: true } },
                 createdBy: { select: { id: true, fullName: true } },
               },
