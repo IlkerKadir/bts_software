@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, QuoteItemType } from '@prisma/client';
+import { stfUpdateSchema } from '@/lib/validations/stf';
+import type { ZodError } from 'zod';
 
 const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
 
@@ -46,6 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
         company: true,
         createdBy: { select: { id: true, fullName: true } },
+        items: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
@@ -131,6 +134,62 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       { error: 'Siparis guncellenirken bir hata olustu' },
       { status: 500 }
     );
+  }
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await getSession();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { id } = await params;
+    const body = await request.json();
+    const data = stfUpdateSchema.parse(body);
+
+    const existing = await db.orderConfirmation.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: 'STF bulunamadı' }, { status: 404 });
+
+    const { items, formDate, status, ...header } = data;
+
+    const order = await db.$transaction(async (tx) => {
+      await tx.orderItem.deleteMany({ where: { orderId: id } });
+      return tx.orderConfirmation.update({
+        where: { id },
+        data: {
+          ...header,
+          formDate: formDate ? new Date(formDate) : null,
+          ...(status ? { status } : {}),
+          items: {
+            create: items.map((it) => ({
+              sortOrder: it.sortOrder,
+              itemType: it.itemType as QuoteItemType,
+              pozNo: it.pozNo,
+              code: it.code,
+              brand: it.brand,
+              model: it.model,
+              description: it.description,
+              quantity: it.quantity,
+              unit: it.unit,
+              unitPrice: it.unitPrice,
+              totalPrice: it.totalPrice,
+              priceLabel: it.priceLabel,
+              parentItemId: it.parentItemId,
+              discountPct: it.discountPct,
+              sectionNote: it.sectionNote,
+            })),
+          },
+        },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
+      });
+    });
+
+    return NextResponse.json({ order });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ZodError') {
+      return NextResponse.json({ error: 'Geçersiz veri', details: (error as ZodError).issues }, { status: 400 });
+    }
+    console.error('STF PUT error:', error);
+    return NextResponse.json({ error: 'STF kaydedilirken bir hata oluştu' }, { status: 500 });
   }
 }
 
