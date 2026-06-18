@@ -49,13 +49,13 @@ describe('generateOrderHtml (STF customer PDF)', () => {
   });
   it('renders a three-row section subtotal block with the discount label', () => {
     expect(html).toContain('FİRMANIZA ÖZEL İNDİRİM');
-    // Child-inclusion decision (documented in order-template.ts computeSubtotalSum):
-    // the customer PDF sums ALL non-priceLabel'd PRODUCT/CUSTOM/SET line totals in
-    // the section, INCLUDING SET children (parentItemId set), matching the sample
-    // proforma where every printed line total contributes to the section gross.
-    // gross = 31.40 + 4.57 = 35.97 → 30% disc = 10.79 → net = 35.97 × 0.70 = 25.179
-    // formatCurrency rounds to 2dp → "25,18".
-    expect(html).toContain('25,18');
+    // Section-sum rule (documented in order-template.ts computeSubtotalSum): the
+    // section gross EXCLUDES SET children (parentItemId set) — a SET parent's
+    // totalPrice already carries its children's combined total (the authoritative
+    // quote-calculations.ts convention, verified against live data). The child
+    // (4.57, parentItemId 'p1') is rendered as a "*" line but NOT summed.
+    // gross = 31.40 (parent only) → 30% disc = 9.42 → net = 31.40 × 0.70 = 21.98.
+    expect(html).toContain('21,98');
   });
   it('renders footer blocks and signature names', () => {
     expect(html).toContain('ÜRETİCİ FİRMALAR');

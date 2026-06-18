@@ -91,16 +91,20 @@ function unitAbbr(unit: string): string {
   }
 }
 
-// Child-inclusion decision: unlike stf-totals.ts (the order-level totals
-// helper, which excludes SET children because in that model the SET parent
-// already carries the rolled-up total), the customer PDF sums the actual
-// printed LINE totals. The sample proforma prints each child line with its
-// own price and every printed line total contributes to the section gross.
-// Therefore the PDF's section sum INCLUDES SET children (parentItemId set);
-// it only skips SUBTOTAL boundaries and priceLabel'd rows (e.g.
-// "TARAFINIZCA SAĞLANACAKTIR", which contribute 0).
+// Section-sum rule: EXCLUDE SET children (parentItemId set). This is the
+// authoritative app-wide convention — see quote-calculations.ts
+// (recalculateAndPersistQuoteTotals filters `!parentItemId` "to avoid
+// double-counting"): a SET parent's totalPrice ALREADY carries the combined
+// total of its children. Verified against live data (a SET parent's
+// totalPrice equals the exact sum of its children's totals). Children still
+// RENDER below the parent as informational "*" lines, but counting both the
+// parent and the children would double the section total and diverge from the
+// order's stored grandTotal (stf-totals.ts) and the source quote. We also skip
+// SUBTOTAL boundaries and priceLabel'd rows (e.g. "TARAFINIZCA SAĞLANACAKTIR",
+// which contribute 0).
 const isPriced = (it: OrderItemForPdf) =>
   !it.priceLabel &&
+  !it.parentItemId &&
   (it.itemType === 'PRODUCT' || it.itemType === 'CUSTOM' || it.itemType === 'SET');
 
 /** Sum of priced rows since the previous SUBTOTAL (mirrors quote-template). */
