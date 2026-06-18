@@ -93,6 +93,13 @@ export function StfEditor({ stfId }: { stfId: string }) {
 
   useEffect(() => { fetchStf(); }, [fetchStf]);
 
+  // Parse a numeric input value: empty → 0, invalid (NaN) → keep previous.
+  const parseNum = (raw: string, prev: number): number => {
+    if (raw === '') return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : prev;
+  };
+
   const setField = (key: keyof StfData, value: string) =>
     setStf((p) => (p ? { ...p, [key]: value } : p));
 
@@ -119,6 +126,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Kaydedilemedi');
+      setStf({ ...data.order, items: data.order.items ?? [] });
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Hata');
@@ -182,7 +190,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
                 </td>
                 <td className="px-2 py-1 text-right">
                   <input className="w-16 bg-transparent text-right" type="number" value={it.quantity}
-                    onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })} />
+                    onChange={(e) => setItem(idx, { quantity: parseNum(e.target.value, it.quantity) })} />
                 </td>
                 <td className="px-2 py-1">
                   <input className="w-16 bg-transparent" value={it.unit}
@@ -190,7 +198,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
                 </td>
                 <td className="px-2 py-1 text-right">
                   <input className="w-24 bg-transparent text-right" type="number" value={it.unitPrice}
-                    onChange={(e) => setItem(idx, { unitPrice: Number(e.target.value) })} />
+                    onChange={(e) => setItem(idx, { unitPrice: parseNum(e.target.value, it.unitPrice) })} />
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">
                   {it.priceLabel ? it.priceLabel : Number(it.totalPrice).toFixed(2)}
