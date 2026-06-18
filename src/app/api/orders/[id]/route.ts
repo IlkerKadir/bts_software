@@ -4,7 +4,22 @@ import { getSession } from '@/lib/session';
 import { OrderStatus, QuoteItemType } from '@prisma/client';
 import { stfUpdateSchema } from '@/lib/validations/stf';
 import { computeStfTotals } from '@/lib/stf/stf-totals';
+import { canAccessOrder, isStfEditable } from '@/lib/orders/order-access';
 import type { ZodError } from 'zod';
+
+/**
+ * Prisma `include` for STF access checks. Scalars (createdById, status) are
+ * returned automatically with `include`; we only need the source quote's
+ * creator + project visibility relation. See canAccessOrder (spec §10.3).
+ */
+const orderAccessInclude = {
+  quote: {
+    select: {
+      createdById: true,
+      project: { select: { visibility: true, visibleTo: { select: { userId: true } } } },
+    },
+  },
+} as const;
 
 const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
 
@@ -36,7 +51,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         quote: {
           include: {
             company: true,
-            project: { select: { id: true, name: true } },
+            project: { select: { id: true, name: true, visibility: true, visibleTo: { select: { userId: true } } } },
             items: {
               where: { parentItemId: null },
               orderBy: { sortOrder: 'asc' },
@@ -55,6 +70,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!order) {
       return NextResponse.json({ error: 'Siparis bulunamadi' }, { status: 404 });
+    }
+
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canAccessOrder(order, user.id, isManager)) {
+      return NextResponse.json({ error: 'Bu siparişe erişim yetkiniz yok' }, { status: 403 });
     }
 
     return NextResponse.json({ order });
@@ -77,9 +97,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
-    const existingOrder = await db.orderConfirmation.findUnique({ where: { id } });
+    const existingOrder = await db.orderConfirmation.findUnique({
+      where: { id },
+      include: orderAccessInclude,
+    });
     if (!existingOrder) {
       return NextResponse.json({ error: 'Siparis bulunamadi' }, { status: 404 });
+    }
+
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canAccessOrder(existingOrder, user.id, isManager)) {
+      return NextResponse.json({ error: 'Bu siparişe erişim yetkiniz yok' }, { status: 403 });
     }
 
     const updateData: Record<string, any> = {};
@@ -147,8 +175,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const data = stfUpdateSchema.parse(body);
 
-    const existing = await db.orderConfirmation.findUnique({ where: { id }, select: { id: true } });
+    const existing = await db.orderConfirmation.findUnique({
+      where: { id },
+      include: orderAccessInclude,
+    });
     if (!existing) return NextResponse.json({ error: 'STF bulunamadı' }, { status: 404 });
+
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canAccessOrder(existing, user.id, isManager)) {
+      return NextResponse.json({ error: 'Bu STF’yi düzenleme yetkiniz yok' }, { status: 403 });
+    }
+    // Freeze sent/terminal STFs — status changes still go through PATCH.
+    if (!isStfEditable(existing.status)) {
+      return NextResponse.json(
+        { error: 'Gönderilmiş veya tamamlanmış STF düzenlenemez' },
+        { status: 409 }
+      );
+    }
 
     const { items, formDate, ...header } = data;
 
