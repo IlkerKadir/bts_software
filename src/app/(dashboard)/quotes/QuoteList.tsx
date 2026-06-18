@@ -221,16 +221,22 @@ export function QuoteList({ userId, canApprove, canViewCosts, canManageUsers }: 
     fetchUsers();
   }, []);
 
-  // Reset to page 1 when a filter/sort changes — but NOT on first mount, so a
-  // persisted page (e.g. 15) survives returning from a quote.
-  const filtersInitialized = useRef(false);
+  // Reset to page 1 when a filter/sort actually CHANGES — but not on (re)mount,
+  // so a persisted page survives returning from a quote. We compare the filter
+  // VALUES (via a ref seeded to the first render's values) rather than a
+  // one-shot boolean, because React StrictMode double-invokes effects on mount
+  // and a boolean guard would let the second invoke wrongly reset the page.
+  const filterKey = JSON.stringify([
+    debouncedSearch, statusFilter, companyFilter, createdByFilter,
+    dateFrom, dateTo, sortField, sortDirection,
+  ]);
+  const prevFilterKeyRef = useRef(filterKey);
   useEffect(() => {
-    if (!filtersInitialized.current) {
-      filtersInitialized.current = true;
-      return;
+    if (prevFilterKeyRef.current !== filterKey) {
+      prevFilterKeyRef.current = filterKey;
+      setPage(1);
     }
-    setPage(1);
-  }, [debouncedSearch, statusFilter, companyFilter, createdByFilter, dateFrom, dateTo, sortField, sortDirection, setPage]);
+  }, [filterKey, setPage]);
 
   // Fetch whenever the filters (via fetchQuotes identity) or the page change.
   useEffect(() => {

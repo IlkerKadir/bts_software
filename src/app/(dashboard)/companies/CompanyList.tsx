@@ -70,15 +70,16 @@ export function CompanyList() {
     }
   }, [search, typeFilter]);
 
-  // Reset to page 1 on filter change, except on first mount (persisted page survives).
-  const filtersInitialized = useRef(false);
+  // Reset to page 1 only when a filter actually CHANGES (value compare,
+  // StrictMode-safe) so a persisted page survives returning to the list.
+  const filterKey = JSON.stringify([search, typeFilter]);
+  const prevFilterKeyRef = useRef(filterKey);
   useEffect(() => {
-    if (!filtersInitialized.current) {
-      filtersInitialized.current = true;
-      return;
+    if (prevFilterKeyRef.current !== filterKey) {
+      prevFilterKeyRef.current = filterKey;
+      setPage(1);
     }
-    setPage(1);
-  }, [search, typeFilter, setPage]);
+  }, [filterKey, setPage]);
 
   useEffect(() => {
     const debounce = setTimeout(() => {

@@ -131,16 +131,16 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     fetchLookups();
   }, []);
 
-  // Reset to page 1 when a filter/sort changes — but not on first mount, so a
-  // persisted page survives returning to the list.
-  const filtersInitialized = useRef(false);
+  // Reset to page 1 only when a filter/sort actually CHANGES (value compare,
+  // StrictMode-safe) so a persisted page survives returning to the list.
+  const filterKey = JSON.stringify([debouncedSearch, brandFilter, categoryFilter, sortField, sortDirection]);
+  const prevFilterKeyRef = useRef(filterKey);
   useEffect(() => {
-    if (!filtersInitialized.current) {
-      filtersInitialized.current = true;
-      return;
+    if (prevFilterKeyRef.current !== filterKey) {
+      prevFilterKeyRef.current = filterKey;
+      setPage(1);
     }
-    setPage(1);
-  }, [debouncedSearch, brandFilter, categoryFilter, sortField, sortDirection, setPage]);
+  }, [filterKey, setPage]);
 
   useEffect(() => {
     fetchProducts(page);
