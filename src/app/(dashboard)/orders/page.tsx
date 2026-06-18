@@ -24,12 +24,15 @@ interface Company {
 interface Order {
   id: string;
   orderNumber: string;
+  projectName?: string | null;
+  formDate?: string | null;
   quote: {
     id: string;
     quoteNumber: string;
     subject?: string | null;
     currency: string;
     grandTotal: number | { toNumber?: () => number };
+    project?: { name: string | null } | null;
   };
   company: { id: string; name: string };
   status: string;
@@ -235,6 +238,8 @@ export default function OrdersPage() {
                     <SortIcon field="company" />
                   </div>
                 </th>
+                <th>Proje Adı</th>
+                <th>Teklif Adı</th>
                 <th>Teklif No</th>
                 <th className="text-right">Tutar</th>
                 <th
@@ -246,7 +251,6 @@ export default function OrdersPage() {
                     <SortIcon field="status" />
                   </div>
                 </th>
-                <th>Teslim Tarihi</th>
                 <th
                   className="cursor-pointer select-none"
                   onClick={() => handleSort('createdAt')}
@@ -256,19 +260,20 @@ export default function OrdersPage() {
                     <SortIcon field="createdAt" />
                   </div>
                 </th>
+                <th>Yıl</th>
                 <th className="w-20">İşlemler</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-primary-500">
+                  <td colSpan={10} className="text-center py-8 text-primary-500">
                     Yukleniyor...
                   </td>
                 </tr>
               ) : sortedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-primary-500">
+                  <td colSpan={10} className="text-center py-8 text-primary-500">
                     Siparis bulunamadi
                   </td>
                 </tr>
@@ -283,6 +288,8 @@ export default function OrdersPage() {
                       {order.orderNumber}
                     </td>
                     <td className="text-xs">{order.company.name}</td>
+                    <td className="text-xs text-primary-600">{order.quote?.project?.name || order.projectName || '-'}</td>
+                    <td className="text-xs text-primary-600">{order.quote?.subject || '-'}</td>
                     <td className="text-xs text-primary-600">
                       <button
                         onClick={(e) => {
@@ -302,10 +309,8 @@ export default function OrdersPage() {
                         {orderStatusLabels[order.status] || order.status}
                       </Badge>
                     </td>
-                    <td className="text-xs tabular-nums">
-                      {order.deliveryDate ? formatDate(order.deliveryDate) : '-'}
-                    </td>
                     <td className="text-xs tabular-nums">{formatDate(order.createdAt)}</td>
+                    <td className="text-xs tabular-nums">{new Date(order.formDate ?? order.createdAt).getFullYear()}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => router.push(`/orders/${order.id}`)}

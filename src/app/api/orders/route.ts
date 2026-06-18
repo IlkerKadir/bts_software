@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
               subject: true,
               currency: true,
               grandTotal: true,
+              project: { select: { name: true } },
             },
           },
           company: { select: { id: true, name: true } },
