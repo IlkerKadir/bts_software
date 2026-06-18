@@ -40,6 +40,7 @@ import { QuoteHistory } from '@/components/quotes/QuoteHistory';
 import { QuoteVersionPanel } from '@/components/quotes/QuoteVersionPanel';
 import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { QuoteTrackingPanel } from '@/components/quotes/QuoteTrackingPanel';
+import { PdfPreviewModal } from '@/components/quotes/PdfPreviewModal';
 import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
@@ -185,6 +186,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
   const [quote, setQuote] = useState<Quote | null>(null);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [profitSummary, setProfitSummary] = useState<ProfitSummary | null>(null);
   const [permissions, setPermissions] = useState<UserPermissions>({
     canViewCosts: false,
@@ -970,8 +972,9 @@ export default function QuoteDetailPage({ params }: PageProps) {
           {/* Divider */}
           <div className="w-px h-6 bg-primary-200 mx-1" />
 
-          {/* Quick PDF preview (in-app, no download) */}
-          <Button variant="secondary" onClick={() => router.push(`/quotes/${id}/preview`)}>
+          {/* Quick PDF preview — same modal as the quote editor (read-only
+              PDF view), NOT the editable PDF editor at /preview. */}
+          <Button variant="secondary" onClick={() => setShowPdfPreview(true)}>
             <Eye className="w-4 h-4" />
             Önizleme
           </Button>
@@ -1000,6 +1003,17 @@ export default function QuoteDetailPage({ params }: PageProps) {
           <AddReminderButton quoteId={id} />
         </div>
       </div>
+
+      {quote && (
+        <PdfPreviewModal
+          isOpen={showPdfPreview}
+          onClose={() => setShowPdfPreview(false)}
+          quoteId={id}
+          quoteNumber={quote.quoteNumber}
+          projectName={quote.project?.name ?? null}
+          companyName={quote.company.name}
+        />
+      )}
 
       {quote && (
         <QuoteTrackingPanel
