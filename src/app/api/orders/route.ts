@@ -120,13 +120,17 @@ async function getNextOrderNumber(
 }
 
 /**
- * Check whether a Prisma error is a unique constraint violation (P2002)
- * which indicates a concurrent insert grabbed the same order number.
+ * Whether a Prisma error is retryable for STF creation:
+ * - P2002: unique constraint violation (a concurrent insert grabbed the same
+ *   order number),
+ * - P2034: transaction write-conflict / deadlock — what Serializable isolation
+ *   raises when two concurrent POSTs for the same quote collide on the dedup
+ *   predicate read. Retrying picks up the now-committed row and returns 409.
  */
-function isUniqueConstraintError(error: unknown): boolean {
+function isRetryableError(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2002'
+    (error.code === 'P2002' || error.code === 'P2034')
   );
 }
 
@@ -261,11 +265,11 @@ export async function POST(request: NextRequest) {
           );
         }
         lastError = error;
-        if (!isUniqueConstraintError(error)) {
-          // Not a collision — re-throw immediately
+        if (!isRetryableError(error)) {
+          // Not a collision/serialization conflict — re-throw immediately
           throw error;
         }
-        // Unique constraint collision — retry with fresh number
+        // Collision or serialization conflict — retry (fresh number / re-read dedup)
       }
     }
 

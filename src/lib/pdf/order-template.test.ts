@@ -70,4 +70,18 @@ describe('generateOrderHtml (STF customer PDF)', () => {
   it('escapes multi-line footer text with <br/>', () => {
     expect(html).toContain('GLT ZETA<br/>TYCO ZETTLER<br/>BTS');
   });
+
+  it('renders a GRAND_TOTAL row as a running total, not a product row', () => {
+    const withGT = generateOrderHtml({
+      ...data,
+      items: [
+        { itemType: 'PRODUCT', pozNo: '1', description: 'A', brand: null, code: null, quantity: 1, unit: 'Adet', unitPrice: 100, totalPrice: 100, priceLabel: null, parentItemId: null, sectionDiscountPct: null, sectionDiscountLabel: null },
+        // GRAND_TOTAL carries garbage qty (-3) in the source data — must NOT surface.
+        { itemType: 'GRAND_TOTAL', pozNo: null, description: 'GENEL TOPLAM', brand: null, code: null, quantity: -3, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: null, parentItemId: null, sectionDiscountPct: null, sectionDiscountLabel: null },
+      ],
+    });
+    expect(withGT).toContain('GENEL TOPLAM (EURO)'); // full currency name, like subtotals
+    expect(withGT).toContain('100,00');     // running total, not 0,00
+    expect(withGT).not.toContain('-3');     // garbage qty not rendered
+  });
 });

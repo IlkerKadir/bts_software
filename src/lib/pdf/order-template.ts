@@ -119,6 +119,26 @@ function computeSubtotalSum(items: OrderItemForPdf[], subtotalIndex: number): nu
   return sum;
 }
 
+/** Running net total of priced rows before `index`, applying each section's
+ *  discount along the way — for a GRAND_TOTAL ("GENEL TOPLAM") marker row. */
+function computeGrandTotalAtIndex(items: OrderItemForPdf[], index: number): number {
+  if (index <= 0) return 0;
+  let runningNet = 0;
+  let openTail = 0;
+  for (let i = 0; i < index; i++) {
+    const it = items[i];
+    if (it.itemType === 'SUBTOTAL') {
+      const pct = Number(it.sectionDiscountPct ?? 0);
+      const disc = pct > 0 ? round2(openTail * (pct / 100)) : 0;
+      runningNet = round2(runningNet + openTail - disc);
+      openTail = 0;
+      continue;
+    }
+    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+  }
+  return round2(runningNet + openTail);
+}
+
 export function generateOrderHtml(data: OrderDataForPdf): string {
   const { order, items, headerBase64, logoBase64 } = data;
   const currency = order.currency;
@@ -177,6 +197,19 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
       return `<tr style="height:12pt">
         <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${sysLabel} (${currencyName})</p></td>
         <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(gross, currency)}</p></td>
+      </tr>`;
+    }
+
+    if (item.itemType === 'GRAND_TOTAL') {
+      // A "GENEL TOPLAM" marker row from the quote — render the running grand
+      // total at this position (not as a product row).
+      const gtLabel = item.description?.trim()
+        ? escapeHtml(item.description.trim())
+        : 'GENEL TOPLAM';
+      const runningTotal = computeGrandTotalAtIndex(items, index);
+      return `<tr style="height:13pt">
+        <td class="sys-total-label" colspan="4"><p class="s1" style="text-align:right;">${gtLabel} (${currencyName})</p></td>
+        <td class="sys-total-val"><p class="s1" style="text-align:right;">${formatCurrency(runningTotal, currency)}</p></td>
       </tr>`;
     }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeStfTotals } from './stf-totals';
+import { computeStfTotals, computeStfGrandTotalAtIndex } from './stf-totals';
 
 const base = {
   pozNo: null, code: null, brand: null, model: null, unit: 'Adet',
@@ -35,5 +35,23 @@ describe('computeStfTotals', () => {
     ]);
     expect(r.grandTotal).toBe(400);
     expect(r.discountTotal).toBe(0);
+  });
+});
+
+describe('computeStfGrandTotalAtIndex', () => {
+  const rows = [
+    { ...base, itemType: 'PRODUCT', totalPrice: 100, priceLabel: null, parentItemId: null, sectionDiscountPct: null },
+    { ...base, itemType: 'SUBTOTAL', totalPrice: 0, priceLabel: null, parentItemId: null, sectionDiscountPct: 30 },
+    { ...base, itemType: 'PRODUCT', totalPrice: 200, priceLabel: null, parentItemId: null, sectionDiscountPct: null },
+    { ...base, itemType: 'GRAND_TOTAL', totalPrice: 0, priceLabel: null, parentItemId: null, sectionDiscountPct: null },
+  ];
+
+  it('returns the running net total before the GRAND_TOTAL row', () => {
+    // section 1: 100 − 30% = 70 (net), then open tail 200 → 270
+    expect(computeStfGrandTotalAtIndex(rows, 3)).toBe(270);
+  });
+
+  it('returns 0 at the start', () => {
+    expect(computeStfGrandTotalAtIndex(rows, 0)).toBe(0);
   });
 });

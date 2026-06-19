@@ -40,3 +40,28 @@ export function computeStfTotals(
   }
   return { grandTotal: round2(grandTotal + openTail), discountTotal };
 }
+
+/**
+ * Running grand total of all priced rows strictly BEFORE `index`, applying each
+ * SUBTOTAL's section discount along the way. Used to render a GRAND_TOTAL
+ * ("GENEL TOPLAM") marker row at its position — mirrors quote-template's
+ * computeGrandTotalAtIndex but on the STF item shape (children excluded, since
+ * a SET parent's totalPrice already carries them).
+ */
+export function computeStfGrandTotalAtIndex(items: StfTotalsItem[], index: number): number {
+  if (index <= 0) return 0;
+  let runningNet = 0;
+  let openTail = 0;
+  for (let i = 0; i < index; i++) {
+    const it = items[i];
+    if (it.itemType === 'SUBTOTAL') {
+      const pct = Number(it.sectionDiscountPct ?? 0);
+      const disc = pct > 0 ? round2(openTail * (pct / 100)) : 0;
+      runningNet = round2(runningNet + openTail - disc);
+      openTail = 0;
+      continue;
+    }
+    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+  }
+  return round2(runningNet + openTail);
+}

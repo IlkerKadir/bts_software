@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Button, Input } from '@/components/ui';
+import { isStfEditable } from '@/lib/orders/order-access';
+import { computeStfGrandTotalAtIndex } from '@/lib/stf/stf-totals';
 
 interface StfItem {
   id?: string;
@@ -151,6 +153,11 @@ export function StfEditor({ stfId }: { stfId: string }) {
   if (isLoading) return <div className="p-6 text-sm text-primary-500">Yükleniyor...</div>;
   if (!stf) return <div className="p-6 text-sm text-red-600">{error || 'STF bulunamadı'}</div>;
 
+  // Sent (GONDERILDI) / terminal (TAMAMLANDI/IPTAL) STFs are frozen: the server
+  // rejects PUT for them, so render the whole form read-only and hide Kaydet
+  // instead of letting the user type edits that would be lost on save.
+  const editable = isStfEditable(stf.status);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -158,10 +165,17 @@ export function StfEditor({ stfId }: { stfId: string }) {
         <div className="flex items-center gap-3">
           {saved && <span className="text-sm text-green-700">Kaydedildi ✓</span>}
           {error && <span className="text-sm text-red-600">{error}</span>}
-          <Button onClick={handleSave} isLoading={isSaving}>Kaydet</Button>
+          {editable && <Button onClick={handleSave} isLoading={isSaving}>Kaydet</Button>}
         </div>
       </div>
 
+      {!editable && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Bu STF gönderilmiş veya tamamlanmış — salt-okunur. Düzenlemek için durumu HAZIRLANIYOR/ONAYLANDI yapın.
+        </div>
+      )}
+
+      <fieldset disabled={!editable} className="m-0 min-w-0 border-0 p-0 space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-primary-200 p-4">
         {HEADER_FIELDS.map((f) => (
           <Input
@@ -239,25 +253,55 @@ export function StfEditor({ stfId }: { stfId: string }) {
                   </tr>
                 );
               }
-              // PRODUCT / SET / CUSTOM
+              if (it.itemType === 'GRAND_TOTAL') {
+                // A "GENEL TOPLAM" marker row from the quote — render the running
+                // grand total at this position, NOT an editable product row.
+                const runningTotal = computeStfGrandTotalAtIndex(stf.items, idx);
+                return (
+                  <tr key={it.id ?? idx} className="border-t-2 border-primary-300 bg-primary-100 font-semibold text-primary-900">
+                    <td className="px-2 py-1 text-right" colSpan={5}>
+                      {(it.description?.trim() || 'GENEL TOPLAM')} ({stf.currency})
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">{runningTotal.toFixed(2)}</td>
+                    <td className="px-2 py-1"></td>
+                  </tr>
+                );
+              }
+              // PRODUCT / SET / CUSTOM. SET children (parentItemId set) show "*"
+              // and their qty/unitPrice are READ-ONLY: a SET parent's totalPrice
+              // already carries the rolled-up children total, so editing a child
+              // would desync the section/grand total (which excludes children).
+              const isChild = !!it.parentItemId;
               return (
                 <tr key={it.id ?? idx} className="border-t border-primary-100">
-                  <td className="px-2 py-1">{it.parentItemId ? '*' : (it.pozNo ?? '')}</td>
+                  <td className="px-2 py-1">{isChild ? '*' : (it.pozNo ?? '')}</td>
                   <td className="px-2 py-1">
                     <input className="w-full bg-transparent" value={it.description}
                       onChange={(e) => setItem(idx, { description: e.target.value })} />
                   </td>
                   <td className="px-2 py-1 text-right">
-                    <input className="w-16 bg-transparent text-right" type="number" value={it.quantity}
-                      onChange={(e) => setItem(idx, { quantity: parseNum(e.target.value, it.quantity) })} />
+                    {isChild ? (
+                      <span className="tabular-nums text-primary-400">{it.quantity}</span>
+                    ) : (
+                      <input className="w-16 bg-transparent text-right" type="number" value={it.quantity}
+                        onChange={(e) => setItem(idx, { quantity: parseNum(e.target.value, it.quantity) })} />
+                    )}
                   </td>
                   <td className="px-2 py-1">
-                    <input className="w-16 bg-transparent" value={it.unit}
-                      onChange={(e) => setItem(idx, { unit: e.target.value })} />
+                    {isChild ? (
+                      <span className="text-primary-400">{it.unit}</span>
+                    ) : (
+                      <input className="w-16 bg-transparent" value={it.unit}
+                        onChange={(e) => setItem(idx, { unit: e.target.value })} />
+                    )}
                   </td>
                   <td className="px-2 py-1 text-right">
-                    <input className="w-24 bg-transparent text-right" type="number" value={it.unitPrice}
-                      onChange={(e) => setItem(idx, { unitPrice: parseNum(e.target.value, it.unitPrice) })} />
+                    {isChild ? (
+                      <span className="tabular-nums text-primary-400">{Number(it.unitPrice).toFixed(2)}</span>
+                    ) : (
+                      <input className="w-24 bg-transparent text-right" type="number" value={it.unitPrice}
+                        onChange={(e) => setItem(idx, { unitPrice: parseNum(e.target.value, it.unitPrice) })} />
+                    )}
                   </td>
                   <td className="px-2 py-1 text-right tabular-nums">
                     {it.priceLabel ? it.priceLabel : Number(it.totalPrice).toFixed(2)}
@@ -291,6 +335,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
           </div>
         ))}
       </div>
+      </fieldset>
     </div>
   );
 }

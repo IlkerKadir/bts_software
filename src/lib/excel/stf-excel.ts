@@ -53,6 +53,25 @@ function sectionSum(items: StfExcelItem[], subtotalIdx: number): number {
   }
   return s;
 }
+// Running net total of priced rows before `index`, applying each section's
+// discount — for a GRAND_TOTAL ("GENEL TOPLAM") marker row.
+function grandTotalAtIndex(items: StfExcelItem[], index: number): number {
+  if (index <= 0) return 0;
+  let runningNet = 0;
+  let openTail = 0;
+  for (let i = 0; i < index; i++) {
+    const it = items[i];
+    if (it.itemType === 'SUBTOTAL') {
+      const pct = Number(it.sectionDiscountPct ?? 0);
+      const disc = pct > 0 ? round2(openTail * (pct / 100)) : 0;
+      runningNet = round2(runningNet + openTail - disc);
+      openTail = 0;
+      continue;
+    }
+    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+  }
+  return round2(runningNet + openTail);
+}
 
 async function addBanner(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet): Promise<void> {
   const totalColPx = COLS.reduce((sum, w) => sum + Math.round(w * 7 + 5), 0);
@@ -179,6 +198,19 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
         r++;
       }
       continue;
+    }
+    if (it.itemType === 'GRAND_TOTAL') {
+      // "GENEL TOPLAM" marker row — running grand total, not a product row.
+      const lbl = `${it.description?.trim() || 'GENEL TOPLAM'} (${currencyName})`;
+      ws.mergeCells(r, 1, r, 4);
+      const lc = ws.getCell(r, 1);
+      lc.value = lbl; lc.font = { name: FONT, bold: true, size: 8 };
+      lc.alignment = { horizontal: 'right', vertical: 'middle' };
+      const vc = ws.getCell(r, 5);
+      vc.value = grandTotalAtIndex(items, idx); vc.numFmt = moneyFmt;
+      vc.font = { name: FONT, bold: true, size: 8 }; vc.alignment = { horizontal: 'right' };
+      for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+      r++; continue;
     }
     // PRODUCT / CUSTOM / SET (+ children show "*")
     const poz = it.parentItemId ? '*' : (it.pozNo || '');

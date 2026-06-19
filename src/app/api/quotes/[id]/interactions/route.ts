@@ -72,30 +72,36 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
     }
 
-    const interaction = await db.quoteInteraction.create({
-      data: {
-        quoteId: id,
-        userId: user.id,
-        type: data.type,
-        note: data.note,
-        interactionDate: data.interactionDate ? new Date(data.interactionDate) : new Date(),
-        reminderDate: data.reminderDate ? new Date(data.reminderDate) : null,
-      },
-      include: { user: { select: { id: true, fullName: true } } },
-    });
-
-    // Mirror a follow-up date into the reminders system.
-    if (data.reminderDate) {
-      await db.reminder.create({
+    // Create the interaction and (if a follow-up date is set) its mirrored
+    // Reminder atomically — an append-only log must not end up with an
+    // interaction whose reminderDate has no matching Reminder row.
+    const interaction = await db.$transaction(async (tx) => {
+      const created = await tx.quoteInteraction.create({
         data: {
-          userId: user.id,
-          title: `Teklif takibi: ${quote.quoteNumber}`,
-          note: data.note,
-          dueDate: new Date(data.reminderDate),
           quoteId: id,
+          userId: user.id,
+          type: data.type,
+          note: data.note,
+          interactionDate: data.interactionDate ? new Date(data.interactionDate) : new Date(),
+          reminderDate: data.reminderDate ? new Date(data.reminderDate) : null,
         },
+        include: { user: { select: { id: true, fullName: true } } },
       });
-    }
+
+      if (data.reminderDate) {
+        await tx.reminder.create({
+          data: {
+            userId: user.id,
+            title: `Teklif takibi: ${quote.quoteNumber}`,
+            note: data.note,
+            dueDate: new Date(data.reminderDate),
+            quoteId: id,
+          },
+        });
+      }
+
+      return created;
+    });
 
     return NextResponse.json({ interaction }, { status: 201 });
   } catch (error) {
