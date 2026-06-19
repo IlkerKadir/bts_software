@@ -202,20 +202,13 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
   const teklifRef = [order.quoteNo, order.refNo].filter(Boolean).join(' / ');
 
   // ---------- Footer label table ----------
-  // Short structured blocks use a two-column label|value row. Long free-text
-  // blocks (NOTLAR) use a single full-width cell: the label as a heading with
-  // the text flowing beneath it, so the paragraph isn't cramped into a narrow
-  // column.
-  const footerRow = (label: string, value: string | null, fullWidth = false) => {
+  // Every footer block is a single full-width cell: the label as a heading with
+  // the text flowing beneath it (per the customer's sample), so paragraphs are
+  // never cramped into a narrow column.
+  const footerRow = (label: string, value: string | null) => {
     if (!value || !value.trim()) return '';
-    if (fullWidth) {
-      return `<tr>
-          <td colspan="2"><p class="s3">${label}</p><p class="s4" style="line-height:118%;padding-top:2pt;">${escapeHtmlMultiline(value)}</p></td>
-        </tr>`;
-    }
     return `<tr>
-          <td class="ft-label"><p class="s3">${label}</p></td>
-          <td class="ft-val"><p class="s4" style="line-height:118%;">${escapeHtmlMultiline(value)}</p></td>
+          <td colspan="2"><p class="s3">${label}</p><p class="s4" style="line-height:118%;padding-top:2pt;">${escapeHtmlMultiline(value)}</p></td>
         </tr>`;
   };
 
@@ -226,7 +219,7 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     footerRow('ÖDEME', order.paymentTerms),
     footerRow('KDV', order.vatNote),
     footerRow('TESLİMAT', order.deliveryTime),
-    footerRow('NOTLAR', order.notes, true),
+    footerRow('NOTLAR', order.notes),
   ].join('\n');
 
   return `<!DOCTYPE html>
@@ -275,7 +268,6 @@ table.main tbody td:nth-child(4), table.main tbody td:nth-child(5) { white-space
 /* Footer label table */
 table.footer { width:100%; border-collapse:collapse; margin-top:6pt; }
 table.footer td { border: 0.75pt solid black; padding: 3pt 5pt; vertical-align: top; }
-.ft-label { width: 18%; }
 .sig td { border: 0.75pt solid black; padding: 8pt 5pt 14pt 5pt; text-align:center; }
 </style>
 </head>
