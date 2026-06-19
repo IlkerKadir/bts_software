@@ -84,7 +84,7 @@ In `src/app/(dashboard)/orders/page.tsx`:
 1. ✅ **DONE — Schema + creation + edit + list + numbering.**
 2. ✅ **DONE — PDF output** (`order-template.ts` + pdf export route render the snapshot; full-width footer blocks per owner request).
 3. ✅ **DONE (2026-06-19) — Excel output.** New `src/lib/excel/stf-excel.ts` (`generateStfExcel`) + `GET /api/orders/[id]/export/excel` (creator OR canExport) + "Excel Indir" button. Owner decision: ONLY the 5 visible columns (Poz No / Ürün Adı / Miktar / Birim Fiyat / Toplam Fiyat) — the sample's hidden MARKA/MODEL/ÜRÜN KODU + "SATIN ALMA TALEP BİLGİLERİ" purchasing/cost columns are intentionally excluded. Same sectioned layout/totals as the PDF (SET children excluded from section sums; subtotal labels use EURO/TL names; price cells numeric with currency-symbol numFmt). Plan: `docs/superpowers/plans/2026-06-19-stf-phase3-internal-excel.md`. 657 tests pass.
-4. **Revisions (REMAINING)** — "Revizyon Oluştur" (clone + `R#` numbering + parent/child link + a version panel on the STF, like quotes).
+4. ~~**Revisions**~~ — **DROPPED (owner decision, 2026-06-19).** Revisions were NOT in the client notes (not2.pdf says only "PDF VE EXCEL ALINACAK" + "her şey elle değiştirilebilir"); the R1/R2 chain was extrapolated from the quote module and is unnecessary because the STF is fully hand-editable in place. The Phase-1 `parentOrderId`/`revisionNo` columns + `OrderRevisions` self-relation remain in the schema (nullable, unused) — harmless; not removed (would be a destructive migration on the live DB). **The STF module is considered COMPLETE after Phase 3.**
 
 Each phase ships on its own commit(s) with tests, code-reviewed where logic-bearing, and is independently deployable.
 
