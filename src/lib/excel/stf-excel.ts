@@ -22,6 +22,9 @@ export interface StfExcelData { order: StfExcelHeader; items: StfExcelItem[]; }
 const FONT = 'Arial';
 const COLS = [10, 70, 10, 16, 16]; // Poz / Ürün Adı / Miktar / Birim Fiyat / Toplam
 const CURRENCY_SYMBOLS: Record<string, string> = { EUR: '€', USD: '$', GBP: '£', TRY: '₺' };
+// Full names used in the subtotal labels, matching order-template.ts so the
+// Excel and customer PDF read identically (e.g. "GENEL TOPLAM (EURO)").
+const CURRENCY_NAMES: Record<string, string> = { EUR: 'EURO', USD: 'USD', GBP: 'GBP', TRY: 'TL' };
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 // Number format that shows the currency symbol after the amount, e.g.
@@ -82,6 +85,7 @@ async function addBanner(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet): Promise<v
 export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   const { order, items } = data;
   const cur = order.currency;
+  const currencyName = CURRENCY_NAMES[cur] || cur;
   const moneyFmt = currencyNumFmt(cur);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('STF', { views: [{ showGridLines: false }] });
@@ -138,7 +142,6 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   // --- Item rows ---
   for (let idx = 0; idx < items.length; idx++) {
     const it = items[idx];
-    const row = ws.getRow(r);
     if (it.itemType === 'HEADER') {
       ws.mergeCells(r, 1, r, 5);
       const c = ws.getCell(r, 1);
@@ -162,8 +165,8 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       const net = round2(gross - disc);
       const base = it.description?.trim() ? `${it.description.trim()} ` : '';
       const rows: [string, number][] = pct > 0
-        ? [[`${base}GENEL TOPLAM (${cur})`, gross], [`${it.sectionDiscountLabel?.trim() || 'FİRMANIZA ÖZEL İNDİRİM'} (${cur})`, disc], [`${base}NET TOPLAM (${cur})`, net]]
-        : [[`${base}GENEL TOPLAM (${cur})`, gross]];
+        ? [[`${base}GENEL TOPLAM (${currencyName})`, gross], [`${it.sectionDiscountLabel?.trim() || 'FİRMANIZA ÖZEL İNDİRİM'} (${currencyName})`, disc], [`${base}NET TOPLAM (${currencyName})`, net]]
+        : [[`${base}GENEL TOPLAM (${currencyName})`, gross]];
       for (const [lbl, amount] of rows) {
         ws.mergeCells(r, 1, r, 4);
         const lc = ws.getCell(r, 1);
