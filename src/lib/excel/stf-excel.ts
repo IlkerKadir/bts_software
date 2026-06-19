@@ -24,8 +24,11 @@ const COLS = [10, 70, 10, 16, 16]; // Poz / Ürün Adı / Miktar / Birim Fiyat /
 const CURRENCY_SYMBOLS: Record<string, string> = { EUR: '€', USD: '$', GBP: '£', TRY: '₺' };
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-function fmtCurrency(n: number, cur: string): string {
-  return `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${CURRENCY_SYMBOLS[cur] || cur}`;
+// Number format that shows the currency symbol after the amount, e.g.
+// "31,40 €" — matching the sample STF Excel, while keeping the cell numeric
+// (sortable/summable) rather than a text string.
+function currencyNumFmt(cur: string): string {
+  return `#,##0.00" ${CURRENCY_SYMBOLS[cur] || cur}"`;
 }
 function fmtDate(d: Date): string {
   return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -79,6 +82,7 @@ async function addBanner(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet): Promise<v
 export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   const { order, items } = data;
   const cur = order.currency;
+  const moneyFmt = currencyNumFmt(cur);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('STF', { views: [{ showGridLines: false }] });
   COLS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
@@ -166,7 +170,7 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
         lc.value = lbl; lc.font = { name: FONT, bold: true, size: 8 };
         lc.alignment = { horizontal: 'right', vertical: 'middle' };
         const vc = ws.getCell(r, 5);
-        vc.value = amount; vc.numFmt = '#,##0.00';
+        vc.value = amount; vc.numFmt = moneyFmt;
         vc.font = { name: FONT, bold: true, size: 8 }; vc.alignment = { horizontal: 'right' };
         for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
         r++;
@@ -190,7 +194,7 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       if (i === 0) c.alignment = { horizontal: 'center', vertical: 'top' };
       else if (i === 1) c.alignment = { vertical: 'top', wrapText: true };
       else c.alignment = { horizontal: 'right', vertical: 'top' };
-      if ((i === 3 || i === 4) && typeof v === 'number') c.numFmt = '#,##0.00';
+      if ((i === 3 || i === 4) && typeof v === 'number') c.numFmt = moneyFmt;
     });
     r++;
   }
