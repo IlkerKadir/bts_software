@@ -725,6 +725,10 @@ model OrderConfirmation {
   manufacturers        String?
   warranty             String?
   deliveryPlace        String?
+  /// TESLİMAT footer block (delivery timing text, e.g. "Kesin siparişten sonra
+  /// 8-10 hafta"). Snapshotted from the quote's `teslimat` commercial term.
+  /// Distinct from deliveryDate (a date) and deliveryPlace (location).
+  deliveryTime         String?
   paymentTerms         String?
   vatNote              String?
   customerApprovalName String?

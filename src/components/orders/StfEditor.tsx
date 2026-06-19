@@ -42,6 +42,7 @@ interface StfData {
   manufacturers: string | null;
   warranty: string | null;
   deliveryPlace: string | null;
+  deliveryTime: string | null;
   paymentTerms: string | null;
   vatNote: string | null;
   notes: string | null;
@@ -68,6 +69,7 @@ const FOOTER_FIELDS: [keyof StfData, string][] = [
   ['deliveryPlace', 'Teslim Yeri'],
   ['paymentTerms', 'Ödeme'],
   ['vatNote', 'KDV'],
+  ['deliveryTime', 'Teslimat'],
   ['notes', 'Notlar'],
   ['customerApprovalName', 'Müşteri Onayı'],
   ['btsResponsibleName', 'BTS Sorumlusu'],

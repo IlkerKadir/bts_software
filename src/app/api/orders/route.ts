@@ -228,10 +228,13 @@ export async function POST(request: NextRequest) {
                 quoteId: quote.id,
                 companyId: quote.companyId,
                 status: 'HAZIRLANIYOR',
-                notes: notes || null,
                 deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
                 createdById: user.id,
                 ...header,
+                // Explicit request notes win; otherwise fall back to the
+                // snapshot's NOTLAR terms (header.notes). Placed after the
+                // spread so it isn't clobbered by `...header`.
+                notes: notes || header.notes,
                 items: {
                   create: items.map((it) => ({ ...it, itemType: it.itemType as QuoteItemType })),
                 },

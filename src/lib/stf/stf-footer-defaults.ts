@@ -7,8 +7,10 @@ export interface FooterDefaults {
   manufacturers: string | null;
   paymentTerms: string | null;
   deliveryPlace: string | null;
+  deliveryTime: string | null;
   warranty: string | null;
   vatNote: string | null;
+  notes: string | null;
 }
 
 function join(terms: TermLike[], category: string): string | null {
@@ -43,14 +45,17 @@ function manufacturersFromTerms(terms: TermLike[]): string | null {
 /**
  * Derive STF footer defaults from a quote's commercial terms. Category keys
  * are the app's actual stored values (Turkish): `uretici_firmalar`, `odeme`,
- * `garanti`, `kdv`, `teslim_yeri`. deliveryPlace falls back to `delivery`.
+ * `garanti`, `kdv`, `teslim_yeri`, `teslimat`, `NOTLAR`. deliveryPlace falls
+ * back to `delivery`.
  */
 export function footerDefaultsFromTerms(terms: TermLike[]): FooterDefaults {
   return {
     manufacturers: manufacturersFromTerms(terms),
     paymentTerms: join(terms, 'odeme'),
     deliveryPlace: join(terms, 'teslim_yeri') ?? join(terms, 'delivery'),
+    deliveryTime: join(terms, 'teslimat'),
     warranty: join(terms, 'garanti'),
     vatNote: join(terms, 'kdv'),
+    notes: join(terms, 'NOTLAR'),
   };
 }

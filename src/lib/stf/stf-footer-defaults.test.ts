@@ -8,11 +8,23 @@ describe('footerDefaultsFromTerms', () => {
       { category: 'garanti', value: '2 yıl' },
       { category: 'kdv', value: 'KDV dahil değildir' },
       { category: 'teslim_yeri', value: 'İstanbul' },
+      { category: 'teslimat', value: '8-10 hafta' },
+      { category: 'NOTLAR', value: 'Bir bütün halinde geçerlidir' },
     ]);
     expect(r.paymentTerms).toBe('30 gün');
     expect(r.warranty).toBe('2 yıl');
     expect(r.vatNote).toBe('KDV dahil değildir');
     expect(r.deliveryPlace).toBe('İstanbul');
+    expect(r.deliveryTime).toBe('8-10 hafta');
+    expect(r.notes).toBe('Bir bütün halinde geçerlidir');
+  });
+
+  it('joins multiple NOTLAR terms with newlines', () => {
+    const r = footerDefaultsFromTerms([
+      { category: 'NOTLAR', value: 'Not 1' },
+      { category: 'NOTLAR', value: 'Not 2' },
+    ]);
+    expect(r.notes).toBe('Not 1\nNot 2');
   });
 
   it('parses uretici_firmalar JSON into "BRAND - systems" lines', () => {
@@ -51,7 +63,8 @@ describe('footerDefaultsFromTerms', () => {
 
   it('returns all-null for empty input', () => {
     expect(footerDefaultsFromTerms([])).toEqual({
-      manufacturers: null, paymentTerms: null, deliveryPlace: null, warranty: null, vatNote: null,
+      manufacturers: null, paymentTerms: null, deliveryPlace: null,
+      deliveryTime: null, warranty: null, vatNote: null, notes: null,
     });
   });
 });

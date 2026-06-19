@@ -17,6 +17,7 @@ const data: OrderDataForPdf = {
     manufacturers: 'GLT ZETA\nTYCO ZETTLER\nBTS',
     warranty: 'Üretici garantisi altındadır.',
     deliveryPlace: 'İstanbul Şantiye Depo teslimidir.',
+    deliveryTime: 'Kesin siparişten sonra 8-10 hafta.',
     paymentTerms: '30 gün içinde peşin banka havalesi.',
     vatNote: 'Fiyatlarımıza KDV dahil değildir.',
     notes: 'Teklifimiz bir bütün halinde geçerlidir.',
@@ -60,6 +61,8 @@ describe('generateOrderHtml (STF customer PDF)', () => {
   it('renders footer blocks and signature names', () => {
     expect(html).toContain('ÜRETİCİ FİRMALAR');
     expect(html).toContain('GARANTİ');
+    expect(html).toContain('TESLİMAT');
+    expect(html).toContain('Kesin siparişten sonra 8-10 hafta.');
     expect(html).toContain('MÜŞTERİ ONAYI');
     expect(html).toContain('İLKER ÇETİN');
     expect(html).toContain('ÖZNUR SAYIN');

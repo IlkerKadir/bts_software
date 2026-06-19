@@ -72,6 +72,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         manufacturers: order.manufacturers,
         warranty: order.warranty,
         deliveryPlace: order.deliveryPlace,
+        deliveryTime: order.deliveryTime,
         paymentTerms: order.paymentTerms,
         vatNote: order.vatNote,
         notes: order.notes,

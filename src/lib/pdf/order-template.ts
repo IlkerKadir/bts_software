@@ -21,6 +21,7 @@ export interface OrderHeaderForPdf {
   manufacturers: string | null;
   warranty: string | null;
   deliveryPlace: string | null;
+  deliveryTime: string | null;
   paymentTerms: string | null;
   vatNote: string | null;
   notes: string | null;
@@ -215,6 +216,7 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     footerRow('TESLİM YERİ', order.deliveryPlace),
     footerRow('ÖDEME', order.paymentTerms),
     footerRow('KDV', order.vatNote),
+    footerRow('TESLİMAT', order.deliveryTime),
     footerRow('NOTLAR', order.notes),
   ].join('\n');
 

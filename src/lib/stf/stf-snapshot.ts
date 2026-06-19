@@ -47,8 +47,10 @@ export interface StfHeader {
   manufacturers: string | null;
   paymentTerms: string | null;
   deliveryPlace: string | null;
+  deliveryTime: string | null;
   warranty: string | null;
   vatNote: string | null;
+  notes: string | null;
 }
 
 export interface StfItem {
