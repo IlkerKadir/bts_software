@@ -202,13 +202,22 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
   const teklifRef = [order.quoteNo, order.refNo].filter(Boolean).join(' / ');
 
   // ---------- Footer label table ----------
-  const footerRow = (label: string, value: string | null) =>
-    value && value.trim()
-      ? `<tr>
+  // Short structured blocks use a two-column label|value row. Long free-text
+  // blocks (NOTLAR) use a single full-width cell: the label as a heading with
+  // the text flowing beneath it, so the paragraph isn't cramped into a narrow
+  // column.
+  const footerRow = (label: string, value: string | null, fullWidth = false) => {
+    if (!value || !value.trim()) return '';
+    if (fullWidth) {
+      return `<tr>
+          <td colspan="2"><p class="s3">${label}</p><p class="s4" style="line-height:118%;padding-top:2pt;">${escapeHtmlMultiline(value)}</p></td>
+        </tr>`;
+    }
+    return `<tr>
           <td class="ft-label"><p class="s3">${label}</p></td>
           <td class="ft-val"><p class="s4" style="line-height:118%;">${escapeHtmlMultiline(value)}</p></td>
-        </tr>`
-      : '';
+        </tr>`;
+  };
 
   const footerTable = [
     footerRow('ÜRETİCİ FİRMALAR', order.manufacturers),
@@ -217,7 +226,7 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     footerRow('ÖDEME', order.paymentTerms),
     footerRow('KDV', order.vatNote),
     footerRow('TESLİMAT', order.deliveryTime),
-    footerRow('NOTLAR', order.notes),
+    footerRow('NOTLAR', order.notes, true),
   ].join('\n');
 
   return `<!DOCTYPE html>
