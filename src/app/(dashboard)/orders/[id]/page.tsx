@@ -52,6 +52,7 @@ export default function OrderDetailPage({ params }: PageProps) {
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -135,6 +136,32 @@ export default function OrderDetailPage({ params }: PageProps) {
     }
   };
 
+  const handleExportExcel = async () => {
+    if (isExportingExcel) return;
+    setIsExportingExcel(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${id}/export/excel`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Excel olusturulamadi');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = order ? `${order.orderNumber}.xlsx` : 'siparis-teyit.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Excel olusturulurken bir hata olustu');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -210,6 +237,18 @@ export default function OrderDetailPage({ params }: PageProps) {
               <Download className="w-4 h-4" />
             )}
             PDF Indir
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleExportExcel}
+            disabled={isExportingExcel}
+          >
+            {isExportingExcel ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Excel Indir
           </Button>
           <Button
             variant="secondary"
