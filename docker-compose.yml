@@ -21,6 +21,12 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    volumes:
+      # Persist uploaded quote/project documents OUTSIDE the container so they
+      # survive image rebuilds (document-service.ts writes to process.cwd()/uploads
+      # = /app/uploads). Host dir is /opt/bts_quote/uploads (sibling of the repo
+      # dir); it must be owned by the container user (uid/gid 1001).
+      - ../uploads:/app/uploads
     environment:
       DATABASE_URL: "postgresql://bts_user:bts_password@db:5432/bts_teklif?schema=public"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"

@@ -138,7 +138,10 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   ];
   let r = 2;
   for (let i = 0; i < 5; i++) {
-    const row = ws.getRow(r); row.height = 16;
+    // Tall enough for the two-line Turkish labels (FİRMA ADI / İLGİLİ KİŞİ,
+    // FİRMA V.D./ VERGİ NO, TEKLİF NO / REF NO) that wrap in the narrow label
+    // columns — 16pt clipped them and rows visually overlapped.
+    const row = ws.getRow(r); row.height = 30;
     if (i < 4) { label(ws.getCell(r, 1), left[i][0]); val(ws.getCell(r, 2), left[i][1]); }
     else { ws.getCell(r, 1).border = thin(); ws.getCell(r, 2).border = thin(); }
     label(ws.getCell(r, 3), right[i][0]); val(ws.getCell(r, 4), right[i][1]);
