@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatPrice, formatNumber } from '@/lib/utils/format';
-import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { getEffectiveCostPrice, getSetEffectiveCostPrice } from '@/lib/ek-maliyet';
 import { roundUnitPrice, computeRowTotal } from '@/lib/quote-rounding';
 
 // ---------------------------------------------------------------------------
@@ -456,7 +456,13 @@ export function QuoteItemRow({
 
   // Effective (displayed) prices include the ek maliyet delta
   const effectiveListPriceNum = Number(item.listPrice) + ekDelta;
-  const effectiveCostPriceNum = getEffectiveCostPrice(item);
+  // A SET parent has no own costPrice (its children hold the cost), so its
+  // Maliyet/Kar/Kar% would show "-". Aggregate the children's costs instead so
+  // the SET row shows a real cost/margin. Children share the SET's currency.
+  const effectiveCostPriceNum =
+    item.itemType === 'SET' && !item.parentItemId && item.subRows && item.subRows.length > 0
+      ? getSetEffectiveCostPrice(item.subRows)
+      : getEffectiveCostPrice(item);
 
   // Margin helpers
   const unitPriceNum = Number(item.unitPrice) || 0;
