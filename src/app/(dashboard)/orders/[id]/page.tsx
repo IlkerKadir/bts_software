@@ -271,6 +271,11 @@ export default function OrderDetailPage({ params }: PageProps) {
               { value: 'TASLAK', label: 'Taslak' },
               { value: 'TAMAMLANDI', label: 'Tamamlandı' },
               { value: 'IPTAL', label: 'İptal' },
+              // Fallback so a (post-remap: shouldn't happen) legacy status still
+              // displays its real value instead of silently showing the first option.
+              ...(['TASLAK', 'TAMAMLANDI', 'IPTAL'].includes(order.status)
+                ? []
+                : [{ value: order.status, label: orderStatusLabels[order.status] || order.status }]),
             ]}
             disabled={isUpdating}
             className="w-48"

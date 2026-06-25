@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { QuoteItemType } from '@prisma/client';
+import { Prisma, QuoteItemType } from '@prisma/client';
 import { nextStfRevisionNumber } from '@/lib/stf/stf-revision-number';
 
 interface RouteParams { params: Promise<{ id: string }>; }
@@ -74,6 +74,14 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ order: created }, { status: 201 });
   } catch (error) {
+    // A concurrent "Revize Oluştur" could compute the same .N and lose the
+    // unique-constraint race — surface a clean 409 instead of a raw 500.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Aynı anda başka bir revizyon oluşturuldu. Lütfen tekrar deneyin.' },
+        { status: 409 }
+      );
+    }
     console.error('STF revision error:', error);
     return NextResponse.json({ error: 'Revizyon oluşturulurken bir hata oluştu' }, { status: 500 });
   }
