@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   GripVertical,
@@ -406,11 +406,10 @@ export function QuoteItemRow({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    const menuWidth = 200;
-    const menuHeight = 200;
-    const x = Math.min(e.clientX, window.innerWidth - menuWidth);
-    const y = Math.min(e.clientY, window.innerHeight - menuHeight);
-    setContextMenu({ x, y });
+    // Open at the cursor; ContextMenuOverlay measures its real height/width
+    // after mount and clamps into the viewport (the menu height varies a lot
+    // with the price-label options, so a fixed estimate clipped it).
+    setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
   // Wrap the row's drag start so click+drag inside an input (e.g.
@@ -1347,11 +1346,31 @@ function ContextMenuOverlay({
   currentPriceLabel,
   priceLabelOptions,
 }: ContextMenuOverlayProps) {
+  // Start at the cursor, then after mount measure the real menu size and clamp
+  // it into the viewport so a tall menu (many price-label options) opened near
+  // the bottom/right edge isn't clipped off-screen.
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: y, left: x });
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const margin = 8;
+    const { width, height } = el.getBoundingClientRect();
+    let top = y;
+    let left = x;
+    if (top + height > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - height - margin);
+    }
+    if (left + width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - width - margin);
+    }
+    setPos({ top, left });
+  }, [x, y, menuRef]);
+
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[220px] rounded-lg border border-accent-200 bg-white py-1 shadow-lg"
-      style={{ top: y, left: x }}
+      className="fixed z-50 min-w-[220px] max-h-[calc(100vh-16px)] overflow-y-auto rounded-lg border border-accent-200 bg-white py-1 shadow-lg"
+      style={{ top: pos.top, left: pos.left }}
     >
       <button
         type="button"
