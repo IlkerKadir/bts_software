@@ -679,6 +679,10 @@ model QuoteEkMaliyet {
 // ==================== ORDER CONFIRMATIONS ====================
 
 enum OrderStatus {
+  TASLAK
+  // Legacy values (pre-2026-06-25) — kept so the enum type stays valid for any
+  // unmigrated rows; no longer surfaced in the UI. Existing rows were remapped:
+  // HAZIRLANIYOR→TASLAK, ONAYLANDI/GONDERILDI→TAMAMLANDI.
   HAZIRLANIYOR
   ONAYLANDI
   GONDERILDI
@@ -693,7 +697,7 @@ model OrderConfirmation {
   quote         Quote       @relation(fields: [quoteId], references: [id])
   companyId     String
   company       Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  status        OrderStatus @default(HAZIRLANIYOR)
+  status        OrderStatus @default(TASLAK)
   notes         String?
   deliveryDate  DateTime?
   createdById   String
