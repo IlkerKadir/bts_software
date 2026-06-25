@@ -43,26 +43,20 @@ interface Order {
 }
 
 const orderStatusLabels: Record<string, string> = {
-  HAZIRLANIYOR: 'Hazırlanıyor',
-  ONAYLANDI: 'Onaylandı',
-  GONDERILDI: 'Gönderildi',
+  TASLAK: 'Taslak',
   TAMAMLANDI: 'Tamamlandı',
   IPTAL: 'İptal',
 };
 
 const orderStatusVariants: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
-  HAZIRLANIYOR: 'default',
-  ONAYLANDI: 'info',
-  GONDERILDI: 'warning',
+  TASLAK: 'default',
   TAMAMLANDI: 'success',
   IPTAL: 'error',
 };
 
 const statusOptions = [
   { value: '', label: 'Tüm Durumlar' },
-  { value: 'HAZIRLANIYOR', label: 'Hazırlanıyor' },
-  { value: 'ONAYLANDI', label: 'Onaylandı' },
-  { value: 'GONDERILDI', label: 'Gönderildi' },
+  { value: 'TASLAK', label: 'Taslak' },
   { value: 'TAMAMLANDI', label: 'Tamamlandı' },
   { value: 'IPTAL', label: 'İptal' },
 ];
