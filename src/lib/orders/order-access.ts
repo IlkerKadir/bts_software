@@ -38,10 +38,11 @@ export function canAccessOrder(
 
 /**
  * STF statuses in which the full PUT edit (item replace + header/footer) is
- * permitted. Once an STF is sent to the customer (GONDERILDI) or terminal
- * (TAMAMLANDI/IPTAL) it is frozen — status changes still go through PATCH.
+ * permitted. An STF is editable only while it is a draft (TASLAK); once it is
+ * completed (TAMAMLANDI) or cancelled (IPTAL) it is frozen — status changes
+ * still go through PATCH (incl. "Taslağa geri çek" to reopen for editing).
  */
-export const STF_EDITABLE_STATUSES: readonly string[] = ['HAZIRLANIYOR', 'ONAYLANDI'];
+export const STF_EDITABLE_STATUSES: readonly string[] = ['TASLAK'];
 
 export function isStfEditable(status: string): boolean {
   return STF_EDITABLE_STATUSES.includes(status);

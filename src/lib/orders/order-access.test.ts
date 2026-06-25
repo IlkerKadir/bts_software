@@ -42,12 +42,10 @@ describe('canAccessOrder', () => {
 });
 
 describe('isStfEditable', () => {
-  it('allows editing in HAZIRLANIYOR and ONAYLANDI', () => {
-    expect(isStfEditable('HAZIRLANIYOR')).toBe(true);
-    expect(isStfEditable('ONAYLANDI')).toBe(true);
+  it('allows editing only in TASLAK', () => {
+    expect(isStfEditable('TASLAK')).toBe(true);
   });
-  it('freezes sent/terminal STFs', () => {
-    expect(isStfEditable('GONDERILDI')).toBe(false);
+  it('freezes completed/cancelled STFs', () => {
     expect(isStfEditable('TAMAMLANDI')).toBe(false);
     expect(isStfEditable('IPTAL')).toBe(false);
   });

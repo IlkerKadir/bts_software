@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
                 orderNumber,
                 quoteId: quote.id,
                 companyId: quote.companyId,
-                status: 'HAZIRLANIYOR',
+                status: 'TASLAK',
                 deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
                 createdById: user.id,
                 ...header,

@@ -40,7 +40,7 @@ const mockOrder = {
   orderNumber: 'SIP-2026-0001',
   quoteId: 'quote1',
   companyId: 'company1',
-  status: 'HAZIRLANIYOR',
+  status: 'TASLAK',
   quote: {
     id: 'quote1',
     quoteNumber: 'BTS-2026-0001',
@@ -77,48 +77,48 @@ describe('PATCH /api/orders/[id] - status validation', () => {
     expect(data.error).toBe('Geçersiz sipariş durumu.');
   });
 
-  it('returns 400 for invalid state transition (HAZIRLANIYOR -> TAMAMLANDI)', async () => {
+  it('returns 400 for invalid state transition (TASLAK -> GONDERILDI)', async () => {
+    const res = await PATCH(makeRequest({ status: 'GONDERILDI' }), makeParams());
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe('Bu durum geçişi yapılamaz');
+  });
+
+  it('returns 400 for invalid transition from IPTAL (IPTAL -> TAMAMLANDI)', async () => {
+    vi.mocked(db.orderConfirmation.findUnique).mockResolvedValue({
+      ...mockOrder,
+      status: 'IPTAL',
+    } as never);
+
     const res = await PATCH(makeRequest({ status: 'TAMAMLANDI' }), makeParams());
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toBe('Bu durum geçişi yapılamaz');
   });
 
-  it('returns 400 for transition from terminal state (IPTAL -> anything)', async () => {
-    vi.mocked(db.orderConfirmation.findUnique).mockResolvedValue({
-      ...mockOrder,
-      status: 'IPTAL',
-    } as never);
-
-    const res = await PATCH(makeRequest({ status: 'HAZIRLANIYOR' }), makeParams());
-    expect(res.status).toBe(400);
-    const data = await res.json();
-    expect(data.error).toBe('Bu durum geçişi yapılamaz');
-  });
-
-  it('returns 400 for transition from terminal state (TAMAMLANDI -> anything)', async () => {
+  it('returns 400 for invalid transition from TAMAMLANDI (TAMAMLANDI -> GONDERILDI)', async () => {
     vi.mocked(db.orderConfirmation.findUnique).mockResolvedValue({
       ...mockOrder,
       status: 'TAMAMLANDI',
     } as never);
 
-    const res = await PATCH(makeRequest({ status: 'ONAYLANDI' }), makeParams());
+    const res = await PATCH(makeRequest({ status: 'GONDERILDI' }), makeParams());
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toBe('Bu durum geçişi yapılamaz');
   });
 
-  it('allows valid transition HAZIRLANIYOR -> ONAYLANDI', async () => {
+  it('allows valid transition TASLAK -> TAMAMLANDI', async () => {
     vi.mocked(db.orderConfirmation.update).mockResolvedValue({
       ...mockOrder,
-      status: 'ONAYLANDI',
+      status: 'TAMAMLANDI',
     } as never);
 
-    const res = await PATCH(makeRequest({ status: 'ONAYLANDI' }), makeParams());
+    const res = await PATCH(makeRequest({ status: 'TAMAMLANDI' }), makeParams());
     expect(res.status).toBe(200);
   });
 
-  it('allows valid transition HAZIRLANIYOR -> IPTAL', async () => {
+  it('allows valid transition TASLAK -> IPTAL', async () => {
     vi.mocked(db.orderConfirmation.update).mockResolvedValue({
       ...mockOrder,
       status: 'IPTAL',
@@ -128,31 +128,31 @@ describe('PATCH /api/orders/[id] - status validation', () => {
     expect(res.status).toBe(200);
   });
 
-  it('allows valid transition ONAYLANDI -> GONDERILDI', async () => {
+  it('allows valid transition TAMAMLANDI -> TASLAK (Taslağa geri çek)', async () => {
     vi.mocked(db.orderConfirmation.findUnique).mockResolvedValue({
-      ...mockOrder,
-      status: 'ONAYLANDI',
-    } as never);
-    vi.mocked(db.orderConfirmation.update).mockResolvedValue({
-      ...mockOrder,
-      status: 'GONDERILDI',
-    } as never);
-
-    const res = await PATCH(makeRequest({ status: 'GONDERILDI' }), makeParams());
-    expect(res.status).toBe(200);
-  });
-
-  it('allows valid transition GONDERILDI -> TAMAMLANDI', async () => {
-    vi.mocked(db.orderConfirmation.findUnique).mockResolvedValue({
-      ...mockOrder,
-      status: 'GONDERILDI',
-    } as never);
-    vi.mocked(db.orderConfirmation.update).mockResolvedValue({
       ...mockOrder,
       status: 'TAMAMLANDI',
     } as never);
+    vi.mocked(db.orderConfirmation.update).mockResolvedValue({
+      ...mockOrder,
+      status: 'TASLAK',
+    } as never);
 
-    const res = await PATCH(makeRequest({ status: 'TAMAMLANDI' }), makeParams());
+    const res = await PATCH(makeRequest({ status: 'TASLAK' }), makeParams());
+    expect(res.status).toBe(200);
+  });
+
+  it('allows valid transition IPTAL -> TASLAK (İptali geri al)', async () => {
+    vi.mocked(db.orderConfirmation.findUnique).mockResolvedValue({
+      ...mockOrder,
+      status: 'IPTAL',
+    } as never);
+    vi.mocked(db.orderConfirmation.update).mockResolvedValue({
+      ...mockOrder,
+      status: 'TASLAK',
+    } as never);
+
+    const res = await PATCH(makeRequest({ status: 'TASLAK' }), makeParams());
     expect(res.status).toBe(200);
   });
 

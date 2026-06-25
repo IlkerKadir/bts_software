@@ -25,11 +25,9 @@ const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
 
 /** Order status state machine: maps current status to valid next statuses */
 const orderStatusTransitions: Record<string, string[]> = {
-  HAZIRLANIYOR: ['ONAYLANDI', 'IPTAL'],
-  ONAYLANDI: ['GONDERILDI', 'IPTAL'],
-  GONDERILDI: ['TAMAMLANDI', 'IPTAL'],
-  TAMAMLANDI: [], // terminal
-  IPTAL: [], // terminal
+  TASLAK: ['TAMAMLANDI', 'IPTAL'],
+  TAMAMLANDI: ['TASLAK', 'IPTAL'],
+  IPTAL: ['TASLAK'],
 };
 
 interface RouteParams {
@@ -271,10 +269,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Siparis bulunamadi' }, { status: 404 });
     }
 
-    // Only allow deleting orders in HAZIRLANIYOR status
-    if (existingOrder.status !== 'HAZIRLANIYOR') {
+    // Only allow deleting orders in TASLAK status
+    if (existingOrder.status !== 'TASLAK') {
       return NextResponse.json(
-        { error: 'Sadece hazirlanan siparisler silinebilir' },
+        { error: 'Sadece taslak siparişler silinebilir' },
         { status: 400 }
       );
     }
