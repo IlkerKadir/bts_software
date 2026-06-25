@@ -9,6 +9,9 @@ import {
   AlertCircle,
   Download,
   Loader2,
+  ClipboardCopy,
+  Trash2,
+  Undo2,
 } from 'lucide-react';
 import { Button, Badge, Spinner, Select } from '@/components/ui';
 import { StfEditor } from '@/components/orders/StfEditor';
@@ -24,17 +27,13 @@ interface Order {
 }
 
 const orderStatusLabels: Record<string, string> = {
-  HAZIRLANIYOR: 'Hazirlanıyor',
-  ONAYLANDI: 'Onaylandı',
-  GONDERILDI: 'Gonderildi',
+  TASLAK: 'Taslak',
   TAMAMLANDI: 'Tamamlandı',
-  IPTAL: 'Iptal',
+  IPTAL: 'İptal',
 };
 
 const orderStatusVariants: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
-  HAZIRLANIYOR: 'default',
-  ONAYLANDI: 'info',
-  GONDERILDI: 'warning',
+  TASLAK: 'default',
   TAMAMLANDI: 'success',
   IPTAL: 'error',
 };
@@ -53,6 +52,9 @@ export default function OrderDetailPage({ params }: PageProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isCreatingRevision, setIsCreatingRevision] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -105,6 +107,55 @@ export default function OrderDetailPage({ params }: PageProps) {
       setError(err instanceof Error ? err.message : 'Bir hata olustu');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleCreateRevision = async () => {
+    if (!order) return;
+    setIsCreatingRevision(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${id}/revisions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Revizyon olusturulamadi');
+      }
+      const newOrderId = data.order?.id || data.id;
+      if (newOrderId) {
+        router.push(`/orders/${newOrderId}`);
+      }
+    } catch (err) {
+      console.error('Revision error:', err);
+      setError(err instanceof Error ? err.message : 'Revizyon olusturulurken bir hata olustu');
+    } finally {
+      setIsCreatingRevision(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!order) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setIsDeleting(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Siparis silinemedi');
+      }
+      router.push('/orders');
+    } catch (err) {
+      console.error('Delete error:', err);
+      setError(err instanceof Error ? err.message : 'Siparis silinirken bir hata olustu');
+      setConfirmDelete(false);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -217,11 +268,9 @@ export default function OrderDetailPage({ params }: PageProps) {
             value={order.status}
             onChange={(e) => handleStatusChange(e.target.value)}
             options={[
-              { value: 'HAZIRLANIYOR', label: 'Hazirlanıyor' },
-              { value: 'ONAYLANDI', label: 'Onaylandı' },
-              { value: 'GONDERILDI', label: 'Gonderildi' },
+              { value: 'TASLAK', label: 'Taslak' },
               { value: 'TAMAMLANDI', label: 'Tamamlandı' },
-              { value: 'IPTAL', label: 'Iptal' },
+              { value: 'IPTAL', label: 'İptal' },
             ]}
             disabled={isUpdating}
             className="w-48"
@@ -257,6 +306,53 @@ export default function OrderDetailPage({ params }: PageProps) {
             <FileText className="w-4 h-4" />
             Teklifi Gor
           </Button>
+
+          {order.status === 'TAMAMLANDI' && (
+            <Button
+              variant="secondary"
+              onClick={() => handleStatusChange('TASLAK')}
+              disabled={isUpdating}
+            >
+              <Undo2 className="w-4 h-4" />
+              Taslağa Geri Çek
+            </Button>
+          )}
+
+          {order.status === 'IPTAL' && (
+            <Button
+              variant="secondary"
+              onClick={() => handleStatusChange('TASLAK')}
+              disabled={isUpdating}
+            >
+              <Undo2 className="w-4 h-4" />
+              İptali Geri Al
+            </Button>
+          )}
+
+          {order.status === 'TAMAMLANDI' && (
+            <Button
+              variant="secondary"
+              onClick={handleCreateRevision}
+              isLoading={isCreatingRevision}
+              disabled={isCreatingRevision}
+            >
+              <ClipboardCopy className="w-4 h-4" />
+              Revize Oluştur
+            </Button>
+          )}
+
+          {order.status === 'TASLAK' && (
+            <Button
+              variant={confirmDelete ? 'danger' : 'secondary'}
+              onClick={handleDelete}
+              isLoading={isDeleting}
+              disabled={isDeleting}
+              onBlur={() => setConfirmDelete(false)}
+            >
+              <Trash2 className="w-4 h-4" />
+              {confirmDelete ? 'Emin misiniz?' : 'Sil'}
+            </Button>
+          )}
         </div>
       </div>
 
