@@ -36,6 +36,8 @@ interface Contact {
 interface CompanyQuote {
   id: string;
   quoteNumber: string;
+  subject: string | null;
+  projectName: string | null;
   status: string;
   grandTotal: number | null;
 }
@@ -407,6 +409,8 @@ export default function CompanyDetailPage({ params }: PageProps) {
               <thead>
                 <tr className="bg-accent-50 border-b border-accent-200 text-xs uppercase tracking-wider text-accent-600">
                   <th className="px-4 py-2.5 text-left">Teklif No</th>
+                  <th className="px-4 py-2.5 text-left">Proje Adı</th>
+                  <th className="px-4 py-2.5 text-left">Teklif Adı</th>
                   <th className="px-4 py-2.5 text-left">Durum</th>
                   <th className="px-4 py-2.5 text-right">Genel Toplam</th>
                   <th className="px-4 py-2.5 text-right w-24">İşlem</th>
@@ -420,6 +424,12 @@ export default function CompanyDetailPage({ params }: PageProps) {
                   >
                     <td className="px-4 py-2.5 font-medium text-primary-900">
                       {quote.quoteNumber}
+                    </td>
+                    <td className="px-4 py-2.5 text-primary-700">
+                      {quote.projectName || '-'}
+                    </td>
+                    <td className="px-4 py-2.5 text-primary-700">
+                      {quote.subject || '-'}
                     </td>
                     <td className="px-4 py-2.5">
                       <Badge status={quote.status as any}>

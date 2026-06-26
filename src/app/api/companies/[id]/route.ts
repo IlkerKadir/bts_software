@@ -26,7 +26,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           take: 5,
         },
         quotes: {
-          select: { id: true, quoteNumber: true, status: true, grandTotal: true },
+          select: {
+            id: true, quoteNumber: true, subject: true, status: true, grandTotal: true,
+            project: { select: { name: true } },
+          },
           orderBy: { createdAt: 'desc' },
           take: 5,
         },
@@ -45,6 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       ...company,
       quotes: company.quotes.map((q) => ({
         ...q,
+        projectName: q.project?.name ?? null,
         grandTotal: q.grandTotal ? Number(q.grandTotal) : null,
       })),
     };
