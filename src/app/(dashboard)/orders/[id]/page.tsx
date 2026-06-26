@@ -38,6 +38,18 @@ const orderStatusVariants: Record<string, 'default' | 'success' | 'warning' | 'e
   IPTAL: 'error',
 };
 
+/**
+ * Filename for a blob download. The browser uses the anchor's `download`
+ * attribute (NOT the server's Content-Disposition) for blob: URLs, so we read
+ * the server-built filename (STF-####-Proje-Firma.ext) off the response header
+ * and fall back to a plain name if it's missing.
+ */
+function downloadFilename(response: Response, fallback: string): string {
+  const cd = response.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename="?([^";]+)"?/i);
+  return m ? m[1] : fallback;
+}
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -175,7 +187,7 @@ export default function OrderDetailPage({ params }: PageProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = order ? `${order.orderNumber}.pdf` : 'siparis-teyit.pdf';
+      a.download = downloadFilename(response, order ? `${order.orderNumber}.pdf` : 'siparis-teyit.pdf');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -201,7 +213,7 @@ export default function OrderDetailPage({ params }: PageProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = order ? `${order.orderNumber}.xlsx` : 'siparis-teyit.xlsx';
+      a.download = downloadFilename(response, order ? `${order.orderNumber}.xlsx` : 'siparis-teyit.xlsx');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
