@@ -173,7 +173,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
 
       {!editable && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          Bu STF gönderilmiş veya tamamlanmış — salt-okunur. Düzenlemek için durumu HAZIRLANIYOR/ONAYLANDI yapın.
+          Bu STF tamamlanmış veya iptal edilmiş — salt-okunur. Düzenlemek için &quot;Taslağa Geri Çek&quot; yapın.
         </div>
       )}
 

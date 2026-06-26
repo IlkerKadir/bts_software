@@ -186,7 +186,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Freeze sent/terminal STFs — status changes still go through PATCH.
     if (!isStfEditable(existing.status)) {
       return NextResponse.json(
-        { error: 'Gönderilmiş veya tamamlanmış STF düzenlenemez' },
+        { error: 'Tamamlanmış veya iptal edilmiş STF düzenlenemez' },
         { status: 409 }
       );
     }
