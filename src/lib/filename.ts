@@ -70,3 +70,21 @@ export function buildQuoteExportFilename(
   const base = segments.join('-') || 'teklif';
   return `${base}.${ext}`;
 }
+
+/**
+ * Build an STF (Sipariş Teyit Formu) export filename of the form
+ * `{orderNumber}-{project}-{company}.{ext}` (e.g. `STF-6000-Ana_Fabrika-Duran_Dogan.pdf`),
+ * mirroring the quote filename convention. The company name comes from the STF
+ * snapshot's customerName ("Firma Adı"). Empty parts are dropped.
+ */
+export function buildStfExportFilename(
+  parts: { orderNumber: string; projectName?: string | null; companyName?: string | null },
+  ext: 'pdf' | 'xlsx'
+): string {
+  const segments = [
+    sanitizeFilenamePart(parts.orderNumber),
+    sanitizeFilenamePart(parts.projectName ?? ''),
+    sanitizeFilenamePart(parts.companyName ?? ''),
+  ].filter((s) => s.length > 0);
+  return `${segments.join('-') || 'stf'}.${ext}`;
+}

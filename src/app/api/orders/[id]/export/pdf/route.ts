@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { getPdfService } from '@/lib/pdf/pdf-service';
 import { generateOrderHtml, OrderDataForPdf } from '@/lib/pdf/order-template';
+import { buildStfExportFilename } from '@/lib/filename';
 import fs from 'fs';
 import path from 'path';
 
@@ -105,7 +106,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const pdfBuffer = await pdfService.generatePdf(html);
 
     // Return PDF as download
-    const filename = `${order.orderNumber}.pdf`;
+    const filename = buildStfExportFilename(
+      { orderNumber: order.orderNumber, projectName: order.projectName, companyName: order.customerName },
+      'pdf'
+    );
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {

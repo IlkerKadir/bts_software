@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { generateStfExcel, StfExcelData } from '@/lib/excel/stf-excel';
+import { buildStfExportFilename } from '@/lib/filename';
 
 interface RouteParams { params: Promise<{ id: string }>; }
 
@@ -44,7 +45,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     };
 
     const buffer = await generateStfExcel(excelData);
-    const filename = `${order.orderNumber}.xlsx`;
+    const filename = buildStfExportFilename(
+      { orderNumber: order.orderNumber, projectName: order.projectName, companyName: order.customerName },
+      'xlsx'
+    );
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
