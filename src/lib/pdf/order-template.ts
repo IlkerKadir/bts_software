@@ -25,6 +25,7 @@ export interface OrderHeaderForPdf {
   paymentTerms: string | null;
   vatNote: string | null;
   notes: string | null;
+  freeNote: string | null;
   customerApprovalName: string | null;
   btsResponsibleName: string | null;
 }
@@ -255,6 +256,12 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     footerRow('NOTLAR', order.notes),
   ].join('\n');
 
+  // Serbest Kalem — a free-form line between the item table and the footer
+  // blocks (above ÜRETİCİ FİRMALAR). Renders only when filled.
+  const freeNoteHtml = order.freeNote && order.freeNote.trim()
+    ? `<table class="footer" style="margin-top:4pt;"><tr><td colspan="2"><p class="s4" style="line-height:118%;">${escapeHtmlMultiline(order.freeNote)}</p></td></tr></table>`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -354,6 +361,8 @@ table.footer td { border: 0.75pt solid black; padding: 3pt 5pt; vertical-align: 
     ${itemRows}
   </tbody>
 </table>
+
+${freeNoteHtml}
 
 <table class="footer">
   ${footerTable}

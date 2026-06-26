@@ -21,6 +21,7 @@ const data: OrderDataForPdf = {
     paymentTerms: '30 gün içinde peşin banka havalesi.',
     vatNote: 'Fiyatlarımıza KDV dahil değildir.',
     notes: 'Teklifimiz bir bütün halinde geçerlidir.',
+    freeNote: 'Serbest kalem satırı içeriği.',
     customerApprovalName: 'İLKER ÇETİN',
     btsResponsibleName: 'ÖZNUR SAYIN',
   },
@@ -59,6 +60,7 @@ describe('generateOrderHtml (STF customer PDF)', () => {
     expect(html).toContain('21,98');
   });
   it('renders footer blocks and signature names', () => {
+    expect(html).toContain('Serbest kalem satırı içeriği.'); // free note row above the footer
     expect(html).toContain('ÜRETİCİ FİRMALAR');
     expect(html).toContain('GARANTİ');
     expect(html).toContain('TESLİMAT');

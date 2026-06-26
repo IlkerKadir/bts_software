@@ -10,6 +10,7 @@ const data: StfExcelData = {
     currency: 'EUR', manufacturers: 'GLT ZETA\nBTS', warranty: 'Üretici garantisi.',
     deliveryPlace: 'İstanbul depo.', deliveryTime: '8-10 hafta.', paymentTerms: '30 gün.',
     vatNote: 'KDV dahil değildir.', notes: 'Bir bütün halinde geçerlidir.',
+    freeNote: 'Serbest kalem satırı.',
     customerApprovalName: 'İLKER ÇETİN', btsResponsibleName: 'ÖZNUR SAYIN',
   },
   items: [
@@ -39,6 +40,7 @@ describe('generateStfExcel', () => {
     expect(buf.length).toBeGreaterThan(1000);
     const all = await load(buf);
     expect(all).toContain('DURAN DOĞAN A.Ş');
+    expect(all).toContain('Serbest kalem satırı.'); // free-form row between items and footer
     expect(all).toContain('STF-6000');
     expect(all).toContain('316A');           // teklif/ref combined
     expect(all).toContain('TRAFO 1');         // section header

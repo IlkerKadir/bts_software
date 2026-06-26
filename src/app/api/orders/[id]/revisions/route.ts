@@ -54,7 +54,7 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
         discountTotal: source.discountTotal, grandTotal: source.grandTotal,
         manufacturers: source.manufacturers, warranty: source.warranty,
         deliveryPlace: source.deliveryPlace, deliveryTime: source.deliveryTime,
-        paymentTerms: source.paymentTerms, vatNote: source.vatNote,
+        paymentTerms: source.paymentTerms, vatNote: source.vatNote, freeNote: source.freeNote,
         customerApprovalName: source.customerApprovalName, btsResponsibleName: source.btsResponsibleName,
         items: {
           create: source.items.map((it) => ({

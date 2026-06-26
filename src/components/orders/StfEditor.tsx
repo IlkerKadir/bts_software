@@ -48,6 +48,7 @@ interface StfData {
   paymentTerms: string | null;
   vatNote: string | null;
   notes: string | null;
+  freeNote: string | null;
   customerApprovalName: string | null;
   btsResponsibleName: string | null;
   status: string;
@@ -83,6 +84,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [showFreeNote, setShowFreeNote] = useState(false);
 
   const fetchStf = useCallback(async () => {
     try {
@@ -321,6 +323,31 @@ export function StfEditor({ stfId }: { stfId: string }) {
         <span className="text-primary-600">İndirim: <b className="tabular-nums">{Number(stf.discountTotal).toFixed(2)}</b></span>
         <span className="text-primary-900">Genel Toplam: <b className="tabular-nums">{Number(stf.grandTotal).toFixed(2)} {stf.currency}</b></span>
       </div>
+
+      {/* Serbest Kalem — free-form line rendered between the items and the footer
+          (above ÜRETİCİ FİRMALAR) on the PDF/Excel when filled. Hidden behind an
+          "+ Serbest Kalem Ekle" button until used. */}
+      {showFreeNote || (stf.freeNote && stf.freeNote.trim()) ? (
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-primary-700">Serbest Kalem</label>
+          <textarea
+            rows={2}
+            autoFocus={showFreeNote}
+            placeholder="Kalem tablosunun altına eklenecek serbest metin..."
+            className="w-full px-2 py-1 border border-primary-300 rounded text-sm"
+            value={stf.freeNote ?? ''}
+            onChange={(e) => setField('freeNote', e.target.value)}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowFreeNote(true)}
+          className="text-sm text-primary-600 hover:text-primary-800 hover:underline"
+        >
+          + Serbest Kalem Ekle
+        </button>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-primary-200 p-4">
         {FOOTER_FIELDS.map(([key, label]) => (

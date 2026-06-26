@@ -15,6 +15,7 @@ export interface StfExcelHeader {
   formDate: Date | null; siparisNo: string | null; currency: string;
   manufacturers: string | null; warranty: string | null; deliveryPlace: string | null; deliveryTime: string | null;
   paymentTerms: string | null; vatNote: string | null; notes: string | null;
+  freeNote: string | null;
   customerApprovalName: string | null; btsResponsibleName: string | null;
 }
 export interface StfExcelData { order: StfExcelHeader; items: StfExcelItem[]; }
@@ -237,6 +238,18 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
     r++;
   }
   r++; // spacer
+
+  // --- Serbest Kalem (free-form row between items and footer; only if filled) ---
+  if (order.freeNote && order.freeNote.trim()) {
+    ws.mergeCells(r, 1, r, 5);
+    const c = ws.getCell(r, 1);
+    c.value = order.freeNote;
+    c.font = { name: FONT, size: 8 };
+    c.alignment = { vertical: 'top', wrapText: true };
+    for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+    ws.getRow(r).height = Math.max(20, 12 * (order.freeNote.split('\n').length + 1));
+    r += 2; // row + spacer
+  }
 
   // --- Footer blocks (full-width: label line + value) ---
   const blocks: [string, string | null][] = [

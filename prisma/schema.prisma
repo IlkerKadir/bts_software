@@ -737,6 +737,10 @@ model OrderConfirmation {
   vatNote              String?
   customerApprovalName String?
   btsResponsibleName   String?
+  /// Free-form note ("Serbest Kalem") rendered as a full-width row between the
+  /// item table and the footer blocks (above ÜRETİCİ FİRMALAR). Optional —
+  /// nothing renders when empty.
+  freeNote             String?
 
   items         OrderItem[]
 

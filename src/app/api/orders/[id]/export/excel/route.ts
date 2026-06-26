@@ -29,7 +29,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         quoteNo: order.quoteNo, refNo: order.refNo, formDate: order.formDate, siparisNo: order.siparisNo,
         currency: order.currency, manufacturers: order.manufacturers, warranty: order.warranty,
         deliveryPlace: order.deliveryPlace, deliveryTime: order.deliveryTime, paymentTerms: order.paymentTerms,
-        vatNote: order.vatNote, notes: order.notes, customerApprovalName: order.customerApprovalName,
+        vatNote: order.vatNote, notes: order.notes, freeNote: order.freeNote,
+        customerApprovalName: order.customerApprovalName,
         btsResponsibleName: order.btsResponsibleName,
       },
       items: order.items.map((it) => ({
