@@ -46,6 +46,10 @@ describe('generateOrderHtml (STF customer PDF)', () => {
     expect(html).toContain('TRAFO 1');
     expect(html).toMatch(/>1<\/p>/);
   });
+  it('does NOT prepend the product code/model to Ürün Adı (PDF shows only the description)', () => {
+    expect(html).toContain('Fyreye MKII Optik Duman Dedektörü'); // description present
+    expect(html).not.toContain('MKII-OP'); // code/model not shown in the customer PDF
+  });
   it('renders child rows with * instead of a poz number', () => {
     expect(html).toContain('>*</p>');
   });

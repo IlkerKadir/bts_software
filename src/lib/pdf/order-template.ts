@@ -221,11 +221,10 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
       : `<td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
          <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>`;
     const qtyStr = `${item.quantity} ${unitAbbr(item.unit)}`;
-    const codePrefix = item.code ? `<b>${escapeHtml(item.code)}</b> ` : '';
 
     return `<tr>
       <td><p class="s1" style="text-align:center;">${escapeHtml(pozCell)}</p></td>
-      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${codePrefix}${escapeHtmlMultiline(item.description)}</p></td>
+      <td><p class="s2" style="padding-left:1pt;line-height:108%;">${escapeHtmlMultiline(item.description)}</p></td>
       <td><p class="s2" style="text-align:right;padding-right:10pt;">${qtyStr}</p></td>
       ${priceCol}
     </tr>`;
