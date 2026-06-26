@@ -44,6 +44,10 @@ describe('generateStfExcel', () => {
     expect(all).toContain('STF-6000');
     expect(all).toContain('316A');           // teklif/ref combined
     expect(all).toContain('TRAFO 1');         // section header
+    expect(all).toContain('Marka');           // extra Excel-only column header
+    expect(all).toContain('Model');
+    expect(all).toContain('GLT');             // Marka value
+    expect(all).toContain('MKII-OP');         // Kod/Model value
     expect(all).toContain('*');               // child poz marker
     expect(all).toContain('FİRMANIZA ÖZEL İNDİRİM');
     expect(all).toContain('ÜRETİCİ FİRMALAR');

@@ -21,7 +21,10 @@ export interface StfExcelHeader {
 export interface StfExcelData { order: StfExcelHeader; items: StfExcelItem[]; }
 
 const FONT = 'Arial';
-const COLS = [10, 70, 10, 16, 16]; // Poz / Ürün Adı / Miktar / Birim Fiyat / Toplam
+// Internal Excel has extra warehouse/purchasing columns (Kod/Marka/Model) that
+// the customer PDF does NOT show (owner request 2026-06-26).
+const COLS = [8, 16, 18, 18, 50, 10, 15, 15]; // Poz / Kod / Marka / Model / Ürün Adı / Miktar / Birim Fiyat / Toplam
+const NCOL = COLS.length; // 8
 const CURRENCY_SYMBOLS: Record<string, string> = { EUR: '€', USD: '$', GBP: '£', TRY: '₺' };
 // Full names used in the subtotal labels, matching order-template.ts so the
 // Excel and customer PDF read identically (e.g. "GENEL TOPLAM (EURO)").
@@ -139,21 +142,22 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   ];
   let r = 2;
   for (let i = 0; i < 5; i++) {
-    // Tall enough for the two-line Turkish labels (FİRMA ADI / İLGİLİ KİŞİ,
-    // FİRMA V.D./ VERGİ NO, TEKLİF NO / REF NO) that wrap in the narrow label
-    // columns — 16pt clipped them and rows visually overlapped.
-    const row = ws.getRow(r); row.height = 30;
-    if (i < 4) { label(ws.getCell(r, 1), left[i][0]); val(ws.getCell(r, 2), left[i][1]); }
-    else { ws.getCell(r, 1).border = thin(); ws.getCell(r, 2).border = thin(); }
-    label(ws.getCell(r, 3), right[i][0]); val(ws.getCell(r, 4), right[i][1]);
-    ws.getCell(r, 5).border = thin();
-    ws.mergeCells(r, 4, r, 5);
+    // Tall enough for the two-line Turkish labels that wrap in the label cells.
+    // Layout across the 8 item columns: left label (1-2) | left value (3-5) |
+    // right label (6) | right value (7-8).
+    ws.getRow(r).height = 30;
+    ws.mergeCells(r, 1, r, 2);
+    ws.mergeCells(r, 3, r, 5);
+    ws.mergeCells(r, 7, r, 8);
+    if (i < 4) { label(ws.getCell(r, 1), left[i][0]); val(ws.getCell(r, 3), left[i][1]); }
+    label(ws.getCell(r, 6), right[i][0]); val(ws.getCell(r, 7), right[i][1]);
+    for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
     r++;
   }
   r++; // blank spacer
 
   // --- Column header row ---
-  const headers = ['Poz No', 'Ürün Adı', 'Miktar', 'Birim Fiyat', 'Toplam Fiyat'];
+  const headers = ['Poz No', 'Kod', 'Marka', 'Model', 'Ürün Adı', 'Miktar', 'Birim Fiyat', 'Toplam Fiyat'];
   const hr = ws.getRow(r);
   headers.forEach((h, i) => {
     const c = ws.getCell(r, i + 1);
@@ -166,19 +170,19 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   for (let idx = 0; idx < items.length; idx++) {
     const it = items[idx];
     if (it.itemType === 'HEADER') {
-      ws.mergeCells(r, 1, r, 5);
+      ws.mergeCells(r, 1, r, NCOL);
       const c = ws.getCell(r, 1);
       c.value = it.description; c.font = { name: FONT, bold: true, size: 8 };
       c.alignment = { horizontal: 'center', vertical: 'middle' };
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } };
-      for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+      for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
       r++; continue;
     }
     if (it.itemType === 'NOTE') {
       ws.getCell(r, 1).value = it.pozNo || 'NOT:';
-      ws.mergeCells(r, 2, r, 5);
+      ws.mergeCells(r, 2, r, NCOL);
       ws.getCell(r, 2).value = it.description;
-      for (let col = 1; col <= 5; col++) { const c = ws.getCell(r, col); c.font = { name: FONT, size: 8 }; c.border = thin(); c.alignment = { vertical: 'top', wrapText: true }; }
+      for (let col = 1; col <= NCOL; col++) { const c = ws.getCell(r, col); c.font = { name: FONT, size: 8 }; c.border = thin(); c.alignment = { vertical: 'top', wrapText: true }; }
       r++; continue;
     }
     if (it.itemType === 'SUBTOTAL') {
@@ -191,14 +195,14 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
         ? [[`${base}GENEL TOPLAM (${currencyName})`, gross], [`${it.sectionDiscountLabel?.trim() || 'FİRMANIZA ÖZEL İNDİRİM'} (${currencyName})`, disc], [`${base}NET TOPLAM (${currencyName})`, net]]
         : [[`${base}GENEL TOPLAM (${currencyName})`, gross]];
       for (const [lbl, amount] of rows) {
-        ws.mergeCells(r, 1, r, 4);
+        ws.mergeCells(r, 1, r, NCOL - 1);
         const lc = ws.getCell(r, 1);
         lc.value = lbl; lc.font = { name: FONT, bold: true, size: 8 };
         lc.alignment = { horizontal: 'right', vertical: 'middle' };
-        const vc = ws.getCell(r, 5);
+        const vc = ws.getCell(r, NCOL);
         vc.value = amount; vc.numFmt = moneyFmt;
         vc.font = { name: FONT, bold: true, size: 8 }; vc.alignment = { horizontal: 'right' };
-        for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+        for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
         r++;
       }
       continue;
@@ -206,24 +210,28 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
     if (it.itemType === 'GRAND_TOTAL') {
       // "GENEL TOPLAM" marker row — running grand total, not a product row.
       const lbl = `${it.description?.trim() || 'GENEL TOPLAM'} (${currencyName})`;
-      ws.mergeCells(r, 1, r, 4);
+      ws.mergeCells(r, 1, r, NCOL - 1);
       const lc = ws.getCell(r, 1);
       lc.value = lbl; lc.font = { name: FONT, bold: true, size: 8 };
       lc.alignment = { horizontal: 'right', vertical: 'middle' };
-      const vc = ws.getCell(r, 5);
+      const vc = ws.getCell(r, NCOL);
       vc.value = grandTotalAtIndex(items, idx); vc.numFmt = moneyFmt;
       vc.font = { name: FONT, bold: true, size: 8 }; vc.alignment = { horizontal: 'right' };
-      for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+      for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
       r++; continue;
     }
-    // PRODUCT / CUSTOM / SET (+ children show "*")
+    // PRODUCT / CUSTOM / SET (+ children show "*"). 8 cols: Poz, Kod, Marka,
+    // Model, Ürün Adı, Miktar, Birim Fiyat, Toplam Fiyat.
     const poz = it.parentItemId ? '*' : (it.pozNo || '');
     const cells: (string | number)[] = [
-      poz,
-      it.code ? `${it.code} ${it.description}` : it.description,
-      `${it.quantity} ${unitAbbr(it.unit)}`,
-      it.priceLabel ? it.priceLabel : it.unitPrice,
-      it.priceLabel ? '' : it.totalPrice,
+      poz,                                            // 0 Poz No
+      it.code || '',                                  // 1 Kod
+      it.brand || '',                                 // 2 Marka
+      it.model || '',                                 // 3 Model
+      it.description,                                 // 4 Ürün Adı
+      `${it.quantity} ${unitAbbr(it.unit)}`,          // 5 Miktar
+      it.priceLabel ? it.priceLabel : it.unitPrice,   // 6 Birim Fiyat
+      it.priceLabel ? '' : it.totalPrice,             // 7 Toplam Fiyat
     ];
     cells.forEach((v, i) => {
       const c = ws.getCell(r, i + 1);
@@ -231,9 +239,9 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       c.font = { name: FONT, size: 8 };
       c.border = thin();
       if (i === 0) c.alignment = { horizontal: 'center', vertical: 'top' };
-      else if (i === 1) c.alignment = { vertical: 'top', wrapText: true };
-      else c.alignment = { horizontal: 'right', vertical: 'top' };
-      if ((i === 3 || i === 4) && typeof v === 'number') c.numFmt = moneyFmt;
+      else if (i <= 4) c.alignment = { vertical: 'top', wrapText: true }; // Kod/Marka/Model/Ürün Adı left
+      else c.alignment = { horizontal: 'right', vertical: 'top' };        // Miktar/Birim/Toplam right
+      if ((i === 6 || i === 7) && typeof v === 'number') c.numFmt = moneyFmt; // Birim Fiyat / Toplam
     });
     r++;
   }
@@ -241,12 +249,12 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
 
   // --- Serbest Kalem (free-form row between items and footer; only if filled) ---
   if (order.freeNote && order.freeNote.trim()) {
-    ws.mergeCells(r, 1, r, 5);
+    ws.mergeCells(r, 1, r, NCOL);
     const c = ws.getCell(r, 1);
     c.value = order.freeNote;
     c.font = { name: FONT, size: 8 };
     c.alignment = { vertical: 'top', wrapText: true };
-    for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+    for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
     ws.getRow(r).height = Math.max(20, 12 * (order.freeNote.split('\n').length + 1));
     r += 2; // row + spacer
   }
@@ -259,25 +267,25 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   ];
   for (const [lbl, value] of blocks) {
     if (!value || !value.trim()) continue;
-    ws.mergeCells(r, 1, r, 5);
+    ws.mergeCells(r, 1, r, NCOL);
     const c = ws.getCell(r, 1);
     c.value = { richText: [
       { text: `${lbl}\n`, font: { name: FONT, bold: true, size: 8 } },
       { text: value, font: { name: FONT, size: 8 } },
     ] };
     c.alignment = { vertical: 'top', wrapText: true };
-    for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+    for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
     ws.getRow(r).height = Math.max(24, 12 * (value.split('\n').length + 1));
     r++;
   }
 
   // --- Signature row ---
-  ws.mergeCells(r, 1, r, 2); ws.mergeCells(r, 3, r, 5);
-  const sigL = ws.getCell(r, 1), sigR = ws.getCell(r, 3);
+  ws.mergeCells(r, 1, r, 4); ws.mergeCells(r, 5, r, NCOL);
+  const sigL = ws.getCell(r, 1), sigR = ws.getCell(r, 5);
   sigL.value = { richText: [{ text: 'MÜŞTERİ ONAYI\n\n', font: { name: FONT, bold: true, size: 8 } }, { text: order.customerApprovalName || '', font: { name: FONT, size: 8 } }] };
   sigR.value = { richText: [{ text: 'BTS SORUMLUSU\n\n', font: { name: FONT, bold: true, size: 8 } }, { text: order.btsResponsibleName || '', font: { name: FONT, size: 8 } }] };
   [sigL, sigR].forEach((c) => { c.alignment = { horizontal: 'center', vertical: 'top', wrapText: true }; });
-  for (let col = 1; col <= 5; col++) ws.getCell(r, col).border = thin();
+  for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
   ws.getRow(r).height = 40;
 
   const out = await wb.xlsx.writeBuffer();
