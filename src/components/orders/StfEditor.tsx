@@ -329,11 +329,11 @@ export function StfEditor({ stfId }: { stfId: string }) {
           "+ Serbest Kalem Ekle" button until used. */}
       {showFreeNote || (stf.freeNote && stf.freeNote.trim()) ? (
         <div className="space-y-1">
-          <label className="text-xs font-medium text-primary-700">Serbest Kalem</label>
+          <label className="text-xs font-medium text-primary-700">Not</label>
           <textarea
             rows={2}
             autoFocus={showFreeNote}
-            placeholder="Kalem tablosunun altına eklenecek serbest metin..."
+            placeholder="Kalem tablosunun altına eklenecek not..."
             className="w-full px-2 py-1 border border-primary-300 rounded text-sm"
             value={stf.freeNote ?? ''}
             onChange={(e) => setField('freeNote', e.target.value)}
@@ -345,7 +345,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
           onClick={() => setShowFreeNote(true)}
           className="text-sm text-primary-600 hover:text-primary-800 hover:underline"
         >
-          + Serbest Kalem Ekle
+          + Not Ekle
         </button>
       )}
 
