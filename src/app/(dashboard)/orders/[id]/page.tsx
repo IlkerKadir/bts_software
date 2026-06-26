@@ -67,6 +67,14 @@ export default function OrderDetailPage({ params }: PageProps) {
   const [isCreatingRevision, setIsCreatingRevision] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [canDelete, setCanDelete] = useState(false); // management-only delete authority
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => setCanDelete(Boolean(d.user?.role?.canDelete)))
+      .catch(() => {});
+  }, []);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -358,7 +366,7 @@ export default function OrderDetailPage({ params }: PageProps) {
             </Button>
           )}
 
-          {order.status === 'TASLAK' && (
+          {canDelete && order.status === 'TASLAK' && (
             <Button
               variant={confirmDelete ? 'danger' : 'secondary'}
               onClick={handleDelete}

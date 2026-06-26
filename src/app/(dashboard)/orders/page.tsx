@@ -56,13 +56,6 @@ const orderStatusVariants: Record<string, 'default' | 'success' | 'warning' | 'e
   IPTAL: 'error',
 };
 
-const statusOptions = [
-  { value: '', label: 'Tüm Durumlar' },
-  { value: 'TASLAK', label: 'Taslak' },
-  { value: 'TAMAMLANDI', label: 'Tamamlandı' },
-  { value: 'IPTAL', label: 'İptal' },
-];
-
 type SortField = 'orderNumber' | 'company' | 'status' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
 
@@ -72,15 +65,22 @@ export default function OrdersPage() {
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
+  const [creatorFilter, setCreatorFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [creators, setCreators] = useState<{ id: string; fullName: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   // Per-row inline delete confirm (only TASLAK STFs are deletable, server-enforced).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [canDelete, setCanDelete] = useState(false); // management-only delete authority
+
+  // Year filter options: current year back to 2024 (app went live in 2026).
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: Math.max(1, currentYear - 2023) }, (_, i) => currentYear - i);
 
   const fetchOrders = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -88,8 +88,9 @@ export default function OrdersPage() {
     try {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
-      if (statusFilter) params.set('status', statusFilter);
       if (companyFilter) params.set('companyId', companyFilter);
+      if (creatorFilter) params.set('createdById', creatorFilter);
+      if (yearFilter) params.set('year', yearFilter);
       if (sortField) params.set('sortField', sortField);
       if (sortDirection) params.set('sortDirection', sortDirection);
       params.set('page', page.toString());
@@ -109,7 +110,7 @@ export default function OrdersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, statusFilter, companyFilter, sortField, sortDirection]);
+  }, [search, companyFilter, creatorFilter, yearFilter, sortField, sortDirection]);
 
   const handleDelete = async (id: string) => {
     setDeletingId(id);
@@ -130,17 +131,25 @@ export default function OrdersPage() {
   };
 
   useEffect(() => {
-    const fetchCompanies = async () => {
+    const fetchFilters = async () => {
       try {
-        const response = await fetch('/api/companies?limit=0');
-        const data = await response.json();
-        setCompanies(data.companies || []);
+        const [companiesRes, usersRes, meRes] = await Promise.all([
+          fetch('/api/companies?limit=0'),
+          fetch('/api/users/list'),
+          fetch('/api/auth/me'),
+        ]);
+        const companiesData = await companiesRes.json().catch(() => ({}));
+        setCompanies(companiesData.companies || []);
+        const usersData = await usersRes.json().catch(() => ({}));
+        setCreators(usersData.users || []);
+        const meData = await meRes.json().catch(() => ({}));
+        setCanDelete(Boolean(meData.user?.role?.canDelete));
       } catch (err) {
-        console.error('Error fetching companies:', err);
+        console.error('Error fetching filters:', err);
       }
     };
 
-    fetchCompanies();
+    fetchFilters();
   }, []);
 
   useEffect(() => {
@@ -208,10 +217,22 @@ export default function OrdersPage() {
               className="w-full sm:w-48"
             />
             <Select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              options={statusOptions}
+              value={creatorFilter}
+              onChange={(e) => setCreatorFilter(e.target.value)}
+              options={[
+                { value: '', label: 'Tum Olusturanlar' },
+                ...creators.map((u) => ({ value: u.id, label: u.fullName })),
+              ]}
               className="w-full sm:w-48"
+            />
+            <Select
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              options={[
+                { value: '', label: 'Tum Yillar' },
+                ...yearOptions.map((y) => ({ value: String(y), label: String(y) })),
+              ]}
+              className="w-full sm:w-32"
             />
           </div>
         </div>
@@ -337,9 +358,9 @@ export default function OrdersPage() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {/* Delete — only TASLAK STFs are deletable (server-enforced).
-                            Inline two-click confirm (no blocking dialog). */}
-                        {order.status === 'TASLAK' && (
+                        {/* Delete — management only (canDelete) + only TASLAK STFs
+                            (both server-enforced). Inline two-click confirm. */}
+                        {canDelete && order.status === 'TASLAK' && (
                           <button
                             onClick={() =>
                               confirmDeleteId === order.id

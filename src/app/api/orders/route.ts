@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || undefined;
     const status = searchParams.get('status') || undefined;
     const companyId = searchParams.get('companyId') || undefined;
+    const createdById = searchParams.get('createdById') || undefined;
+    const year = parseInt(searchParams.get('year') || '');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
 
@@ -37,6 +39,18 @@ export async function GET(request: NextRequest) {
 
     if (companyId) {
       where.companyId = companyId;
+    }
+
+    if (createdById) {
+      where.createdById = createdById;
+    }
+
+    // Year filter on the order's creation date (the "Tarih"/Yıl column basis).
+    if (Number.isFinite(year) && year > 1900) {
+      where.createdAt = {
+        gte: new Date(year, 0, 1),
+        lt: new Date(year + 1, 0, 1),
+      };
     }
 
     // Server-side sorting
