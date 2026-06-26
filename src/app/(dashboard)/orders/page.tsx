@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
   Search,
   Eye,
+  Trash2,
+  Loader2,
   ClipboardCheck,
   Calendar,
   ArrowUpDown,
@@ -76,6 +78,9 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  // Per-row inline delete confirm (only TASLAK STFs are deletable, server-enforced).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async (page = 1) => {
     setIsLoading(true);
@@ -105,6 +110,24 @@ export default function OrdersPage() {
       setIsLoading(false);
     }
   }, [search, statusFilter, companyFilter, sortField, sortDirection]);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/orders/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Siparis silinemedi');
+      }
+      setConfirmDeleteId(null);
+      await fetchOrders(pagination?.page ?? 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Siparis silinirken bir hata olustu');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -306,13 +329,42 @@ export default function OrdersPage() {
                     <td className="text-xs tabular-nums">{formatDate(order.createdAt)}</td>
                     <td className="text-xs tabular-nums">{new Date(order.formDate ?? order.createdAt).getFullYear()}</td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => router.push(`/orders/${order.id}`)}
-                        className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
-                        title="Goruntule"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => router.push(`/orders/${order.id}`)}
+                          className="p-1.5 rounded hover:bg-primary-100 text-primary-600 cursor-pointer"
+                          title="Goruntule"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {/* Delete — only TASLAK STFs are deletable (server-enforced).
+                            Inline two-click confirm (no blocking dialog). */}
+                        {order.status === 'TASLAK' && (
+                          <button
+                            onClick={() =>
+                              confirmDeleteId === order.id
+                                ? handleDelete(order.id)
+                                : setConfirmDeleteId(order.id)
+                            }
+                            onBlur={() =>
+                              setConfirmDeleteId((cur) => (cur === order.id ? null : cur))
+                            }
+                            disabled={deletingId === order.id}
+                            className={`p-1.5 rounded cursor-pointer ${
+                              confirmDeleteId === order.id
+                                ? 'bg-red-600 text-white hover:bg-red-700'
+                                : 'hover:bg-red-50 text-red-600'
+                            }`}
+                            title={confirmDeleteId === order.id ? 'Silmek için tekrar tıkla' : 'Sil'}
+                          >
+                            {deletingId === order.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
