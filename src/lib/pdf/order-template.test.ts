@@ -37,6 +37,12 @@ describe('generateOrderHtml (STF customer PDF)', () => {
   const html = generateOrderHtml(data);
   it('renders the STF header fields', () => {
     expect(html).toContain('SİPARİŞ TEYİT FORMU');
+    // Title sits at the TOP of the form (its own row under the banner),
+    // above the info box — not buried next to SİPARİŞ NO (client feedback).
+    const bodyStart = html.indexOf('<body');
+    const titleIdx = html.indexOf('SİPARİŞ TEYİT FORMU', bodyStart);
+    expect(titleIdx).toBeGreaterThan(-1);
+    expect(titleIdx).toBeLessThan(html.indexOf('FİRMA ADI / İLGİLİ KİŞİ'));
     expect(html).toContain('DURAN DOĞAN BASIM VE AMBALAJ SAN.A.Ş');
     expect(html).toContain('STF-6000');
     expect(html).toContain('316A');

@@ -116,6 +116,15 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
 
   await addBanner(wb, ws);
 
+  // Document title: full-width row under the banner (mirrors the PDF).
+  ws.mergeCells(2, 1, 2, NCOL);
+  const titleCell = ws.getCell(2, 1);
+  titleCell.value = 'SİPARİŞ TEYİT FORMU';
+  titleCell.font = { name: FONT, bold: true, size: 10 };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  for (let col = 1; col <= NCOL; col++) ws.getCell(2, col).border = thin();
+  ws.getRow(2).height = 18;
+
   const label = (cell: ExcelJS.Cell, text: string) => {
     cell.value = text; cell.font = { name: FONT, bold: true, size: 8 };
     cell.alignment = { vertical: 'middle', wrapText: true }; cell.border = thin();
@@ -125,7 +134,7 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
     cell.alignment = { vertical: 'middle', wrapText: true, indent: 1 }; cell.border = thin();
   };
 
-  // --- Header info box: rows 2..6, A:B left pair, C label, D:E value ---
+  // --- Header info box: rows 3..7, A:B left pair, C label, D:E value ---
   const teklifRef = [order.quoteNo, order.refNo].filter(Boolean).join(' / ');
   const left: [string, string][] = [
     ['FİRMA ADI / İLGİLİ KİŞİ', order.customerName || ''],
@@ -140,7 +149,7 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
     ['PROJE ADI', order.projectName || ''],
     ['SİPARİŞ NO', order.siparisNo || ''],
   ];
-  let r = 2;
+  let r = 3;
   for (let i = 0; i < 5; i++) {
     // Tall enough for the two-line Turkish labels that wrap in the label cells.
     // Layout across the 8 item columns: left label (1-2) | left value (3-5) |

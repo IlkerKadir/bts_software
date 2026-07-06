@@ -285,6 +285,9 @@ col.c4 { width: 11.5%; } col.c5 { width: 13.1%; }
 .hdr-img-cell { border: 1.2pt solid black; padding: 0; }
 .hdr-img-cell img { width:100%; height:auto; display:block; }
 
+.doc-title { border: 1.2pt solid black; padding: 4pt; vertical-align: middle; }
+.doc-title p { font-weight:bold; font-size:9pt; color:black; text-align:center; letter-spacing:1pt; }
+
 .info-label { border: 1.2pt solid black; padding: 3pt 4pt; vertical-align: middle; }
 .info-val   { border: 1.2pt solid black; padding: 3pt 4pt; vertical-align: middle; }
 
@@ -317,6 +320,11 @@ table.footer td { border: 0.75pt solid black; padding: 3pt 5pt; vertical-align: 
   <thead>
     <tr><td colspan="5" class="hdr-img-cell">${headerImgHtml}</td></tr>
 
+    <!-- Document title: full-width row under the banner (client asked it at the top) -->
+    <tr>
+      <td colspan="5" class="doc-title"><p>SİPARİŞ TEYİT FORMU</p></td>
+    </tr>
+
     <!-- Header info box: left labels/values + right labels/values -->
     <tr>
       <td class="info-label"><p class="s1">FİRMA ADI / İLGİLİ KİŞİ</p></td>
@@ -343,7 +351,7 @@ table.footer td { border: 0.75pt solid black; padding: 3pt 5pt; vertical-align: 
       <td class="info-val" colspan="2"><p class="s2">${escapeHtml(order.projectName || '')}</p></td>
     </tr>
     <tr>
-      <td class="info-label" colspan="2"><p class="s1" style="text-align:center;">SİPARİŞ TEYİT FORMU</p></td>
+      <td class="info-label" colspan="2"><p class="s1">&nbsp;</p></td>
       <td class="info-label"><p class="s1">SİPARİŞ NO</p></td>
       <td class="info-val" colspan="2"><p class="s2">${escapeHtml(order.siparisNo || '')}</p></td>
     </tr>

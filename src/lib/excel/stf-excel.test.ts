@@ -39,6 +39,7 @@ describe('generateStfExcel', () => {
     const buf = await generateStfExcel(data);
     expect(buf.length).toBeGreaterThan(1000);
     const all = await load(buf);
+    expect(all).toContain('SİPARİŞ TEYİT FORMU'); // document title row under the banner
     expect(all).toContain('DURAN DOĞAN A.Ş');
     expect(all).toContain('Serbest kalem satırı.'); // free-form row between items and footer
     expect(all).toContain('STF-6000');
