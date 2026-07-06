@@ -339,7 +339,9 @@ export function StfEditor({ stfId }: { stfId: string }) {
             onChange={(e) => setField('freeNote', e.target.value)}
           />
         </div>
-      ) : (
+      ) : editable ? (
+        // Hidden (not just disabled) when the STF is read-only: a dead
+        // "+ Not Ekle" inside the disabled fieldset reads as "not working".
         <button
           type="button"
           onClick={() => setShowFreeNote(true)}
@@ -347,7 +349,7 @@ export function StfEditor({ stfId }: { stfId: string }) {
         >
           + Not Ekle
         </button>
-      )}
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-primary-200 p-4">
         {FOOTER_FIELDS.map(([key, label]) => (
