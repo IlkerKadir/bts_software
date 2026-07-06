@@ -18,9 +18,36 @@ export function getEffectiveCostPrice(item: {
   return base;
 }
 
-interface SetChildCostItem {
+/**
+ * Item-aware effective cost: like getEffectiveCostPrice, but a CUSTOM row
+ * (serbest kalem) falls back to its listPrice when it has no costPrice.
+ *
+ * Serbest kalem rows are created without a costPrice and have no cost-editing
+ * UI — the user types a Liste Fiyatı and a katsayı marks it up to the sale
+ * price, so the liste fiyatı IS the cost basis (client feedback 30.06: liste
+ * 100 / katsayı 2 → satış 200, expected maliyet 100). Catalog rows are
+ * untouched: their cost comes from the product master or stays null.
+ */
+export function getEffectiveCostPriceForItem(item: {
+  itemType?: string | null;
   costPrice?: number | string | null | { toString(): string };
   ekMaliyetDelta?: number | string | null | { toString(): string };
+  listPrice?: number | string | null | { toString(): string };
+}): number | null {
+  const base = getEffectiveCostPrice(item);
+  if (base != null) return base;
+  if (item.itemType === 'CUSTOM' && item.listPrice != null) {
+    const list = Number(item.listPrice);
+    if (list > 0) return list;
+  }
+  return null;
+}
+
+interface SetChildCostItem {
+  itemType?: string | null;
+  costPrice?: number | string | null | { toString(): string };
+  ekMaliyetDelta?: number | string | null | { toString(): string };
+  listPrice?: number | string | null | { toString(): string };
   quantity?: number | string | null;
 }
 
@@ -42,7 +69,7 @@ export function getSetEffectiveCostPrice(children: SetChildCostItem[]): number |
   let sum = 0;
   let anyCost = false;
   for (const child of children) {
-    const cost = getEffectiveCostPrice(child);
+    const cost = getEffectiveCostPriceForItem(child);
     if (cost == null) continue;
     sum += cost * (Number(child.quantity) || 0);
     anyCost = true;

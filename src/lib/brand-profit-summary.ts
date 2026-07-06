@@ -17,7 +17,7 @@
  * Grand totals (revenue, cost, profit) are unchanged by (1): only the
  * per-brand split moves, never the sums.
  */
-import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { getEffectiveCostPriceForItem } from '@/lib/ek-maliyet';
 
 export interface ProfitSummaryItem {
   id: string;
@@ -28,6 +28,7 @@ export interface ProfitSummaryItem {
   quantity?: number | string | null;
   unitPrice?: number | string | null;
   discountPct?: number | string | null;
+  listPrice?: number | string | null;
   costPrice?: number | string | null;
   ekMaliyetDelta?: number | string | null;
   priceLabel?: string | null;
@@ -148,9 +149,15 @@ export function computeManagerProfitSummary(
 
   const rowCost = (item: ProfitSummaryItem): number | null => {
     const qty = num(item.quantity);
-    const effectiveCost = getEffectiveCostPrice(item);
+    // CUSTOM rows fall back to listPrice as their cost (serbest kalem).
+    const effectiveCost = getEffectiveCostPriceForItem(item);
     if (effectiveCost == null) return null;
-    return effectiveCost * qty;
+    // SET children store per-ONE-set quantities, but revenue is computed from
+    // the parent's total qty (qty × unitPrice) — scale the child cost by the
+    // parent SET's quantity so cost and revenue cover the same unit count.
+    const parent = item.parentItemId ? itemsById.get(item.parentItemId) : undefined;
+    const setQty = parent && parent.itemType === 'SET' ? num(parent.quantity) || 1 : 1;
+    return effectiveCost * qty * setQty;
   };
 
   const grouped: Record<string, { revenue: number; cost: number; count: number }> = {};

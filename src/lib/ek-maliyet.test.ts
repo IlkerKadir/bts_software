@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { getEffectiveCostPrice, getSetEffectiveCostPrice } from './ek-maliyet';
+import {
+  getEffectiveCostPrice,
+  getEffectiveCostPriceForItem,
+  getSetEffectiveCostPrice,
+} from './ek-maliyet';
 
 describe('getEffectiveCostPrice', () => {
   it('returns base cost when no delta', () => {
@@ -13,7 +17,31 @@ describe('getEffectiveCostPrice', () => {
   });
 });
 
+describe('getEffectiveCostPriceForItem', () => {
+  it('CUSTOM (serbest kalem) without costPrice falls back to listPrice', () => {
+    expect(getEffectiveCostPriceForItem({ itemType: 'CUSTOM', costPrice: null, listPrice: 100 })).toBe(100);
+  });
+  it('CUSTOM with an explicit costPrice keeps it', () => {
+    expect(getEffectiveCostPriceForItem({ itemType: 'CUSTOM', costPrice: 80, listPrice: 100 })).toBe(80);
+  });
+  it('CUSTOM with listPrice 0 stays null (no fake 0-cost)', () => {
+    expect(getEffectiveCostPriceForItem({ itemType: 'CUSTOM', costPrice: null, listPrice: 0 })).toBeNull();
+  });
+  it('PRODUCT rows never fall back to listPrice', () => {
+    expect(getEffectiveCostPriceForItem({ itemType: 'PRODUCT', costPrice: null, listPrice: 100 })).toBeNull();
+  });
+});
+
 describe('getSetEffectiveCostPrice', () => {
+  it('a CUSTOM child without costPrice contributes its listPrice', () => {
+    expect(
+      getSetEffectiveCostPrice([
+        { itemType: 'CUSTOM', costPrice: null, listPrice: 50, quantity: 2 }, // 100
+        { costPrice: 10, quantity: 1 },                                      // 10
+      ])
+    ).toBe(110);
+  });
+
   it('sums children effective cost × quantity (per one set)', () => {
     // child A: 285.05 × 1, child B: 498.56 × 4 = 285.05 + 1994.24 = 2279.29
     expect(

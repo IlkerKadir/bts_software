@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatPrice, formatNumber } from '@/lib/utils/format';
-import { getEffectiveCostPrice, getSetEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { getEffectiveCostPriceForItem, getSetEffectiveCostPrice } from '@/lib/ek-maliyet';
 import { roundUnitPrice, computeRowTotal } from '@/lib/quote-rounding';
 
 // ---------------------------------------------------------------------------
@@ -461,7 +461,7 @@ export function QuoteItemRow({
   const effectiveCostPriceNum =
     item.itemType === 'SET' && !item.parentItemId && item.subRows && item.subRows.length > 0
       ? getSetEffectiveCostPrice(item.subRows)
-      : getEffectiveCostPrice(item);
+      : getEffectiveCostPriceForItem(item); // CUSTOM rows: listPrice fallback
 
   // Margin helpers
   const unitPriceNum = Number(item.unitPrice) || 0;

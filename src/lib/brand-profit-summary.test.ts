@@ -75,6 +75,39 @@ describe('computeManagerProfitSummary', () => {
     expect(r.brands[0].totalCost).toBe(450);
   });
 
+  it('scales child costs by the parent SET quantity (qty>1 sets)', () => {
+    // Revenue side is set.qty × unitPrice; child quantities are per ONE set,
+    // so cost must scale by set.qty too or margins inflate.
+    const items: ProfitSummaryItem[] = [
+      item({ id: 's1', itemType: 'SET', brand: 'BTS', description: 'Set', quantity: 2, unitPrice: 1000 }),
+      item({ id: 'c1', itemType: 'PRODUCT', brand: 'BTS', parentItemId: 's1', quantity: 3, unitPrice: 300, costPrice: 100 }),
+    ];
+    const r = computeManagerProfitSummary(items, items, EUR);
+    expect(r.sets[0].totalRevenue).toBe(2000);
+    expect(r.sets[0].totalCost).toBe(600); // 100 × 3 (per set) × 2 sets
+    expect(r.brands[0].totalCost).toBe(600);
+  });
+
+  it('uses listPrice as the cost for CUSTOM (serbest kalem) rows without a costPrice', () => {
+    // Client 30.06: serbest kalem liste 100 / katsayı 2 → satış 200; maliyet
+    // must show 100, not blank/0.
+    const items: ProfitSummaryItem[] = [
+      item({ id: 'f1', itemType: 'CUSTOM', quantity: 1, unitPrice: 200, listPrice: 100 }),
+    ];
+    const r = computeManagerProfitSummary(items, items, EUR);
+    expect(r.brands[0]).toEqual({
+      brand: 'Diger', itemCount: 1, totalRevenue: 200, totalCost: 100, profit: 100, margin: 50,
+    });
+  });
+
+  it('a CUSTOM row with an explicit costPrice keeps it (no listPrice override)', () => {
+    const items: ProfitSummaryItem[] = [
+      item({ id: 'f1', itemType: 'CUSTOM', quantity: 1, unitPrice: 200, listPrice: 100, costPrice: 80 }),
+    ];
+    const r = computeManagerProfitSummary(items, items, EUR);
+    expect(r.brands[0].totalCost).toBe(80);
+  });
+
   it('keeps grand totals identical regardless of attribution', () => {
     const items: ProfitSummaryItem[] = [
       item({ id: 's1', itemType: 'SET', brand: 'ADVANTECH', quantity: 1, unitPrice: 1000 }),

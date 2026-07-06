@@ -18,7 +18,7 @@ import {
   type ColumnVisibility,
 } from './QuoteItemRow';
 import { BrandProfitSummary } from './BrandProfitSummary';
-import { getEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { getEffectiveCostPriceForItem } from '@/lib/ek-maliyet';
 import { calculateSectionBreakdown, calculateGrandTotalAtIndex, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 import { useSettings } from '@/components/settings/SettingsProvider';
 import { expandTurkishVariants } from '@/lib/search-helpers';
@@ -840,9 +840,11 @@ export function QuoteItemsTable({
   const profitSummary = useMemo(() => {
     let totalCost = 0;
     const setCurrencyByParentId = new Map<string, string>();
+    const setQtyByParentId = new Map<string, number>();
     for (const it of items) {
-      if (it.itemType === 'SET' && !it.parentItemId && it.currency) {
-        setCurrencyByParentId.set(it.id, it.currency);
+      if (it.itemType === 'SET' && !it.parentItemId) {
+        if (it.currency) setCurrencyByParentId.set(it.id, it.currency);
+        setQtyByParentId.set(it.id, Number(it.quantity) || 1);
       }
     }
     for (const item of items) {
@@ -850,11 +852,15 @@ export function QuoteItemsTable({
       if (item.priceLabel) continue;
       if (item.itemType === 'SET' && !item.parentItemId) continue;
       const qty = Number(item.quantity) || 0;
-      const effectiveCost = getEffectiveCostPrice(item);
+      // CUSTOM rows fall back to listPrice as their cost (serbest kalem).
+      const effectiveCost = getEffectiveCostPriceForItem(item);
       if (effectiveCost == null) continue;
       const parentSetCur = item.parentItemId ? setCurrencyByParentId.get(item.parentItemId) : undefined;
       const effCurrency = item.currency || parentSetCur || currency;
-      let contribution = effectiveCost * qty;
+      // SET children store per-ONE-set quantities — scale by the parent SET's
+      // qty so cost covers all sold sets (revenue side is qty × unitPrice).
+      const setQty = item.parentItemId ? setQtyByParentId.get(item.parentItemId) ?? 1 : 1;
+      let contribution = effectiveCost * qty * setQty;
       if (effCurrency === 'TRY' && currency !== 'TRY' && baseForeignRate > 0) {
         contribution = contribution / baseForeignRate;
       }

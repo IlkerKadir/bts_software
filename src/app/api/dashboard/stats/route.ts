@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
-import { getEffectiveCostPrice } from '@/lib/quote-calculations';
+import { getEffectiveCostPriceForItem } from '@/lib/ek-maliyet';
 
 export async function GET() {
   try {
@@ -53,9 +53,16 @@ export async function GET() {
         },
         include: {
           items: {
-            where: { itemType: 'PRODUCT' },
+            // CUSTOM (serbest kalem) rows carry cost via their listPrice
+            // fallback; SET parents are fetched only for their quantity —
+            // their cost lives in the children.
+            where: { itemType: { in: ['PRODUCT', 'CUSTOM', 'SET'] } },
             select: {
+              id: true,
+              itemType: true,
+              parentItemId: true,
               totalPrice: true,
+              listPrice: true,
               costPrice: true,
               ekMaliyetDelta: true,
               quantity: true,
@@ -71,11 +78,20 @@ export async function GET() {
       for (const quote of sentThisMonth) {
         // Revenue = subtotal - discount (pre-VAT, post-discount)
         totalRevenue += Number(quote.subtotal) - Number(quote.discountTotal);
+        // SET children store per-ONE-set quantities — scale by parent qty.
+        const setQtyById = new Map<string, number>();
         for (const item of quote.items) {
-          // Include ek maliyet delta in effective cost
-          const effectiveCost = getEffectiveCostPrice(item);
+          if (item.itemType === 'SET' && !item.parentItemId) {
+            setQtyById.set(item.id, Number(item.quantity) || 1);
+          }
+        }
+        for (const item of quote.items) {
+          if (item.itemType === 'SET' && !item.parentItemId) continue; // cost is in children
+          // Include ek maliyet delta; CUSTOM rows fall back to listPrice.
+          const effectiveCost = getEffectiveCostPriceForItem(item);
           if (effectiveCost != null) {
-            totalCost += effectiveCost * Number(item.quantity);
+            const setQty = item.parentItemId ? setQtyById.get(item.parentItemId) ?? 1 : 1;
+            totalCost += effectiveCost * Number(item.quantity) * setQty;
           }
         }
       }
