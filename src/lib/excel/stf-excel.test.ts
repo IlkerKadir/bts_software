@@ -57,6 +57,22 @@ describe('generateStfExcel', () => {
     expect(all).toContain('İLKER ÇETİN');
   });
 
+  it('writes Miktar as a numeric cell with the unit in its own Birim column', async () => {
+    const buf = await generateStfExcel(data);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as ArrayBuffer);
+    const ws = wb.worksheets[0];
+    let checked = false;
+    ws.eachRow((row) => {
+      if (row.getCell(5).value === 'Fyreye MKII Dedektör') {
+        expect(row.getCell(6).value).toBe(1);      // Miktar: number, not "1 Ad." text
+        expect(row.getCell(7).value).toBe('Ad.');  // Birim: own column
+        checked = true;
+      }
+    });
+    expect(checked).toBe(true);
+  });
+
   it('excludes SET children from the section subtotal (parent already rolled up)', async () => {
     const buf = await generateStfExcel(data);
     const wb = new ExcelJS.Workbook();

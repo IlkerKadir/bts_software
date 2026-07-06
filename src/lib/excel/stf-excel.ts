@@ -23,8 +23,10 @@ export interface StfExcelData { order: StfExcelHeader; items: StfExcelItem[]; }
 const FONT = 'Arial';
 // Internal Excel has extra warehouse/purchasing columns (Kod/Marka/Model) that
 // the customer PDF does NOT show (owner request 2026-06-26).
-const COLS = [8, 16, 18, 18, 50, 10, 15, 15]; // Poz / Kod / Marka / Model / Ürün Adı / Miktar / Birim Fiyat / Toplam
-const NCOL = COLS.length; // 8
+// Miktar is a real numeric cell (client asked to compute on quantities), so
+// the unit lives in its own Birim column instead of a combined "5 Ad." string.
+const COLS = [8, 16, 18, 18, 50, 8, 9, 15, 15]; // Poz / Kod / Marka / Model / Ürün Adı / Miktar / Birim / Birim Fiyat / Toplam
+const NCOL = COLS.length; // 9
 const CURRENCY_SYMBOLS: Record<string, string> = { EUR: '€', USD: '$', GBP: '£', TRY: '₺' };
 // Full names used in the subtotal labels, matching order-template.ts so the
 // Excel and customer PDF read identically (e.g. "GENEL TOPLAM (EURO)").
@@ -152,21 +154,22 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   let r = 3;
   for (let i = 0; i < 5; i++) {
     // Tall enough for the two-line Turkish labels that wrap in the label cells.
-    // Layout across the 8 item columns: left label (1-2) | left value (3-5) |
-    // right label (6) | right value (7-8).
+    // Layout across the 9 item columns: left label (1-2) | left value (3-5) |
+    // right label (6-7) | right value (8-9).
     ws.getRow(r).height = 30;
     ws.mergeCells(r, 1, r, 2);
     ws.mergeCells(r, 3, r, 5);
-    ws.mergeCells(r, 7, r, 8);
+    ws.mergeCells(r, 6, r, 7);
+    ws.mergeCells(r, 8, r, 9);
     if (i < 4) { label(ws.getCell(r, 1), left[i][0]); val(ws.getCell(r, 3), left[i][1]); }
-    label(ws.getCell(r, 6), right[i][0]); val(ws.getCell(r, 7), right[i][1]);
+    label(ws.getCell(r, 6), right[i][0]); val(ws.getCell(r, 8), right[i][1]);
     for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
     r++;
   }
   r++; // blank spacer
 
   // --- Column header row ---
-  const headers = ['Poz No', 'Kod', 'Marka', 'Model', 'Ürün Adı', 'Miktar', 'Birim Fiyat', 'Toplam Fiyat'];
+  const headers = ['Poz No', 'Kod', 'Marka', 'Model', 'Ürün Adı', 'Miktar', 'Birim', 'Birim Fiyat', 'Toplam Fiyat'];
   const hr = ws.getRow(r);
   headers.forEach((h, i) => {
     const c = ws.getCell(r, i + 1);
@@ -229,8 +232,8 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       for (let col = 1; col <= NCOL; col++) ws.getCell(r, col).border = thin();
       r++; continue;
     }
-    // PRODUCT / CUSTOM / SET (+ children show "*"). 8 cols: Poz, Kod, Marka,
-    // Model, Ürün Adı, Miktar, Birim Fiyat, Toplam Fiyat.
+    // PRODUCT / CUSTOM / SET (+ children show "*"). 9 cols: Poz, Kod, Marka,
+    // Model, Ürün Adı, Miktar (numeric), Birim, Birim Fiyat, Toplam Fiyat.
     const poz = it.parentItemId ? '*' : (it.pozNo || '');
     const cells: (string | number)[] = [
       poz,                                            // 0 Poz No
@@ -238,19 +241,20 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       it.brand || '',                                 // 2 Marka
       it.model || '',                                 // 3 Model
       it.description,                                 // 4 Ürün Adı
-      `${it.quantity} ${unitAbbr(it.unit)}`,          // 5 Miktar
-      it.priceLabel ? it.priceLabel : it.unitPrice,   // 6 Birim Fiyat
-      it.priceLabel ? '' : it.totalPrice,             // 7 Toplam Fiyat
+      Number(it.quantity),                            // 5 Miktar — numeric cell
+      unitAbbr(it.unit),                              // 6 Birim
+      it.priceLabel ? it.priceLabel : it.unitPrice,   // 7 Birim Fiyat
+      it.priceLabel ? '' : it.totalPrice,             // 8 Toplam Fiyat
     ];
     cells.forEach((v, i) => {
       const c = ws.getCell(r, i + 1);
       c.value = v as ExcelJS.CellValue;
       c.font = { name: FONT, size: 8 };
       c.border = thin();
-      if (i === 0) c.alignment = { horizontal: 'center', vertical: 'top' };
+      if (i === 0 || i === 6) c.alignment = { horizontal: 'center', vertical: 'top' }; // Poz / Birim
       else if (i <= 4) c.alignment = { vertical: 'top', wrapText: true }; // Kod/Marka/Model/Ürün Adı left
-      else c.alignment = { horizontal: 'right', vertical: 'top' };        // Miktar/Birim/Toplam right
-      if ((i === 6 || i === 7) && typeof v === 'number') c.numFmt = moneyFmt; // Birim Fiyat / Toplam
+      else c.alignment = { horizontal: 'right', vertical: 'top' };        // Miktar/fiyatlar right
+      if ((i === 7 || i === 8) && typeof v === 'number') c.numFmt = moneyFmt; // Birim Fiyat / Toplam
     });
     r++;
   }
