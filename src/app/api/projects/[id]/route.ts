@@ -52,7 +52,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const hasOwnQuote = project.quotes.some(q => q.createdById === user.id);
       const isEveryone = project.visibility === 'EVERYONE';
       const isSpecific = project.visibility === 'SPECIFIC_USERS' && project.visibleTo.some(a => a.userId === user.id);
-      if (!isCreator && !hasOwnQuote && !isEveryone && !isSpecific) {
+      const isRoleMatch = project.visibility === 'ROLE' && project.visibleToRoleId === user.roleId;
+      if (!isCreator && !hasOwnQuote && !isEveryone && !isSpecific && !isRoleMatch) {
         return NextResponse.json({ error: 'Bu projeyi görüntüleme yetkiniz bulunmamaktadır' }, { status: 403 });
       }
     }

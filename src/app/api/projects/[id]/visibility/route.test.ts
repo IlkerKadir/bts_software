@@ -9,6 +9,9 @@ vi.mock('@/lib/db', () => ({
     project: {
       findUnique: vi.fn(),
     },
+    role: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 

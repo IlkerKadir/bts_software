@@ -21,6 +21,7 @@ vi.mock('@/lib/session', () => ({
 const makeUser = (overrides: Partial<{ canApprove: boolean; canManageUsers: boolean }> = {}) => ({
   id: 'user-sales-1',
   fullName: 'Sales Rep',
+  roleId: 'role-sales',
   role: {
     id: 'role-sales',
     name: 'Sales',
@@ -61,6 +62,27 @@ describe('POST /api/projects', () => {
         data: expect.objectContaining({
           name: 'Test Project',
           createdById: 'user-sales-1',
+        }),
+      }),
+    );
+  });
+
+  it("defaults visibility to the creator's role (client 30.06)", async () => {
+    vi.mocked(getSession).mockResolvedValue(makeUser() as any);
+    vi.mocked(db.project.create).mockResolvedValue({ id: 'proj-1' } as any);
+
+    const req = new NextRequest('http://localhost/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Rol Testi', status: 'TEKLIF_ASAMASINDA' }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+
+    expect(db.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          visibility: 'ROLE',
+          visibleToRoleId: 'role-sales',
         }),
       }),
     );

@@ -39,6 +39,15 @@ describe('canAccessOrder', () => {
   it('denies a stranger when there is no quote relation', () => {
     expect(canAccessOrder({ createdById: 'creator', quote: null }, 'stranger', false)).toBe(false);
   });
+
+  it('grants role members access when the project visibility is ROLE', () => {
+    const o = order({
+      quote: { createdById: 'q', project: { visibility: 'ROLE', visibleToRoleId: 'role-sales' } },
+    });
+    expect(canAccessOrder(o, 'stranger', false, 'role-sales')).toBe(true);
+    expect(canAccessOrder(o, 'stranger', false, 'role-other')).toBe(false);
+    expect(canAccessOrder(o, 'stranger', false)).toBe(false); // no roleId passed
+  });
 });
 
 describe('orderVisibilityWhere', () => {
@@ -64,6 +73,13 @@ describe('orderVisibilityWhere', () => {
           },
         },
       ],
+    });
+  });
+
+  it('adds the ROLE branch when the user carries a roleId', () => {
+    const where = orderVisibilityWhere({ ...regular, roleId: 'role-sales' });
+    expect(where.OR).toContainEqual({
+      quote: { project: { visibility: 'ROLE', visibleToRoleId: 'role-sales' } },
     });
   });
 });

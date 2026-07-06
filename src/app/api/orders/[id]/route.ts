@@ -16,7 +16,7 @@ const orderAccessInclude = {
   quote: {
     select: {
       createdById: true,
-      project: { select: { visibility: true, visibleTo: { select: { userId: true } } } },
+      project: { select: { visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
     },
   },
 } as const;
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         quote: {
           include: {
             company: true,
-            project: { select: { id: true, name: true, visibility: true, visibleTo: { select: { userId: true } } } },
+            project: { select: { id: true, name: true, visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
             items: {
               where: { parentItemId: null },
               orderBy: { sortOrder: 'asc' },
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canAccessOrder(order, user.id, isManager)) {
+    if (!canAccessOrder(order, user.id, isManager, user.roleId)) {
       return NextResponse.json({ error: 'Bu siparişe erişim yetkiniz yok' }, { status: 403 });
     }
 
@@ -104,7 +104,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canAccessOrder(existingOrder, user.id, isManager)) {
+    if (!canAccessOrder(existingOrder, user.id, isManager, user.roleId)) {
       return NextResponse.json({ error: 'Bu siparişe erişim yetkiniz yok' }, { status: 403 });
     }
 
@@ -180,7 +180,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!existing) return NextResponse.json({ error: 'STF bulunamadı' }, { status: 404 });
 
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canAccessOrder(existing, user.id, isManager)) {
+    if (!canAccessOrder(existing, user.id, isManager, user.roleId)) {
       return NextResponse.json({ error: 'Bu STF’yi düzenleme yetkiniz yok' }, { status: 403 });
     }
     // Freeze sent/terminal STFs — status changes still go through PATCH.

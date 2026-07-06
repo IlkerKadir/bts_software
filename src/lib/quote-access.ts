@@ -9,6 +9,7 @@ export interface QuoteAccessShape {
   createdById: string;
   project?: {
     visibility: string;
+    visibleToRoleId?: string | null;
     visibleTo?: { userId: string }[];
   } | null;
 }
@@ -16,7 +17,9 @@ export interface QuoteAccessShape {
 export function canUserAccessQuote(
   userId: string,
   isManager: boolean,
-  quote: QuoteAccessShape
+  quote: QuoteAccessShape,
+  /** The user's role id — enables the ROLE visibility mode (client 30.06). */
+  userRoleId?: string
 ): boolean {
   if (isManager) return true;
   if (quote.createdById === userId) return true;
@@ -25,6 +28,13 @@ export function canUserAccessQuote(
     if (
       quote.project.visibility === 'SPECIFIC_USERS' &&
       quote.project.visibleTo?.some((v) => v.userId === userId)
+    ) {
+      return true;
+    }
+    if (
+      quote.project.visibility === 'ROLE' &&
+      userRoleId != null &&
+      quote.project.visibleToRoleId === userRoleId
     ) {
       return true;
     }

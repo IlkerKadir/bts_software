@@ -5,30 +5,12 @@ import { Prisma } from '@prisma/client';
 import { recalculateAndPersistQuoteTotals } from '@/lib/quote-calculations';
 import { z } from 'zod';
 import { quoteUpdateSchema } from '@/lib/validations/quote';
+// Shared visibility rule (incl. the ROLE mode) — the same boundary as the
+// tracking/interactions routes and the STF access checks.
+import { canUserAccessQuote } from '@/lib/quote-access';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
-}
-
-/** Check if a user can access a quote based on project visibility rules */
-async function canUserAccessQuote(
-  userId: string,
-  isManager: boolean,
-  quote: { createdById: string; project?: { visibility: string; visibleTo?: { userId: string }[] } | null }
-): Promise<boolean> {
-  // Managers see everything
-  if (isManager) return true;
-  // Creator always has access
-  if (quote.createdById === userId) return true;
-  // Project-based visibility
-  if (quote.project) {
-    if (quote.project.visibility === 'EVERYONE') return true;
-    if (quote.project.visibility === 'SPECIFIC_USERS') {
-      const hasAccess = quote.project.visibleTo?.some(a => a.userId === userId);
-      if (hasAccess) return true;
-    }
-  }
-  return false;
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -86,7 +68,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Visibility check: enforce project-based access rules
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!await canUserAccessQuote(user.id, isManager, quote)) {
+    if (!canUserAccessQuote(user.id, isManager, quote, user.roleId)) {
       return NextResponse.json({ error: 'Bu teklifi görüntüleme yetkiniz bulunmamaktadır' }, { status: 403 });
     }
 
@@ -180,7 +162,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Visibility check
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!await canUserAccessQuote(user.id, isManager, existingQuote)) {
+    if (!canUserAccessQuote(user.id, isManager, existingQuote, user.roleId)) {
       return NextResponse.json({ error: 'Bu teklifi düzenleme yetkiniz bulunmamaktadır' }, { status: 403 });
     }
 

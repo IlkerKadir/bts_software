@@ -13,7 +13,7 @@ const QUOTE_ACCESS_SELECT = {
   id: true,
   quoteNumber: true,
   createdById: true,
-  project: { select: { visibility: true, visibleTo: { select: { userId: true } } } },
+  project: { select: { visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
 } as const;
 
 /** List a quote's interaction log (newest first). */
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canUserAccessQuote(user.id, isManager, quote)) {
+    if (!canUserAccessQuote(user.id, isManager, quote, user.roleId)) {
       return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
     }
 
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canUserAccessQuote(user.id, isManager, quote)) {
+    if (!canUserAccessQuote(user.id, isManager, quote, user.roleId)) {
       return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
     }
 

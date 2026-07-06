@@ -87,6 +87,8 @@ export async function GET(request: NextRequest) {
         { project: { visibility: 'EVERYONE' } },
         // See quotes in projects where user has explicit access
         { project: { visibility: 'SPECIFIC_USERS', visibleTo: { some: { userId: user.id } } } },
+        // See quotes in projects visible to the user's role (client 30.06)
+        { project: { visibility: 'ROLE', visibleToRoleId: user.roleId } },
       ];
 
       // If there's already an OR from search, we need to AND them together

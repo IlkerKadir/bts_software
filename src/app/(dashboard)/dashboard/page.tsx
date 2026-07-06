@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 
 interface DashboardUser {
   id: string;
+  roleId?: string; // drives ROLE visibility matching in quoteVisibilityWhere
   role: { canApprove: boolean; canManageUsers: boolean };
 }
 

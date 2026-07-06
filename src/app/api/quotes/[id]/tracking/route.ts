@@ -31,7 +31,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         id: true,
         status: true,
         createdById: true,
-        project: { select: { visibility: true, visibleTo: { select: { userId: true } } } },
+        project: { select: { visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
       },
     });
     if (!existing) {
@@ -39,7 +39,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canUserAccessQuote(user.id, isManager, existing)) {
+    if (!canUserAccessQuote(user.id, isManager, existing, user.roleId)) {
       return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
     }
 

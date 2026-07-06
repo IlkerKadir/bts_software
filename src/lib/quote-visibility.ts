@@ -17,6 +17,10 @@ import { Prisma } from '@prisma/client';
 
 interface UserLike {
   id: string;
+  /** The user's role id — drives the ROLE visibility mode. Optional so
+   *  pre-existing callers that only carry the permission flags keep working
+   *  (they simply never match ROLE-visible projects). */
+  roleId?: string;
   role: {
     canApprove: boolean;
     canManageUsers: boolean;
@@ -47,6 +51,11 @@ export function quoteVisibilityWhere(user: UserLike): Prisma.QuoteWhereInput {
           visibleTo: { some: { userId: user.id } },
         },
       },
+      // ROLE mode (client 30.06): everyone holding the project's
+      // visibleToRole (+ managers, handled above) sees it.
+      ...(user.roleId
+        ? [{ project: { visibility: 'ROLE' as const, visibleToRoleId: user.roleId } }]
+        : []),
     ],
   };
 }

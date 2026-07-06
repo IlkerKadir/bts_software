@@ -11,14 +11,20 @@ export interface OrderForAccess {
   createdById: string;
   quote?: {
     createdById: string;
-    project?: { visibility: string; visibleTo?: { userId: string }[] } | null;
+    project?: {
+      visibility: string;
+      visibleToRoleId?: string | null;
+      visibleTo?: { userId: string }[];
+    } | null;
   } | null;
 }
 
 export function canAccessOrder(
   order: OrderForAccess,
   userId: string,
-  isManager: boolean
+  isManager: boolean,
+  /** The user's role id — enables the ROLE visibility mode (client 30.06). */
+  userRoleId?: string
 ): boolean {
   // Managers (canApprove || canManageUsers) see everything.
   if (isManager) return true;
@@ -33,6 +39,9 @@ export function canAccessOrder(
       if (quote.project.visibility === 'SPECIFIC_USERS') {
         if (quote.project.visibleTo?.some((a) => a.userId === userId)) return true;
       }
+      if (quote.project.visibility === 'ROLE') {
+        if (userRoleId && quote.project.visibleToRoleId === userRoleId) return true;
+      }
     }
   }
   return false;
@@ -45,6 +54,7 @@ export function canAccessOrder(
  */
 export function orderVisibilityWhere(user: {
   id: string;
+  roleId?: string;
   role: { canApprove: boolean; canManageUsers: boolean };
 }): Prisma.OrderConfirmationWhereInput {
   if (user.role.canApprove || user.role.canManageUsers) {
@@ -63,6 +73,9 @@ export function orderVisibilityWhere(user: {
           },
         },
       },
+      ...(user.roleId
+        ? [{ quote: { project: { visibility: 'ROLE' as const, visibleToRoleId: user.roleId } } }]
+        : []),
     ],
   };
 }

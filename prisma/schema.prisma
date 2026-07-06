@@ -33,6 +33,7 @@ model Role {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   users              User[]
+  visibleProjects    Project[] @relation("ProjectVisibleToRole")
 }
 
 model User {
@@ -112,6 +113,8 @@ enum ProjectVisibility {
   CREATOR_ONLY
   SPECIFIC_USERS
   EVERYONE
+  /// Everyone holding `visibleToRole` (+ managers) sees the project.
+  ROLE
 }
 
 model Project {
@@ -124,6 +127,9 @@ model Project {
   createdBy      User?             @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   status         ProjectStatus     @default(TEKLIF_ASAMASINDA)
   visibility     ProjectVisibility @default(EVERYONE)
+  /// Set when visibility == ROLE: the role whose members see the project.
+  visibleToRoleId String?
+  visibleToRole   Role?            @relation("ProjectVisibleToRole", fields: [visibleToRoleId], references: [id], onDelete: SetNull)
   estimatedStart DateTime?
   estimatedEnd   DateTime?
   notes          String?
@@ -136,6 +142,7 @@ model Project {
   visibleTo      ProjectUserAccess[]
 
   @@index([createdById])
+  @@index([visibleToRoleId])
 }
 
 model ProjectDocument {

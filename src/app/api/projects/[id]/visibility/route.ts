@@ -8,8 +8,9 @@ interface RouteParams {
 }
 
 const visibilityUpdateSchema = z.object({
-  visibility: z.enum(['CREATOR_ONLY', 'SPECIFIC_USERS', 'EVERYONE']),
+  visibility: z.enum(['CREATOR_ONLY', 'SPECIFIC_USERS', 'EVERYONE', 'ROLE']),
   userIds: z.array(z.string()).optional(),
+  roleId: z.string().optional(),
 });
 
 /**
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         visibility: true,
+        visibleToRole: { select: { id: true, name: true } },
         createdBy: {
           select: {
             id: true,
@@ -64,10 +66,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Proje bulunamadı' }, { status: 404 });
     }
 
+    // All roles for the ROLE-mode picker (this route is manager-only).
+    const roles = await db.role.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+
     return NextResponse.json({
       projectId: project.id,
       projectName: project.name,
       visibility: project.visibility,
+      role: project.visibleToRole ?? null,
+      roles,
       createdBy: project.createdBy ?? null,
       users: project.visibleTo.map((access) => ({
         id: access.user.id,
@@ -116,12 +126,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const { visibility, userIds } = validation.data;
+    const { visibility, userIds, roleId } = validation.data;
 
     // Check that the project exists
     const project = await db.project.findUnique({ where: { id } });
     if (!project) {
       return NextResponse.json({ error: 'Proje bulunamadı' }, { status: 404 });
+    }
+
+    // If ROLE, validate the role exists
+    if (visibility === 'ROLE') {
+      if (!roleId) {
+        return NextResponse.json(
+          { error: 'Rol bazlı görünürlük için bir rol seçilmelidir' },
+          { status: 400 }
+        );
+      }
+      const role = await db.role.findUnique({ where: { id: roleId }, select: { id: true } });
+      if (!role) {
+        return NextResponse.json({ error: 'Geçersiz rol' }, { status: 400 });
+      }
     }
 
     // If SPECIFIC_USERS, validate that userIds are provided
@@ -150,10 +174,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Update visibility and user access in a transaction
     await db.$transaction(async (tx) => {
-      // Update the project visibility
+      // Update the project visibility (+ the role for ROLE mode)
       await tx.project.update({
         where: { id },
-        data: { visibility },
+        data: {
+          visibility,
+          visibleToRoleId: visibility === 'ROLE' ? roleId : null,
+        },
       });
 
       // Remove all existing access entries for this project
@@ -179,6 +206,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         visibility: true,
+        visibleToRole: { select: { id: true, name: true } },
         createdBy: {
           select: {
             id: true,
@@ -204,6 +232,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       projectId: updatedProject!.id,
       projectName: updatedProject!.name,
       visibility: updatedProject!.visibility,
+      role: updatedProject!.visibleToRole ?? null,
       createdBy: updatedProject!.createdBy ?? null,
       users: updatedProject!.visibleTo.map((access) => ({
         id: access.user.id,

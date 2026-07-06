@@ -58,6 +58,8 @@ export async function GET(request: NextRequest) {
         { visibility: 'EVERYONE' },
         // Projects where user has explicit access
         { visibility: 'SPECIFIC_USERS', visibleTo: { some: { userId: user.id } } },
+        // Projects visible to the user's role (client 30.06)
+        { visibility: 'ROLE', visibleToRoleId: user.roleId },
       ];
       if (where.OR) {
         const searchOR = where.OR;
@@ -113,6 +115,10 @@ export async function POST(request: NextRequest) {
         status: validatedData.status as any,
         clientId: validatedData.clientId || null,
         createdById: user.id,
+        // Default visibility (client 30.06): the creator's role + managers.
+        // Adjustable afterwards from the project's Görünürlük panel.
+        visibility: 'ROLE',
+        visibleToRoleId: user.roleId,
         estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
         estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
         notes: validatedData.notes || null,

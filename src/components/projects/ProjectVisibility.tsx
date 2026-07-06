@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, Users, Lock, Globe, Check } from 'lucide-react';
+import { Eye, Users, Lock, Globe, Check, Shield } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, Spinner } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
@@ -16,11 +16,12 @@ interface Props {
   projectId: string;
 }
 
-type VisibilityMode = 'CREATOR_ONLY' | 'SPECIFIC_USERS' | 'EVERYONE';
+type VisibilityMode = 'CREATOR_ONLY' | 'SPECIFIC_USERS' | 'EVERYONE' | 'ROLE';
 
 const VISIBILITY_OPTIONS: { value: VisibilityMode; label: string; description: string; icon: typeof Lock }[] = [
   { value: 'CREATOR_ONLY', label: 'Sadece Oluşturan', description: 'Yalnızca teklifi oluşturan ve yöneticiler görebilir', icon: Lock },
   { value: 'SPECIFIC_USERS', label: 'Belirli Kullanıcılar', description: 'Seçilen kullanıcılar ve yöneticiler görebilir', icon: Users },
+  { value: 'ROLE', label: 'Rol Bazlı', description: 'Seçilen roldeki tüm kullanıcılar ve yöneticiler görebilir', icon: Shield },
   { value: 'EVERYONE', label: 'Herkes', description: 'Tüm kullanıcılar görebilir', icon: Globe },
 ];
 
@@ -35,6 +36,8 @@ export function ProjectVisibility({ projectId }: Props) {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [currentUsers, setCurrentUsers] = useState<VisibilityUser[]>([]);
   const [allUsers, setAllUsers] = useState<{ id: string; fullName: string; username: string }[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
   const [createdBy, setCreatedBy] = useState<VisibilityUser | null>(null);
 
   // Check if user is a manager and load visibility data
@@ -63,6 +66,8 @@ export function ProjectVisibility({ projectId }: Props) {
         if (visRes.ok) {
           const visData = await visRes.json();
           setVisibility(visData.visibility);
+          setRoles(visData.roles || []);
+          setSelectedRoleId(visData.role?.id ?? '');
           setCreatedBy(visData.createdBy ?? null);
           setCurrentUsers(visData.users || []);
           setSelectedUserIds(new Set((visData.users || []).map((u: VisibilityUser) => u.id)));
@@ -96,6 +101,7 @@ export function ProjectVisibility({ projectId }: Props) {
         body: JSON.stringify({
           visibility,
           userIds: visibility === 'SPECIFIC_USERS' ? Array.from(selectedUserIds) : [],
+          roleId: visibility === 'ROLE' ? selectedRoleId || undefined : undefined,
         }),
       });
       if (!res.ok) {
@@ -109,7 +115,7 @@ export function ProjectVisibility({ projectId }: Props) {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, visibility, selectedUserIds]);
+  }, [projectId, visibility, selectedUserIds, selectedRoleId]);
 
   const toggleUser = useCallback((userId: string) => {
     setSelectedUserIds(prev => {
@@ -224,6 +230,28 @@ export function ProjectVisibility({ projectId }: Props) {
         </div>
       )}
 
+      {/* Role selection for ROLE */}
+      {visibility === 'ROLE' && (
+        <div className="border border-primary-200 rounded-lg p-3 space-y-2">
+          <p className="text-xs font-medium text-primary-500 uppercase tracking-wider">
+            Görebilecek Rol
+          </p>
+          <select
+            value={selectedRoleId}
+            onChange={(e) => setSelectedRoleId(e.target.value)}
+            className="w-full px-3 py-2 border border-primary-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-500"
+          >
+            <option value="">Rol seçin...</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-primary-400">
+            Yöneticiler her durumda tüm projeleri görür.
+          </p>
+        </div>
+      )}
+
       {/* Save button */}
       <div className="flex justify-end">
         <Button
@@ -231,7 +259,7 @@ export function ProjectVisibility({ projectId }: Props) {
           size="sm"
           onClick={handleSave}
           isLoading={isSaving}
-          disabled={isSaving}
+          disabled={isSaving || (visibility === 'ROLE' && !selectedRoleId)}
         >
           Kaydet
         </Button>
