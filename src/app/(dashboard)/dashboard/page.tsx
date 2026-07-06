@@ -131,8 +131,8 @@ export default async function DashboardPage() {
       {/* Charts - conditional on canViewCosts */}
       {canViewCosts && <DashboardCharts />}
 
-      {/* Activity Feed */}
-      <ActivityFeed />
+      {/* Activity Feed - management only (client 30.06) */}
+      {(user.role.canApprove || user.role.canManageUsers) && <ActivityFeed />}
     </div>
   );
 }
