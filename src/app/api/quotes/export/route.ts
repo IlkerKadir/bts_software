@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { quoteStatusLabels } from '@/lib/validations/quote';
-import { LOST_REASON_LABELS } from '@/lib/validations/quote-tracking';
+import { LOST_REASON_LABELS, INTERACTION_TYPE_LABELS } from '@/lib/validations/quote-tracking';
 import { buildTokenizedSearchAND } from '@/lib/search-helpers';
 import ExcelJS from 'exceljs';
 
@@ -64,6 +64,17 @@ export async function GET(request: NextRequest) {
         company: { select: { name: true } },
         project: { select: { name: true } },
         createdBy: { select: { fullName: true } },
+        // İletişim Geçmişi (client 30.06: the logged contacts must land in
+        // the Excel). Oldest-first so the cell reads chronologically.
+        interactions: {
+          orderBy: { interactionDate: 'asc' },
+          select: {
+            interactionDate: true,
+            type: true,
+            note: true,
+            user: { select: { fullName: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -85,6 +96,8 @@ export async function GET(request: NextRequest) {
       { key: 'expectedOrderDate', header: 'Beklenen Sipariş', width: 16 },
       { key: 'lostReason', header: 'Kaybetme Nedeni', width: 22 },
       { key: 'lostCompetitor', header: 'Tercih Edilen Rakip', width: 20 },
+      { key: 'lastContact', header: 'Son İletişim', width: 13 },
+      { key: 'contactHistory', header: 'İletişim Geçmişi', width: 50 },
       { key: 'createdBy', header: 'Hazırlayan', width: 16 },
       { key: 'createdAt', header: 'Tarih', width: 12 },
       { key: 'year', header: 'Yıl', width: 8 },
@@ -112,14 +125,30 @@ export async function GET(request: NextRequest) {
           : '-',
         lostReason: q.lostReason ? LOST_REASON_LABELS[q.lostReason] : '-',
         lostCompetitor: q.lostCompetitor || '-',
+        lastContact: q.interactions.length
+          ? new Date(
+              q.interactions[q.interactions.length - 1].interactionDate
+            ).toLocaleDateString('tr-TR')
+          : '-',
+        contactHistory: q.interactions.length
+          ? q.interactions
+              .map(
+                (i) =>
+                  `${new Date(i.interactionDate).toLocaleDateString('tr-TR')} [${
+                    INTERACTION_TYPE_LABELS[i.type] || i.type
+                  }] ${i.note} (${i.user.fullName})`
+              )
+              .join('\n')
+          : '-',
         createdBy: q.createdBy.fullName,
         createdAt: created.toLocaleDateString('tr-TR'),
         year: created.getFullYear(),
       });
       row.getCell('grandTotal').numFmt = '#,##0.00';
+      row.getCell('contactHistory').alignment = { wrapText: true, vertical: 'top' };
     }
 
-    sheet.autoFilter = { from: 'A1', to: `O${quotes.length + 1}` };
+    sheet.autoFilter = { from: 'A1', to: `Q${quotes.length + 1}` };
 
     const buffer = await workbook.xlsx.writeBuffer();
     return new NextResponse(buffer, {
