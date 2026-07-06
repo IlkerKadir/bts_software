@@ -389,8 +389,12 @@ export default function OrderDetailPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* Editable STF */}
-      <StfEditor stfId={id} />
+      {/* Editable STF. Keyed on status: StfEditor only fetches on mount, so
+          after "Taslağa Geri Çek" it kept rendering the stale read-only
+          (disabled-fieldset) form — the client saw "+ Not Ekle" do nothing
+          even after pulling back to Taslak. Remounting on status change
+          reloads it with the fresh status, editable again. */}
+      <StfEditor stfId={id} key={order.status} />
     </div>
   );
 }
