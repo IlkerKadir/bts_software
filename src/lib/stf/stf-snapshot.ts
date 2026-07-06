@@ -1,6 +1,8 @@
 import { footerDefaultsFromTerms, type TermLike } from './stf-footer-defaults';
 
 export interface QuoteItemForSnapshot {
+  /** Quote item id — used to seat SET children right behind their parent. */
+  id: string;
   itemType: string;
   sortOrder: number;
   code: string | null;
@@ -93,15 +95,41 @@ export function buildStfSnapshot(
     ...footer,
   };
 
+  // Seat SET children directly behind their parent. Quote sortOrder does NOT
+  // guarantee adjacency (the quote editor nests children via parentItemId and
+  // ignores their global sortOrder — live data has ties/gaps), so a flat
+  // sortOrder render scattered "*" rows far from their SET (client: STF 6003,
+  // poz-39 set's breakdown printed under poz 26). Children whose parent isn't
+  // in the list keep their flat position.
+  const sorted = quote.items.slice().sort((a, b) => a.sortOrder - b.sortOrder);
+  const knownIds = new Set(sorted.map((it) => it.id));
+  const childrenByParent = new Map<string, QuoteItemForSnapshot[]>();
+  const flow: QuoteItemForSnapshot[] = [];
+  for (const it of sorted) {
+    if (it.parentItemId && knownIds.has(it.parentItemId)) {
+      const list = childrenByParent.get(it.parentItemId) ?? [];
+      list.push(it);
+      childrenByParent.set(it.parentItemId, list);
+    } else {
+      flow.push(it);
+    }
+  }
+  const ordered: QuoteItemForSnapshot[] = [];
+  for (const it of flow) {
+    ordered.push(it);
+    const kids = childrenByParent.get(it.id);
+    if (kids) ordered.push(...kids);
+  }
+
   let poz = 0;
-  const items: StfItem[] = quote.items
-    .slice()
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((it) => {
+  const items: StfItem[] = ordered
+    .map((it, index) => {
       const getsPoz = POZ_TYPES.has(it.itemType) && !it.parentItemId;
       if (getsPoz) poz += 1;
       return {
-        sortOrder: it.sortOrder,
+        // Canonical order: renumber sequentially so the editor and both
+        // exports (all sortOrder-driven) render parent + children together.
+        sortOrder: index + 1,
         itemType: it.itemType,
         pozNo: getsPoz ? String(poz) : null,
         code: it.code,

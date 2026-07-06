@@ -226,6 +226,7 @@ export async function POST(request: NextRequest) {
                 company: quote.company,
                 project: quote.project,
                 items: quote.items.map((i) => ({
+                  id: i.id,
                   itemType: i.itemType,
                   sortOrder: i.sortOrder,
                   code: i.code,

@@ -10,9 +10,9 @@ const quote: QuoteForSnapshot = {
   company: { name: 'Deva A.Ş.', address: 'İstanbul', phone: '0212', taxNumber: '123' },
   project: { name: 'Deva API' },
   items: [
-    { itemType: 'HEADER', sortOrder: 1, code: null, brand: null, model: null, description: 'TRAFO 1', quantity: 0, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: null, parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
-    { itemType: 'PRODUCT', sortOrder: 2, code: 'MKII-OP', brand: 'Fyreye', model: 'MKII', description: 'Optik Dedektör', quantity: 1, unit: 'Adet', unitPrice: 31.4, totalPrice: 31.4, priceLabel: null, parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
-    { itemType: 'CUSTOM', sortOrder: 3, code: null, brand: null, model: null, description: 'Montaj', quantity: 1, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: 'tarafınızca sağlanacaktır', parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
+    { id: 'q1', itemType: 'HEADER', sortOrder: 1, code: null, brand: null, model: null, description: 'TRAFO 1', quantity: 0, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: null, parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
+    { id: 'q2', itemType: 'PRODUCT', sortOrder: 2, code: 'MKII-OP', brand: 'Fyreye', model: 'MKII', description: 'Optik Dedektör', quantity: 1, unit: 'Adet', unitPrice: 31.4, totalPrice: 31.4, priceLabel: null, parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
+    { id: 'q3', itemType: 'CUSTOM', sortOrder: 3, code: null, brand: null, model: null, description: 'Montaj', quantity: 1, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: 'tarafınızca sağlanacaktır', parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
   ],
   commercialTerms: [{ category: 'odeme', value: '30 gün' }],
 };
@@ -48,11 +48,11 @@ describe('buildStfSnapshot', () => {
         project: null,
         commercialTerms: [],
         items: [
-          { itemType: 'PRODUCT', sortOrder: 0, code: null, brand: null, model: null,
+          { id: 'q1', itemType: 'PRODUCT', sortOrder: 0, code: null, brand: null, model: null,
             description: 'P', quantity: 1, unit: 'Adet', unitPrice: 100, totalPrice: 100,
             priceLabel: null, parentItemId: null, discountPct: 0,
             sectionDiscountPct: null, sectionDiscountLabel: null },
-          { itemType: 'SUBTOTAL', sortOrder: 1, code: null, brand: null, model: null,
+          { id: 'q2', itemType: 'SUBTOTAL', sortOrder: 1, code: null, brand: null, model: null,
             description: '', quantity: 0, unit: 'Adet', unitPrice: 0, totalPrice: 0,
             priceLabel: null, parentItemId: null, discountPct: 0,
             sectionDiscountPct: 30, sectionDiscountLabel: 'Firmanıza Özel' },
@@ -64,5 +64,59 @@ describe('buildStfSnapshot', () => {
     expect(sub.sectionDiscountPct).toBe(30);
     expect(sub.sectionDiscountLabel).toBe('Firmanıza Özel');
     expect(items[0].sectionDiscountPct).toBeNull();
+  });
+
+  it('seats SET children right behind their parent even when quote sortOrder scatters them (STF 6003)', () => {
+    const base = { code: null, brand: null, model: null, quantity: 1, unit: 'Adet',
+      unitPrice: 0, totalPrice: 0, priceLabel: null, discountPct: 0,
+      sectionDiscountPct: null, sectionDiscountLabel: null };
+    const { items } = buildStfSnapshot(
+      {
+        quoteNumber: 'SA0002', refNo: null, currency: 'EUR',
+        discountTotal: 0, grandTotal: 100,
+        company: { name: 'X', address: null, phone: null, taxNumber: null },
+        project: null, commercialTerms: [],
+        items: [
+          { ...base, id: 'p26', itemType: 'PRODUCT', sortOrder: 26, description: 'Standart Dedektör Tabanı' },
+          // children carry sortOrders adjacent to poz 26, far from their parent (set39)
+          { ...base, id: 'c1', itemType: 'PRODUCT', sortOrder: 27, parentItemId: 'set39', description: 'Test ve Devreye Alma Hizmeti' },
+          { ...base, id: 'c2', itemType: 'PRODUCT', sortOrder: 28, parentItemId: 'set39', description: 'Süpervizyon Hizmeti' },
+          { ...base, id: 'p38', itemType: 'PRODUCT', sortOrder: 38, description: 'Başka Ürün' },
+          { ...base, id: 'set39', itemType: 'SET', sortOrder: 39, description: 'Montaj Süpervizörlüğü, Müh., Test ve Devreye Alma' },
+        ].map((it) => ({ parentItemId: null, ...it })),
+      },
+      new Date('2026-06-18T00:00:00Z')
+    );
+    expect(items.map((i) => i.description)).toEqual([
+      'Standart Dedektör Tabanı',
+      'Başka Ürün',
+      'Montaj Süpervizörlüğü, Müh., Test ve Devreye Alma',
+      'Test ve Devreye Alma Hizmeti',
+      'Süpervizyon Hizmeti',
+    ]);
+    // canonical renumbering + children keep the "*" contract (no poz)
+    expect(items.map((i) => i.sortOrder)).toEqual([1, 2, 3, 4, 5]);
+    expect(items.map((i) => i.pozNo)).toEqual(['1', '2', '3', null, null]);
+  });
+
+  it('keeps a child with an unknown parent at its flat position (defensive)', () => {
+    const base = { code: null, brand: null, model: null, quantity: 1, unit: 'Adet',
+      unitPrice: 0, totalPrice: 0, priceLabel: null, discountPct: 0,
+      sectionDiscountPct: null, sectionDiscountLabel: null };
+    const { items } = buildStfSnapshot(
+      {
+        quoteNumber: 'SA0003', refNo: null, currency: 'EUR',
+        discountTotal: 0, grandTotal: 0,
+        company: { name: 'X', address: null, phone: null, taxNumber: null },
+        project: null, commercialTerms: [],
+        items: [
+          { ...base, id: 'a', itemType: 'PRODUCT', sortOrder: 1, parentItemId: null, description: 'A' },
+          { ...base, id: 'orphan', itemType: 'PRODUCT', sortOrder: 2, parentItemId: 'missing', description: 'Orphan' },
+          { ...base, id: 'b', itemType: 'PRODUCT', sortOrder: 3, parentItemId: null, description: 'B' },
+        ],
+      },
+      new Date('2026-06-18T00:00:00Z')
+    );
+    expect(items.map((i) => i.description)).toEqual(['A', 'Orphan', 'B']);
   });
 });
