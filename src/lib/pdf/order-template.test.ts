@@ -59,6 +59,11 @@ describe('generateOrderHtml (STF customer PDF)', () => {
   it('renders child rows with * instead of a poz number', () => {
     expect(html).toContain('>*</p>');
   });
+  it('hides prices on SET child rows (only the parent shows the SET price)', () => {
+    // Child (parentItemId 'p1') has unitPrice/totalPrice 4.57 in the data,
+    // but the PDF must leave its price cells empty — client feedback 30.06.
+    expect(html).not.toContain('4,57');
+  });
   it('renders a three-row section subtotal block with the discount label', () => {
     expect(html).toContain('FİRMANIZA ÖZEL İNDİRİM');
     // Section-sum rule (documented in order-template.ts computeSubtotalSum): the

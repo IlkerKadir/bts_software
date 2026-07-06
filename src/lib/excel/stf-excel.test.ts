@@ -73,6 +73,24 @@ describe('generateStfExcel', () => {
     expect(checked).toBe(true);
   });
 
+  it('hides prices on SET child rows (only quantity + unit show)', async () => {
+    const buf = await generateStfExcel(data);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as ArrayBuffer);
+    const ws = wb.worksheets[0];
+    let checked = false;
+    ws.eachRow((row) => {
+      if (row.getCell(5).value === 'Soket') { // child row (parentItemId 'p1')
+        expect(row.getCell(6).value).toBe(1);     // Miktar stays
+        expect(row.getCell(7).value).toBe('Ad.'); // Birim stays
+        expect(row.getCell(8).value ?? '').toBe(''); // Birim Fiyat empty
+        expect(row.getCell(9).value ?? '').toBe(''); // Toplam Fiyat empty
+        checked = true;
+      }
+    });
+    expect(checked).toBe(true);
+  });
+
   it('excludes SET children from the section subtotal (parent already rolled up)', async () => {
     const buf = await generateStfExcel(data);
     const wb = new ExcelJS.Workbook();

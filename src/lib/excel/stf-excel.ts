@@ -243,8 +243,10 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       it.description,                                 // 4 Ürün Adı
       Number(it.quantity),                            // 5 Miktar — numeric cell
       unitAbbr(it.unit),                              // 6 Birim
-      it.priceLabel ? it.priceLabel : it.unitPrice,   // 7 Birim Fiyat
-      it.priceLabel ? '' : it.totalPrice,             // 8 Toplam Fiyat
+      // SET children carry no prices — the SET parent's totalPrice already
+      // rolls them up, so only the parent row shows money (client 30.06).
+      it.parentItemId ? '' : (it.priceLabel ? it.priceLabel : it.unitPrice), // 7 Birim Fiyat
+      it.parentItemId || it.priceLabel ? '' : it.totalPrice,                 // 8 Toplam Fiyat
     ];
     cells.forEach((v, i) => {
       const c = ws.getCell(r, i + 1);

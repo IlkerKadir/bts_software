@@ -214,9 +214,15 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
       </tr>`;
     }
 
-    // PRODUCT / CUSTOM / SET — and SET children (parentItemId set) get "*"
+    // PRODUCT / CUSTOM / SET — and SET children (parentItemId set) get "*".
+    // Children show only quantity+unit: the price belongs to the SET parent
+    // (its totalPrice already rolls up the children), so their price cells
+    // stay empty (client feedback 30.06).
     const pozCell = item.parentItemId ? '*' : (item.pozNo || '');
-    const priceCol = item.priceLabel
+    const priceCol = item.parentItemId
+      ? `<td><p class="s2"><br></p></td>
+         <td><p class="s2"><br></p></td>`
+      : item.priceLabel
       ? `<td colspan="2"><p class="s2" style="text-align:center;">${escapeHtml(item.priceLabel)}</p></td>`
       : `<td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
          <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>`;
