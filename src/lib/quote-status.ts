@@ -40,7 +40,10 @@ const statusTransitions: Record<QuoteStatus, QuoteStatus[]> = {
   GONDERILDI: ['TAKIPTE', 'KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   TAKIPTE: ['KAZANILDI', 'KAYBEDILDI', 'REVIZYON'],
   REVIZYON: ['ONAY_BEKLIYOR', 'IPTAL'],
-  KAZANILDI: [], // Terminal state
+  // KAZANILDI is undoable (client 30.06): picking Kazanıldı by mistake in
+  // teklif takip must be reversible, so it can step back to the two statuses
+  // it is reachable from. No longer fully terminal.
+  KAZANILDI: ['GONDERILDI', 'TAKIPTE'],
   KAYBEDILDI: [], // Terminal state
   IPTAL: [], // Terminal state
 };
@@ -48,7 +51,7 @@ const statusTransitions: Record<QuoteStatus, QuoteStatus[]> = {
 /**
  * Terminal statuses that cannot transition to any other status
  */
-const terminalStatuses: QuoteStatus[] = ['KAZANILDI', 'KAYBEDILDI', 'IPTAL'];
+const terminalStatuses: QuoteStatus[] = ['KAYBEDILDI', 'IPTAL'];
 
 /**
  * Check if a transition from one status to another is valid

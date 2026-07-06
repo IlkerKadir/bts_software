@@ -102,9 +102,15 @@ describe('Quote Status Transitions', () => {
       expect(canTransitionTo('REVIZYON', 'ONAY_BEKLIYOR')).toBe(true);
     });
 
-    it('does not allow transition from KAZANILDI', () => {
+    it('allows undoing KAZANILDI back to GONDERILDI or TAKIPTE (client 30.06)', () => {
+      expect(canTransitionTo('KAZANILDI', 'GONDERILDI')).toBe(true);
+      expect(canTransitionTo('KAZANILDI', 'TAKIPTE')).toBe(true);
+    });
+
+    it('does not allow KAZANILDI to jump anywhere else', () => {
       expect(canTransitionTo('KAZANILDI', 'TASLAK')).toBe(false);
       expect(canTransitionTo('KAZANILDI', 'IPTAL')).toBe(false);
+      expect(canTransitionTo('KAZANILDI', 'KAYBEDILDI')).toBe(false);
     });
 
     it('does not allow transition from KAYBEDILDI', () => {
@@ -154,9 +160,9 @@ describe('Quote Status Transitions', () => {
       expect(transitions).not.toContain('ONAY_BEKLIYOR');
     });
 
-    it('returns empty array for KAZANILDI (terminal)', () => {
+    it('returns the undo transitions for KAZANILDI (no longer terminal)', () => {
       const transitions = getAvailableTransitions('KAZANILDI');
-      expect(transitions).toEqual([]);
+      expect(transitions).toEqual(['GONDERILDI', 'TAKIPTE']);
     });
 
     it('returns empty array for KAYBEDILDI (terminal)', () => {
@@ -171,8 +177,8 @@ describe('Quote Status Transitions', () => {
   });
 
   describe('isTerminalStatus', () => {
-    it('returns true for KAZANILDI', () => {
-      expect(isTerminalStatus('KAZANILDI')).toBe(true);
+    it('returns false for KAZANILDI (undoable since 30.06)', () => {
+      expect(isTerminalStatus('KAZANILDI')).toBe(false);
     });
 
     it('returns true for KAYBEDILDI', () => {
