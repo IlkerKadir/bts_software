@@ -78,9 +78,10 @@ export default function OrdersPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [canDelete, setCanDelete] = useState(false); // management-only delete authority
 
-  // Year filter options: current year back to 2024 (app went live in 2026).
+  // Year filter options: current year back to 2026 — the STF module launched
+  // June 2026, so no order can predate it (client asked why 2024/2025 showed).
   const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: Math.max(1, currentYear - 2023) }, (_, i) => currentYear - i);
+  const yearOptions = Array.from({ length: Math.max(1, currentYear - 2025) }, (_, i) => currentYear - i);
 
   const fetchOrders = useCallback(async (page = 1) => {
     setIsLoading(true);
