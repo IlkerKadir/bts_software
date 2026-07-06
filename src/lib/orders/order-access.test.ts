@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canAccessOrder, isStfEditable } from './order-access';
+import { canAccessOrder, isStfEditable, orderVisibilityWhere } from './order-access';
 
 const order = (over: Partial<Parameters<typeof canAccessOrder>[0]> = {}) => ({
   createdById: 'creator',
@@ -38,6 +38,33 @@ describe('canAccessOrder', () => {
 
   it('denies a stranger when there is no quote relation', () => {
     expect(canAccessOrder({ createdById: 'creator', quote: null }, 'stranger', false)).toBe(false);
+  });
+});
+
+describe('orderVisibilityWhere', () => {
+  const manager = { id: 'm', role: { canApprove: true, canManageUsers: false } };
+  const regular = { id: 'u1', role: { canApprove: false, canManageUsers: false } };
+
+  it('returns no restriction for managers', () => {
+    expect(orderVisibilityWhere(manager)).toEqual({});
+  });
+
+  it('mirrors canAccessOrder for regular users (creator, quote creator, project visibility)', () => {
+    expect(orderVisibilityWhere(regular)).toEqual({
+      OR: [
+        { createdById: 'u1' },
+        { quote: { createdById: 'u1' } },
+        { quote: { project: { visibility: 'EVERYONE' } } },
+        {
+          quote: {
+            project: {
+              visibility: 'SPECIFIC_USERS',
+              visibleTo: { some: { userId: 'u1' } },
+            },
+          },
+        },
+      ],
+    });
   });
 });
 

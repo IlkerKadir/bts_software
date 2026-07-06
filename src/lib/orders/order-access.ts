@@ -5,6 +5,8 @@
  * everything; the STF's own creator has access; otherwise access follows the
  * source quote's creator / project visibility.
  */
+import type { Prisma } from '@prisma/client';
+
 export interface OrderForAccess {
   createdById: string;
   quote?: {
@@ -34,6 +36,35 @@ export function canAccessOrder(
     }
   }
   return false;
+}
+
+/**
+ * Prisma `where` mirror of `canAccessOrder` for the STF LIST query — the
+ * exact counterpart of `quoteVisibilityWhere` (client 30.06: "Siparişlerde de
+ * görünürlük olsun"). Managers get `{}` — no restriction.
+ */
+export function orderVisibilityWhere(user: {
+  id: string;
+  role: { canApprove: boolean; canManageUsers: boolean };
+}): Prisma.OrderConfirmationWhereInput {
+  if (user.role.canApprove || user.role.canManageUsers) {
+    return {};
+  }
+  return {
+    OR: [
+      { createdById: user.id },
+      { quote: { createdById: user.id } },
+      { quote: { project: { visibility: 'EVERYONE' } } },
+      {
+        quote: {
+          project: {
+            visibility: 'SPECIFIC_USERS',
+            visibleTo: { some: { userId: user.id } },
+          },
+        },
+      },
+    ],
+  };
 }
 
 /**

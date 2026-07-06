@@ -5,6 +5,7 @@ import { Prisma, OrderStatus, QuoteItemType } from '@prisma/client';
 import { expandTurkishVariants } from '@/lib/search-helpers';
 import { nextStfNumber } from '@/lib/stf/stf-number';
 import { buildStfSnapshot } from '@/lib/stf/stf-snapshot';
+import { orderVisibilityWhere } from '@/lib/orders/order-access';
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,9 +75,16 @@ export async function GET(request: NextRequest) {
         break;
     }
 
+    // Visibility (mirrors the quotes list): regular users only see STFs they
+    // can access via canAccessOrder; managers see everything. ANDed because
+    // the search filter already occupies `where.OR`.
+    const visibility = orderVisibilityWhere(user);
+    const finalWhere: Prisma.OrderConfirmationWhereInput =
+      Object.keys(visibility).length > 0 ? { AND: [where, visibility] } : where;
+
     const [orders, total] = await Promise.all([
       db.orderConfirmation.findMany({
-        where,
+        where: finalWhere,
         include: {
           quote: {
             select: {
@@ -95,7 +103,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.orderConfirmation.count({ where }),
+      db.orderConfirmation.count({ where: finalWhere }),
     ]);
 
     return NextResponse.json({
