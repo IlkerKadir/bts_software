@@ -407,6 +407,8 @@ export function calculateQuoteProfitSummary(
     id?: string;
     totalPrice: number;
     costPrice?: number | null;
+    /** Used as the cost fallback for CUSTOM (serbest kalem) rows. */
+    listPrice?: number | null;
     quantity: number;
     itemType: string;
     parentItemId?: string | null;
@@ -463,6 +465,15 @@ export function calculateQuoteProfitSummary(
   // Leftover ids are trailing orphans → pct 0.
   for (const id of pendingIds) itemIdToSectionDiscountPct.set(id, 0);
 
+  // SET parents' quantities — children store per-ONE-set quantities, so
+  // their cost must scale by the parent's qty to match the revenue side.
+  const setQtyById = new Map<string, number>();
+  for (const it of items) {
+    if (it.itemType === 'SET' && !it.parentItemId && it.id) {
+      setQtyById.set(it.id, Number(it.quantity) || 1);
+    }
+  }
+
   let itemRevenue = 0;
   let totalCost = 0;
 
@@ -477,7 +488,15 @@ export function calculateQuoteProfitSummary(
       }
       const isSetParent = item.itemType === 'SET' && !item.parentItemId;
       if (!isSetParent) {
-        const rawCost = (item.costPrice || 0) * item.quantity;
+        // CUSTOM (serbest kalem) rows have no costPrice — their typed liste
+        // fiyatı IS the cost basis (matches getEffectiveCostPriceForItem).
+        const effectiveCost =
+          item.costPrice ??
+          (item.itemType === 'CUSTOM' && Number(item.listPrice) > 0
+            ? Number(item.listPrice)
+            : 0);
+        const setQty = item.parentItemId ? setQtyById.get(item.parentItemId) ?? 1 : 1;
+        const rawCost = (effectiveCost || 0) * item.quantity * setQty;
         totalCost += convert(rawCost, item.id);
       }
     }

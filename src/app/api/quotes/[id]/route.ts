@@ -85,6 +85,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           id: item.id,
           totalPrice: Number(item.totalPrice),
           costPrice: effectiveCost,
+          listPrice: item.listPrice != null ? Number(item.listPrice) : null,
           quantity: Number(item.quantity),
           itemType: item.itemType,
           parentItemId: item.parentItemId,

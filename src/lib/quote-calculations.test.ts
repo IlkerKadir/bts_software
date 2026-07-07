@@ -432,6 +432,26 @@ describe('Quote Calculations', () => {
       expect(result.overallMarginPct).toBe(47.06);
     });
 
+    it('scales SET child costs by the parent SET quantity (qty>1)', () => {
+      const items = [
+        { id: 'set1', totalPrice: 2000, costPrice: null, quantity: 2, itemType: 'SET', parentItemId: null },
+        { id: 'c1', totalPrice: 0, costPrice: 100, quantity: 3, itemType: 'PRODUCT', parentItemId: 'set1' },
+      ];
+      const result = calculateQuoteProfitSummary(items);
+      // cost = 100 × 3 (per set) × 2 sets = 600
+      expect(result.totalCost).toBe(600);
+      expect(result.totalRevenue).toBe(2000);
+    });
+
+    it('uses listPrice as the cost for CUSTOM (serbest kalem) rows without costPrice', () => {
+      const items = [
+        { id: 'f1', totalPrice: 200, costPrice: null, listPrice: 100, quantity: 1, itemType: 'CUSTOM', parentItemId: null },
+      ];
+      const result = calculateQuoteProfitSummary(items);
+      expect(result.totalCost).toBe(100);
+      expect(result.totalProfit).toBe(100);
+    });
+
     it('SET parent contributes revenue but not cost; sub-items contribute cost', () => {
       const items = [
         { totalPrice: 1000, costPrice: 600, quantity: 1, itemType: 'PRODUCT', parentItemId: null },

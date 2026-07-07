@@ -160,6 +160,20 @@ export function computeManagerProfitSummary(
     return effectiveCost * qty * setQty;
   };
 
+  // Children of each parent, from the FULL item list. A SET's children must
+  // follow their PARENT's visibility, not their own slice position: the
+  // section filter slices `visibleItems` positionally, and live data has
+  // children whose flat position (sortOrder) is far from their parent — a
+  // positional slice would then show the SET's revenue with zero cost
+  // (client 07.07: Set Analizi TOPLAM MALİYET 0 under a section filter).
+  const childrenByParent = new Map<string, ProfitSummaryItem[]>();
+  for (const it of allItems) {
+    if (!it.parentItemId) continue;
+    const list = childrenByParent.get(it.parentItemId) ?? [];
+    list.push(it);
+    childrenByParent.set(it.parentItemId, list);
+  }
+
   const grouped: Record<string, { revenue: number; cost: number; count: number }> = {};
   const ensureBrand = (key: string) => {
     if (!grouped[key]) grouped[key] = { revenue: 0, cost: 0, count: 0 };
@@ -176,32 +190,32 @@ export function computeManagerProfitSummary(
       continue;
     }
     if (item.priceLabel) continue;
+    // Child rows are handled through their parent below — never directly,
+    // so a child sliced into view without its parent adds no phantom cost.
+    if (item.parentItemId) continue;
 
     const isTopLevelPriced =
-      !item.parentItemId &&
-      (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET');
-    const isSetParent = item.itemType === 'SET' && !item.parentItemId;
+      item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET';
+    if (!isTopLevelPriced) continue;
 
-    // Revenue: only top-level priced rows; attributed to the row's own brand.
-    if (isTopLevelPriced) {
-      const bucket = ensureBrand(item.brand || BRAND_FALLBACK);
-      bucket.revenue += convert(item, rowRevenue(item));
-      bucket.count += 1;
-    }
+    // Revenue: attributed to the row's own brand.
+    const bucket = ensureBrand(item.brand || BRAND_FALLBACK);
+    bucket.revenue += convert(item, rowRevenue(item));
+    bucket.count += 1;
 
-    // Cost: every priced row except the SET parent (its children hold the
-    // cost). A SET child's cost is attributed to its PARENT SET's brand so
-    // it lands in the same bucket as the SET's revenue.
-    if (!isSetParent) {
-      const cost = rowCost(item);
-      if (cost != null) {
-        const parent = item.parentItemId ? itemsById.get(item.parentItemId) : undefined;
-        const costBrand =
-          parent && parent.itemType === 'SET'
-            ? parent.brand || BRAND_FALLBACK
-            : item.brand || BRAND_FALLBACK;
-        ensureBrand(costBrand).cost += convert(item, cost);
+    if (item.itemType === 'SET') {
+      // SET parent: cost comes from its children (wherever they sit in the
+      // flat list), attributed to the PARENT's brand so revenue and cost
+      // land in the same bucket.
+      for (const child of childrenByParent.get(item.id) ?? []) {
+        if (child.priceLabel) continue;
+        const cost = rowCost(child);
+        if (cost != null) bucket.cost += convert(child, cost);
       }
+    } else {
+      // PRODUCT / CUSTOM: own cost.
+      const cost = rowCost(item);
+      if (cost != null) bucket.cost += convert(item, cost);
     }
   }
 
@@ -220,15 +234,14 @@ export function computeManagerProfitSummary(
     })
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
-  // Per-set breakdown: each SET parent's revenue vs. the summed cost of its
-  // (visible) children.
+  // Per-set breakdown: each visible SET parent's revenue vs. the summed cost
+  // of its children — children resolved from the FULL list (see above).
   const sets: SetCostSummary[] = [];
   for (const item of visibleItems) {
     if (item.itemType !== 'SET' || item.parentItemId) continue;
     const revenue = convert(item, rowRevenue(item));
     let cost = 0;
-    for (const child of visibleItems) {
-      if (child.parentItemId !== item.id) continue;
+    for (const child of childrenByParent.get(item.id) ?? []) {
       if (child.priceLabel) continue;
       const c = rowCost(child);
       if (c != null) cost += convert(child, c);

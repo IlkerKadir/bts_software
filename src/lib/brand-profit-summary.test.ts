@@ -108,6 +108,30 @@ describe('computeManagerProfitSummary', () => {
     expect(r.brands[0].totalCost).toBe(80);
   });
 
+  it('finds SET children from the FULL list when a section slice excludes them (07.07)', () => {
+    // Live data: children's flat position (sortOrder) can sit in ANOTHER
+    // section than their parent. Section filter slices visibleItems
+    // positionally → the old code showed the SET's revenue with 0 cost.
+    const parent = item({ id: 's1', itemType: 'SET', brand: 'BTS', description: 'Montaj Set', quantity: 1, unitPrice: 1082 });
+    const childA = item({ id: 'c1', itemType: 'PRODUCT', parentItemId: 's1', quantity: 3, unitPrice: 200, costPrice: 150 });
+    const childB = item({ id: 'c2', itemType: 'PRODUCT', parentItemId: 's1', quantity: 1, unitPrice: 100, costPrice: 90 });
+    const allItems = [childA, childB, parent]; // children positioned elsewhere
+    const visible = [parent]; // section slice contains only the parent
+
+    const r = computeManagerProfitSummary(allItems, visible, EUR);
+    expect(r.sets[0].totalCost).toBe(540); // 150×3 + 90×1
+    expect(r.brands[0].totalCost).toBe(540);
+    expect(r.brands[0].totalRevenue).toBe(1082);
+  });
+
+  it('a child sliced into view WITHOUT its parent adds no phantom cost', () => {
+    const parent = item({ id: 's1', itemType: 'SET', brand: 'BTS', quantity: 1, unitPrice: 1000 });
+    const child = item({ id: 'c1', itemType: 'PRODUCT', brand: 'BTS', parentItemId: 's1', quantity: 1, unitPrice: 0, costPrice: 400 });
+    const r = computeManagerProfitSummary([parent, child], [child], EUR);
+    expect(r.brands).toEqual([]); // no revenue row, no cost-only phantom row
+    expect(r.totals.totalCost).toBe(0);
+  });
+
   it('keeps grand totals identical regardless of attribution', () => {
     const items: ProfitSummaryItem[] = [
       item({ id: 's1', itemType: 'SET', brand: 'ADVANTECH', quantity: 1, unitPrice: 1000 }),
