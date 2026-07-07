@@ -4,22 +4,8 @@ import { getSession } from '@/lib/session';
 import { OrderStatus, QuoteItemType } from '@prisma/client';
 import { stfUpdateSchema } from '@/lib/validations/stf';
 import { computeStfTotals } from '@/lib/stf/stf-totals';
-import { canAccessOrder, isStfEditable } from '@/lib/orders/order-access';
+import { canAccessOrder, isStfEditable, orderAccessInclude } from '@/lib/orders/order-access';
 import type { ZodError } from 'zod';
-
-/**
- * Prisma `include` for STF access checks. Scalars (createdById, status) are
- * returned automatically with `include`; we only need the source quote's
- * creator + project visibility relation. See canAccessOrder (spec §10.3).
- */
-const orderAccessInclude = {
-  quote: {
-    select: {
-      createdById: true,
-      project: { select: { visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
-    },
-  },
-} as const;
 
 const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
 

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { generateStfExcel, StfExcelData } from '@/lib/excel/stf-excel';
 import { buildStfExportFilename } from '@/lib/filename';
+import { canAccessOrder, orderAccessInclude } from '@/lib/orders/order-access';
 
 interface RouteParams { params: Promise<{ id: string }>; }
 
@@ -14,9 +15,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const order = await db.orderConfirmation.findUnique({
       where: { id },
-      include: { items: { orderBy: { sortOrder: 'asc' } } },
+      include: { ...orderAccessInclude, items: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!order) return NextResponse.json({ error: 'Siparis bulunamadi' }, { status: 404 });
+
+    // Visibility: same boundary as the STF list/detail (project role/user rules).
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canAccessOrder(order, user.id, isManager, user.roleId)) {
+      return NextResponse.json({ error: 'Bu STF\u2019ye eri\u015Fim yetkiniz yok' }, { status: 403 });
+    }
 
     // Same export gate as the PDF: creator OR canExport.
     if (order.createdById !== user.id && !user.role.canExport) {

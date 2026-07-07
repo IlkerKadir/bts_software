@@ -19,6 +19,27 @@ export interface OrderForAccess {
   } | null;
 }
 
+/**
+ * Prisma `include` fragment that loads exactly what `canAccessOrder` needs:
+ * the source quote's creator + its project's visibility relations. Spread it
+ * into any OrderConfirmation query that gates on access (detail, exports,
+ * revisions) so every route checks the same shape.
+ */
+export const orderAccessInclude = {
+  quote: {
+    select: {
+      createdById: true,
+      project: {
+        select: {
+          visibility: true,
+          visibleToRoleId: true,
+          visibleTo: { select: { userId: true } },
+        },
+      },
+    },
+  },
+} as const;
+
 export function canAccessOrder(
   order: OrderForAccess,
   userId: string,

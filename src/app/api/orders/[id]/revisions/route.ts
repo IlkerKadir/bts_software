@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { Prisma, QuoteItemType } from '@prisma/client';
 import { nextStfRevisionNumber } from '@/lib/stf/stf-revision-number';
+import { canAccessOrder, orderAccessInclude } from '@/lib/orders/order-access';
 
 interface RouteParams { params: Promise<{ id: string }>; }
 
@@ -14,9 +15,15 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
 
     const source = await db.orderConfirmation.findUnique({
       where: { id },
-      include: { items: { orderBy: { sortOrder: 'asc' } } },
+      include: { ...orderAccessInclude, items: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!source) return NextResponse.json({ error: 'STF bulunamadı' }, { status: 404 });
+
+    // Visibility: same boundary as the STF list/detail (project role/user rules).
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canAccessOrder(source, user.id, isManager, user.roleId)) {
+      return NextResponse.json({ error: 'Bu STF\u2019ye erişim yetkiniz yok' }, { status: 403 });
+    }
 
     // Only a completed STF can be revised (mirrors the owner's flow).
     if (source.status !== 'TAMAMLANDI') {

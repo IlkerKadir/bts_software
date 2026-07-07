@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session';
 import { getPdfService } from '@/lib/pdf/pdf-service';
 import { generateOrderHtml, OrderDataForPdf } from '@/lib/pdf/order-template';
 import { buildStfExportFilename } from '@/lib/filename';
+import { canAccessOrder, orderAccessInclude } from '@/lib/orders/order-access';
 import fs from 'fs';
 import path from 'path';
 
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const order = await db.orderConfirmation.findUnique({
       where: { id },
       include: {
+        ...orderAccessInclude,
         items: { orderBy: { sortOrder: 'asc' } },
         createdBy: { select: { id: true, fullName: true } },
       },
@@ -42,6 +44,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!order) {
       return NextResponse.json({ error: 'Siparis bulunamadi' }, { status: 404 });
+    }
+
+    // Visibility: same boundary as the STF list/detail (project role/user rules).
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canAccessOrder(order, user.id, isManager, user.roleId)) {
+      return NextResponse.json({ error: 'Bu STF\u2019ye eri\u015Fim yetkiniz yok' }, { status: 403 });
     }
 
     // Authorization: user must be the order creator OR have canExport permission
