@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { canUserAccessQuote } from '@/lib/quote-access';
 import { getPdfService } from '@/lib/pdf/pdf-service';
 import { generateQuoteHtml, QuoteDataForPdf } from '@/lib/pdf/quote-template';
 import { buildQuoteExportFilename } from '@/lib/filename';
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: { id: quoteId },
       include: {
         company: true,
-        project: true,
+        project: { include: { visibleTo: { select: { userId: true } } } },
         items: {
           include: { product: true },
           orderBy: { sortOrder: 'asc' },
@@ -52,6 +53,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadi' }, { status: 404 });
+    }
+
+
+    // Visibility: same boundary as the quote list/detail (project role/user rules).
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canUserAccessQuote(user.id, isManager, quote, user.roleId)) {
+      return NextResponse.json(
+        { error: 'Bu teklife eri\u015Fim yetkiniz yok' },
+        { status: 403 }
+      );
     }
 
     // Authorization: user must be the quote creator OR have canExport permission
