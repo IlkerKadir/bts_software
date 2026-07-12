@@ -1,4 +1,5 @@
 import { footerDefaultsFromTerms, type TermLike } from './stf-footer-defaults';
+import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 
 export interface QuoteItemForSnapshot {
   /** Quote item id — used to seat SET children right behind their parent. */
@@ -18,12 +19,18 @@ export interface QuoteItemForSnapshot {
   discountPct: number;
   sectionDiscountPct: number | null;
   sectionDiscountLabel: string | null;
+  /** Per-SET currency override (e.g. a TRY set in a EUR quote). */
+  currency?: string | null;
 }
 
 export interface QuoteForSnapshot {
   quoteNumber: string;
   refNo: string | null;
   currency: string;
+  /** Quote.exchangeRate (protected TRY rate) — used with protectionPct to
+   *  recover the base rate for converting TRY-priced SETs. */
+  exchangeRate?: number;
+  protectionPct?: number;
   discountTotal: number;
   grandTotal: number;
   company: { name: string; address: string | null; phone: string | null; taxNumber: string | null };
@@ -72,6 +79,9 @@ export interface StfItem {
   discountPct: number;
   sectionDiscountPct: number | null;
   sectionDiscountLabel: string | null;
+  currency: string | null;
+  /** totalPrice converted into the STF currency (null = already in it). */
+  totalPriceInOrderCurrency: number | null;
 }
 
 export function buildStfSnapshot(
@@ -121,11 +131,33 @@ export function buildStfSnapshot(
     if (kids) ordered.push(...kids);
   }
 
+  // Currency context for TRY-priced SETs (mirrors assemble-quote-data):
+  // convert their totals into the STF currency ONCE, at snapshot time, using
+  // the source quote's base (non-protected) rate. Display keeps the raw
+  // face value + its own currency; totals read the converted amount.
+  const hasMixedCurrency = quote.items.some(
+    (i) => i.currency && i.currency !== quote.currency
+  );
+  let ctx: QuoteCurrencyContext | undefined;
+  if (hasMixedCurrency) {
+    const protectionPct = Number(quote.protectionPct || 0);
+    const protectedRate = Number(quote.exchangeRate || 1);
+    const baseForeignRate = protectionPct > 0
+      ? protectedRate / (1 + protectionPct / 100)
+      : protectedRate;
+    ctx = { quoteCurrency: quote.currency, baseForeignRate };
+  }
+
   let poz = 0;
   const items: StfItem[] = ordered
     .map((it, index) => {
       const getsPoz = POZ_TYPES.has(it.itemType) && !it.parentItemId;
       if (getsPoz) poz += 1;
+      const rowCurrency = it.currency ?? null;
+      const totalPriceInOrderCurrency =
+        ctx && rowCurrency && rowCurrency !== quote.currency
+          ? Math.round(convertToQuoteCurrency(it.totalPrice, rowCurrency, ctx) * 100) / 100
+          : null;
       return {
         // Canonical order: renumber sequentially so the editor and both
         // exports (all sortOrder-driven) render parent + children together.
@@ -145,6 +177,8 @@ export function buildStfSnapshot(
         discountPct: it.discountPct,
         sectionDiscountPct: it.sectionDiscountPct,
         sectionDiscountLabel: it.sectionDiscountLabel,
+        currency: rowCurrency,
+        totalPriceInOrderCurrency,
       };
     });
 

@@ -8,6 +8,10 @@ export interface StfExcelItem {
   description: string; quantity: number; unit: string; unitPrice: number; totalPrice: number;
   priceLabel: string | null; parentItemId: string | null;
   sectionDiscountPct: number | null; sectionDiscountLabel: string | null;
+  /** Per-SET currency override — money cells format in THIS currency (₺). */
+  currency?: string | null;
+  /** totalPrice converted into the STF currency; sums prefer it. */
+  totalPriceInOrderCurrency?: number | null;
 }
 export interface StfExcelHeader {
   orderNumber: string; customerName: string | null; customerAddress: string | null; customerPhone: string | null;
@@ -51,11 +55,15 @@ const thin = (): Partial<ExcelJS.Borders> => ({
 // Priced rows for the section sum: PRODUCT/CUSTOM/SET, not priceLabel'd, not a SET child.
 const isPriced = (it: StfExcelItem) =>
   !it.priceLabel && !it.parentItemId && ['PRODUCT', 'CUSTOM', 'SET'].includes(it.itemType);
+// Row amount for sums: the STF-currency total when the row carries a
+// currency override (mixed-currency SET), else the raw totalPrice.
+const rowAmount = (it: StfExcelItem): number =>
+  Number(it.totalPriceInOrderCurrency ?? it.totalPrice) || 0;
 function sectionSum(items: StfExcelItem[], subtotalIdx: number): number {
   let s = 0;
   for (let i = subtotalIdx - 1; i >= 0; i--) {
     if (items[i].itemType === 'SUBTOTAL') break;
-    if (isPriced(items[i])) s += Number(items[i].totalPrice) || 0;
+    if (isPriced(items[i])) s += rowAmount(items[i]);
   }
   return s;
 }
@@ -74,7 +82,7 @@ function grandTotalAtIndex(items: StfExcelItem[], index: number): number {
       openTail = 0;
       continue;
     }
-    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+    if (isPriced(it)) openTail += rowAmount(it);
   }
   return round2(runningNet + openTail);
 }
@@ -256,7 +264,11 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
       if (i === 0 || i === 6) c.alignment = { horizontal: 'center', vertical: 'top' }; // Poz / Birim
       else if (i <= 4) c.alignment = { vertical: 'top', wrapText: true }; // Kod/Marka/Model/Ürün Adı left
       else c.alignment = { horizontal: 'right', vertical: 'top' };        // Miktar/fiyatlar right
-      if ((i === 7 || i === 8) && typeof v === 'number') c.numFmt = moneyFmt; // Birim Fiyat / Toplam
+      // Mixed-currency SETs (client 12.07): money cells format in the row's
+      // OWN currency (₺) like the quote PDF; sums use the converted amount.
+      if ((i === 7 || i === 8) && typeof v === 'number') {
+        c.numFmt = it.currency && it.currency !== cur ? currencyNumFmt(it.currency) : moneyFmt;
+      }
     });
     r++;
   }

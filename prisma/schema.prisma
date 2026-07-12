@@ -771,6 +771,16 @@ model OrderItem {
   unit         String        @default("Adet")
   unitPrice    Decimal       @default(0) @db.Decimal(12, 2)
   totalPrice   Decimal       @default(0) @db.Decimal(12, 2)
+  /// Snapshot of the source QuoteItem.currency (per-SET override). NULL means
+  /// the row is priced in the STF's own currency. Mirrors the quote PDF:
+  /// price cells render in this currency (e.g. ₺) while totals use the
+  /// converted amount below.
+  currency     String?
+  /// `totalPrice` converted into the STF's currency, computed ONCE at
+  /// snapshot/revision time with the source quote's base (non-protected)
+  /// rate. NULL when the row already sits in the STF currency. Section sums
+  /// and GENEL TOPLAM read this in preference to the raw totalPrice.
+  totalPriceInOrderCurrency Decimal? @db.Decimal(12, 2)
   priceLabel   String?
   /// Snapshot-only copy of the source QuoteItem's parentItemId (SET grouping).
   /// NOT a live FK to OrderItem — values reference the originating quote items,

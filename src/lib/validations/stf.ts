@@ -21,6 +21,10 @@ export const stfItemSchema = z.object({
   sectionNote: nullableStr,
   sectionDiscountPct: z.coerce.number().nullish().transform((v) => (v == null ? null : v)),
   sectionDiscountLabel: nullableStr,
+  /** Mixed-currency SET snapshot fields — pass-through so editor saves
+   *  don't drop them (no editing UI; values are set at snapshot time). */
+  currency: nullableStr,
+  totalPriceInOrderCurrency: z.coerce.number().nullish().transform((v) => (v == null ? null : v)),
 });
 
 export const stfUpdateSchema = z.object({

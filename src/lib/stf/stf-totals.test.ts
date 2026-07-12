@@ -55,3 +55,13 @@ describe('computeStfGrandTotalAtIndex', () => {
     expect(computeStfGrandTotalAtIndex(rows, 0)).toBe(0);
   });
 });
+
+describe('mixed-currency rows (totalPriceInOrderCurrency)', () => {
+  it('sums the converted amount instead of the raw TRY face value', () => {
+    const { grandTotal } = computeStfTotals([
+      { itemType: 'PRODUCT', totalPrice: 100, priceLabel: null, parentItemId: null, sectionDiscountPct: null },
+      { itemType: 'SET', totalPrice: 9000, totalPriceInOrderCurrency: 200, priceLabel: null, parentItemId: null, sectionDiscountPct: null },
+    ]);
+    expect(grandTotal).toBe(300); // 100 + 200, not 9100
+  });
+});

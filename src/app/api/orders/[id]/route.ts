@@ -183,6 +183,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       items.map((it) => ({
         itemType: it.itemType,
         totalPrice: it.totalPrice,
+        totalPriceInOrderCurrency: it.totalPriceInOrderCurrency,
         priceLabel: it.priceLabel,
         parentItemId: it.parentItemId,
         sectionDiscountPct: it.sectionDiscountPct,
@@ -217,6 +218,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
               sectionNote: it.sectionNote,
               sectionDiscountPct: it.sectionDiscountPct,
               sectionDiscountLabel: it.sectionDiscountLabel,
+              currency: it.currency,
+              totalPriceInOrderCurrency: it.totalPriceInOrderCurrency,
             })),
           },
         },

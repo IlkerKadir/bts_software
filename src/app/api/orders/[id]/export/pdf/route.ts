@@ -103,6 +103,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         parentItemId: it.parentItemId,
         sectionDiscountPct: it.sectionDiscountPct === null ? null : Number(it.sectionDiscountPct),
         sectionDiscountLabel: it.sectionDiscountLabel,
+        currency: it.currency ?? null,
+        totalPriceInOrderCurrency:
+          it.totalPriceInOrderCurrency === null ? null : Number(it.totalPriceInOrderCurrency),
       })),
       headerBase64,
       logoBase64,

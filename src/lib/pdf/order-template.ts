@@ -44,6 +44,12 @@ export interface OrderItemForPdf {
   parentItemId: string | null;
   sectionDiscountPct: number | null;
   sectionDiscountLabel: string | null;
+  /** Per-SET currency override — price cells render in THIS currency
+   *  (e.g. "9.000,00 ₺" in a EUR STF), mirroring the quote PDF. */
+  currency?: string | null;
+  /** totalPrice converted into the STF currency at snapshot time; section
+   *  sums and GENEL TOPLAM prefer it over the raw face value. */
+  totalPriceInOrderCurrency?: number | null;
 }
 
 export interface OrderDataForPdf {
@@ -109,13 +115,18 @@ const isPriced = (it: OrderItemForPdf) =>
   !it.parentItemId &&
   (it.itemType === 'PRODUCT' || it.itemType === 'CUSTOM' || it.itemType === 'SET');
 
+/** Row amount for sums: the STF-currency total when the row carries a
+ *  currency override (mixed-currency SET), else the raw totalPrice. */
+const rowAmount = (it: OrderItemForPdf): number =>
+  Number(it.totalPriceInOrderCurrency ?? it.totalPrice) || 0;
+
 /** Sum of priced rows since the previous SUBTOTAL (mirrors quote-template). */
 function computeSubtotalSum(items: OrderItemForPdf[], subtotalIndex: number): number {
   let sum = 0;
   for (let i = subtotalIndex - 1; i >= 0; i--) {
     const it = items[i];
     if (it.itemType === 'SUBTOTAL') break;
-    if (isPriced(it)) sum += Number(it.totalPrice) || 0;
+    if (isPriced(it)) sum += rowAmount(it);
   }
   return sum;
 }
@@ -135,7 +146,7 @@ function computeGrandTotalAtIndex(items: OrderItemForPdf[], index: number): numb
       openTail = 0;
       continue;
     }
-    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+    if (isPriced(it)) openTail += rowAmount(it);
   }
   return round2(runningNet + openTail);
 }
@@ -224,13 +235,16 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     // (its totalPrice already rolls up the children), so their price cells
     // stay empty (client feedback 30.06).
     const pozCell = item.parentItemId ? '*' : (item.pozNo || '');
+    // Mixed-currency SETs print their price cells in their OWN currency
+    // (e.g. ₺) — the quote PDF convention; totals use the converted amount.
+    const rowCurrency = item.currency || currency;
     const priceCol = item.parentItemId
       ? `<td><p class="s2"><br></p></td>
          <td><p class="s2"><br></p></td>`
       : item.priceLabel
       ? `<td colspan="2"><p class="s2" style="text-align:center;">${escapeHtml(item.priceLabel)}</p></td>`
-      : `<td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, currency)}</p></td>
-         <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, currency)}</p></td>`;
+      : `<td><p class="s2" style="text-align:right;padding-right:14pt;">${formatCurrency(item.unitPrice, rowCurrency)}</p></td>
+         <td><p class="s2" style="text-align:right;">${formatCurrency(item.totalPrice, rowCurrency)}</p></td>`;
     const qtyStr = `${item.quantity} ${unitAbbr(item.unit)}`;
 
     return `<tr>

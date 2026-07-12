@@ -99,6 +99,34 @@ describe('buildStfSnapshot', () => {
     expect(items.map((i) => i.pozNo)).toEqual(['1', '2', '3', null, null]);
   });
 
+  it('converts a TRY-priced SET total into the STF currency at snapshot time', () => {
+    const base = { code: null, brand: null, model: null, quantity: 1, unit: 'Adet',
+      unitPrice: 0, totalPrice: 0, priceLabel: null, parentItemId: null, discountPct: 0,
+      sectionDiscountPct: null, sectionDiscountLabel: null };
+    const { items } = buildStfSnapshot(
+      {
+        quoteNumber: 'SA0004', refNo: null, currency: 'EUR',
+        // protected rate 48 with 6.7% protection → base rate 45
+        exchangeRate: 48.0, protectionPct: 6.666666666666667,
+        discountTotal: 0, grandTotal: 0,
+        company: { name: 'X', address: null, phone: null, taxNumber: null },
+        project: null, commercialTerms: [],
+        items: [
+          { ...base, id: 'p1', itemType: 'PRODUCT', sortOrder: 1, description: 'EUR ürün', unitPrice: 100, totalPrice: 100 },
+          { ...base, id: 's1', itemType: 'SET', sortOrder: 2, description: 'TL Set', currency: 'TRY', unitPrice: 9000, totalPrice: 9000 },
+        ],
+      },
+      new Date('2026-07-12T00:00:00Z')
+    );
+    const eurRow = items.find((i) => i.description === 'EUR ürün')!;
+    const tlSet = items.find((i) => i.description === 'TL Set')!;
+    expect(eurRow.currency).toBeNull();
+    expect(eurRow.totalPriceInOrderCurrency).toBeNull(); // already in STF currency
+    expect(tlSet.currency).toBe('TRY');
+    expect(tlSet.totalPrice).toBe(9000); // face value kept for display (₺)
+    expect(tlSet.totalPriceInOrderCurrency).toBe(200); // 9000 / 45 base rate
+  });
+
   it('keeps a child with an unknown parent at its flat position (defensive)', () => {
     const base = { code: null, brand: null, model: null, quantity: 1, unit: 'Adet',
       unitPrice: 0, totalPrice: 0, priceLabel: null, discountPct: 0,

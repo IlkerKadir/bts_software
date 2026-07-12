@@ -8,10 +8,18 @@
 export interface StfTotalsItem {
   itemType: string;
   totalPrice: number;
+  /** totalPrice converted into the STF currency (mixed-currency SETs).
+   *  When present it is preferred over the raw face value in every sum.
+   *  Accepts strings — Prisma Decimals serialize as strings over JSON. */
+  totalPriceInOrderCurrency?: number | string | null;
   priceLabel: string | null;
   parentItemId: string | null;
   sectionDiscountPct: number | null;
 }
+
+/** Row amount used in sums: the converted total when the row carries one. */
+const rowAmount = (it: StfTotalsItem): number =>
+  Number(it.totalPriceInOrderCurrency ?? it.totalPrice) || 0;
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -36,7 +44,7 @@ export function computeStfTotals(
       openTail = 0;
       continue;
     }
-    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+    if (isPriced(it)) openTail += rowAmount(it);
   }
   return { grandTotal: round2(grandTotal + openTail), discountTotal };
 }
@@ -61,7 +69,7 @@ export function computeStfGrandTotalAtIndex(items: StfTotalsItem[], index: numbe
       openTail = 0;
       continue;
     }
-    if (isPriced(it)) openTail += Number(it.totalPrice) || 0;
+    if (isPriced(it)) openTail += rowAmount(it);
   }
   return round2(runningNet + openTail);
 }

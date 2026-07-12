@@ -9,6 +9,8 @@ interface StfItem {
   id?: string;
   sortOrder: number;
   itemType: string;
+  currency?: string | null;
+  totalPriceInOrderCurrency?: number | string | null;
   pozNo: string | null;
   code: string | null;
   brand: string | null;

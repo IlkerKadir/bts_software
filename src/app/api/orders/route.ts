@@ -221,6 +221,8 @@ export async function POST(request: NextRequest) {
                 quoteNumber: quote.quoteNumber,
                 refNo: quote.refNo,
                 currency: quote.currency,
+                exchangeRate: Number(quote.exchangeRate) || 1,
+                protectionPct: Number(quote.protectionPct) || 0,
                 discountTotal: Number(quote.discountTotal),
                 grandTotal: Number(quote.grandTotal),
                 company: quote.company,
@@ -243,6 +245,7 @@ export async function POST(request: NextRequest) {
                   sectionDiscountPct:
                     i.sectionDiscountPct == null ? null : Number(i.sectionDiscountPct),
                   sectionDiscountLabel: i.sectionDiscountLabel,
+                  currency: i.currency ?? null,
                 })),
                 commercialTerms: quote.commercialTerms,
               },

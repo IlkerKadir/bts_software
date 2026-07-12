@@ -73,6 +73,7 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
             parentItemId: it.parentItemId, discountPct: it.discountPct,
             sectionNote: it.sectionNote,
             sectionDiscountPct: it.sectionDiscountPct, sectionDiscountLabel: it.sectionDiscountLabel,
+            currency: it.currency, totalPriceInOrderCurrency: it.totalPriceInOrderCurrency,
           })),
         },
       },

@@ -88,6 +88,21 @@ describe('generateOrderHtml (STF customer PDF)', () => {
     expect(html).toContain('GLT ZETA<br/>TYCO ZETTLER<br/>BTS');
   });
 
+  it('renders a TRY-priced SET in ₺ while GENEL TOPLAM uses the converted amount', () => {
+    const mixed = generateOrderHtml({
+      ...data,
+      items: [
+        { itemType: 'PRODUCT', pozNo: '1', description: 'EUR ürün', brand: null, code: null, quantity: 1, unit: 'Adet', unitPrice: 100, totalPrice: 100, priceLabel: null, parentItemId: null, sectionDiscountPct: null, sectionDiscountLabel: null },
+        { itemType: 'SET', pozNo: '2', description: 'TL Set', brand: null, code: null, quantity: 1, unit: 'Set', unitPrice: 9000, totalPrice: 9000, priceLabel: null, parentItemId: null, sectionDiscountPct: null, sectionDiscountLabel: null, currency: 'TRY', totalPriceInOrderCurrency: 200 },
+        { itemType: 'GRAND_TOTAL', pozNo: null, description: 'GENEL TOPLAM', brand: null, code: null, quantity: 0, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: null, parentItemId: null, sectionDiscountPct: null, sectionDiscountLabel: null },
+      ],
+    });
+    expect(mixed).toContain('9.000,00 ₺');   // face value in the SET's own currency
+    expect(mixed).toContain('300,00');        // 100 + 200 converted — NOT 9.100
+    expect(mixed).not.toContain('9.000,00 €');
+    expect(mixed).not.toContain('9.100,00');
+  });
+
   it('renders a GRAND_TOTAL row as a running total, not a product row', () => {
     const withGT = generateOrderHtml({
       ...data,
