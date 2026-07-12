@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Button, Input, Select, Modal } from '@/components/ui';
+import { Trash2 } from 'lucide-react';
 import { formatDate } from '@/lib/utils/format';
 import {
   QUOTE_PRIORITIES,
@@ -85,6 +86,11 @@ export function QuoteTrackingPanel({
   const [newReminder, setNewReminder] = useState('');
   const [addingLog, setAddingLog] = useState(false);
   const [logError, setLogError] = useState('');
+  // Delete authority mirrors the API: the note's author or management.
+  const [meId, setMeId] = useState<string | null>(null);
+  const [isManagerMe, setIsManagerMe] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Re-seed the static form whenever the panel (re)opens.
   useEffect(() => {
@@ -97,6 +103,40 @@ export function QuoteTrackingPanel({
     setStaticSaved(false);
     setStaticError('');
   }, [isOpen, initial]);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => {
+        setMeId(d.user?.id ?? null);
+        setIsManagerMe(Boolean(d.user?.role?.canApprove || d.user?.role?.canManageUsers));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleDeleteInteraction = async (interactionId: string) => {
+    if (confirmDeleteId !== interactionId) {
+      setConfirmDeleteId(interactionId);
+      return;
+    }
+    setDeletingId(interactionId);
+    setLogError('');
+    try {
+      const res = await fetch(`/api/quotes/${quoteId}/interactions/${interactionId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Kayıt silinemedi');
+      }
+      setInteractions((prev) => prev.filter((i) => i.id !== interactionId));
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : 'Kayıt silinemedi');
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  };
 
   const fetchLog = useCallback(async () => {
     setLoadingLog(true);
@@ -305,6 +345,23 @@ export function QuoteTrackingPanel({
                       <span className="ml-auto inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">
                         Hatırlatıcı: {formatDate(it.reminderDate)}
                       </span>
+                    )}
+                    {(isManagerMe || it.user?.id === meId) && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteInteraction(it.id)}
+                        onBlur={() => setConfirmDeleteId((prev) => (prev === it.id ? null : prev))}
+                        disabled={deletingId === it.id}
+                        className={
+                          confirmDeleteId === it.id
+                            ? (it.reminderDate ? '' : 'ml-auto ') + 'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 cursor-pointer'
+                            : (it.reminderDate ? '' : 'ml-auto ') + 'inline-flex items-center rounded p-0.5 text-primary-400 hover:text-red-600 cursor-pointer'
+                        }
+                        title="Kaydı sil"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {confirmDeleteId === it.id && 'Emin misiniz?'}
+                      </button>
                     )}
                   </div>
                   <p className="mt-1 whitespace-pre-wrap break-words text-primary-800">{it.note}</p>
