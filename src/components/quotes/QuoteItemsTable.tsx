@@ -663,6 +663,22 @@ export function QuoteItemsTable({
     return result;
   }, [items, brandFilter, textFilter, hasActiveFilter]);
 
+  // Items for the BrandProfitSummary panel: filteredItems is top-level only
+  // (children render as sub-rows), but the panel derives SET costs from the
+  // children — seat each surviving parent's children right behind it so both
+  // the cost math and the panel's positional section slicing keep them
+  // together (client 07.07: editor summary showed SET maliyet 0).
+  const summaryItems = useMemo(() => {
+    const out: QuoteItemData[] = [];
+    for (const it of filteredItems) {
+      out.push(it);
+      for (const sub of subRowsByParent.get(it.id) ?? []) {
+        out.push({ ...sub, parentItemId: it.id });
+      }
+    }
+    return out;
+  }, [filteredItems, subRowsByParent]);
+
   // Map item id → original index in the full items array (for drag/drop)
   const itemIndexMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -835,19 +851,36 @@ export function QuoteItemsTable({
     return { subtotal, discountAmount, grandTotal };
   }, [breakdown]);
 
+  // Flat item view INCLUDING SET children. The editor passes topLevelItems
+  // (children nested in `subRows`, never flat), but every cost summary needs
+  // the children — they carry the SET's cost (client 07.07: editor's top
+  // summary showed SET maliyet 0 while the detail page, which passes a flat
+  // list, showed it fine). Deduped by id as a guard against flat callers.
+  const flatItemsWithChildren = useMemo(() => {
+    const out: QuoteItemData[] = [];
+    const seen = new Set<string>();
+    for (const it of items) {
+      if (!seen.has(it.id)) { seen.add(it.id); out.push(it); }
+      for (const sub of it.subRows ?? []) {
+        if (!seen.has(sub.id)) { seen.add(sub.id); out.push({ ...sub, parentItemId: it.id }); }
+      }
+    }
+    return out;
+  }, [items]);
+
   // Profit/cost summary – kept separate from pricing summary so the
   // discount rewrite doesn't touch cost logic.
   const profitSummary = useMemo(() => {
     let totalCost = 0;
     const setCurrencyByParentId = new Map<string, string>();
     const setQtyByParentId = new Map<string, number>();
-    for (const it of items) {
+    for (const it of flatItemsWithChildren) {
       if (it.itemType === 'SET' && !it.parentItemId) {
         if (it.currency) setCurrencyByParentId.set(it.id, it.currency);
         setQtyByParentId.set(it.id, Number(it.quantity) || 1);
       }
     }
-    for (const item of items) {
+    for (const item of flatItemsWithChildren) {
       if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
       if (item.priceLabel) continue;
       if (item.itemType === 'SET' && !item.parentItemId) continue;
@@ -869,7 +902,7 @@ export function QuoteItemsTable({
     const totalProfit = summary.grandTotal - totalCost;
     const profitMargin = summary.grandTotal > 0 ? (totalProfit / summary.grandTotal) * 100 : 0;
     return { totalCost, totalProfit, profitMargin };
-  }, [items, summary.grandTotal, currency, baseForeignRate]);
+  }, [flatItemsWithChildren, summary.grandTotal, currency, baseForeignRate]);
 
   // Vertical auto-scroll loop. Runs during an active row drag. When
   // the pointer is within 80px of the viewport top or bottom, scroll
@@ -1385,9 +1418,12 @@ export function QuoteItemsTable({
         </div>
       )}
 
-      {/* ---- Brand profit/sales summary ---- */}
+      {/* ---- Brand profit/sales summary ----
+          filteredItems is top-level only; append each surviving parent's
+          children right behind it so the panel can compute SET costs
+          (children carry the cost) — client 07.07. */}
       <BrandProfitSummary
-        items={filteredItems}
+        items={summaryItems}
         currency={currency}
         exchangeRate={exchangeRate}
         protectionPct={protectionPct}
