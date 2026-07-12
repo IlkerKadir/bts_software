@@ -56,12 +56,12 @@ describe('generateOrderHtml (STF customer PDF)', () => {
     expect(html).toContain('Fyreye MKII Optik Duman Dedektörü'); // description present
     expect(html).not.toContain('MKII-OP'); // code/model not shown in the customer PDF
   });
-  it('renders child rows with * instead of a poz number', () => {
-    expect(html).toContain('>*</p>');
-  });
-  it('hides prices on SET child rows (only the parent shows the SET price)', () => {
-    // Child (parentItemId 'p1') has unitPrice/totalPrice 4.57 in the data,
-    // but the PDF must leave its price cells empty — client feedback 30.06.
+  it('does not render SET child rows at all (breakdown lives in the Excel only)', () => {
+    // Client 12.07: the customer PDF hides the SET breakdown entirely,
+    // like the quote PDF. The child (parentItemId 'p1') must not appear —
+    // neither its "*" poz marker nor its description/price.
+    expect(html).not.toContain('>*</p>');
+    expect(html).not.toContain('Fyreye MKII Standart Dedektör Soketi');
     expect(html).not.toContain('4,57');
   });
   it('renders a three-row section subtotal block with the discount label', () => {

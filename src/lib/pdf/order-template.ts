@@ -153,6 +153,11 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
 
   // ---------- Item rows ----------
   const itemRows = items.map((item, index) => {
+    // SET children never render on the customer PDF — the SET parent row
+    // already carries the rolled-up price, matching the quote PDF (which
+    // sends only top-level rows). The breakdown lives in the internal
+    // Excel only (client 12.07).
+    if (item.parentItemId) return '';
     if (item.itemType === 'HEADER') {
       return `<tr class="section-hdr" style="page-break-after:avoid; break-after:avoid;">
         <td><p><br></p></td>
