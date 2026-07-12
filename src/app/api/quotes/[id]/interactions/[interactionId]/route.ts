@@ -61,15 +61,22 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     await db.$transaction(async (tx) => {
       if (interaction.reminderDate) {
         // The POST mirrors reminderDate into a Reminder with these exact
-        // fields; there is no FK between them, so match best-effort.
-        await tx.reminder.deleteMany({
+        // fields; there is no FK between them, so match best-effort — but
+        // delete only ONE row: two interactions with the same note/date
+        // create two reminders, and removing one interaction must not kill
+        // the sibling's follow-up.
+        const mirrored = await tx.reminder.findFirst({
           where: {
             quoteId: id,
             userId: interaction.userId,
             dueDate: interaction.reminderDate,
             note: interaction.note,
           },
+          select: { id: true },
         });
+        if (mirrored) {
+          await tx.reminder.delete({ where: { id: mirrored.id } });
+        }
       }
       await tx.quoteInteraction.delete({ where: { id: interactionId } });
     });

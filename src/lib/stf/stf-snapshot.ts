@@ -151,7 +151,13 @@ export function buildStfSnapshot(
   let poz = 0;
   const items: StfItem[] = ordered
     .map((it, index) => {
-      const getsPoz = POZ_TYPES.has(it.itemType) && !it.parentItemId;
+      // Dangling parent refs are STRIPPED: downstream renderers treat any
+      // parentItemId row as a hidden SET child (the customer PDF skips them
+      // entirely), so an orphan must become a normal standalone row or its
+      // line item would vanish from the PDF.
+      const effectiveParentId =
+        it.parentItemId && knownIds.has(it.parentItemId) ? it.parentItemId : null;
+      const getsPoz = POZ_TYPES.has(it.itemType) && !effectiveParentId;
       if (getsPoz) poz += 1;
       const rowCurrency = it.currency ?? null;
       const totalPriceInOrderCurrency =
@@ -173,7 +179,7 @@ export function buildStfSnapshot(
         unitPrice: it.unitPrice,
         totalPrice: it.totalPrice,
         priceLabel: it.priceLabel,
-        parentItemId: it.parentItemId,
+        parentItemId: effectiveParentId,
         discountPct: it.discountPct,
         sectionDiscountPct: it.sectionDiscountPct,
         sectionDiscountLabel: it.sectionDiscountLabel,

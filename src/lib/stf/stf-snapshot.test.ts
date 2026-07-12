@@ -146,5 +146,11 @@ describe('buildStfSnapshot', () => {
       new Date('2026-06-18T00:00:00Z')
     );
     expect(items.map((i) => i.description)).toEqual(['A', 'Orphan', 'B']);
+    // The dangling parent ref is STRIPPED: renderers hide parentItemId rows
+    // (PDF skips SET children entirely), so an orphan must become a normal
+    // standalone row — with its own poz — or it would vanish from the PDF.
+    const orphan = items.find((i) => i.description === 'Orphan')!;
+    expect(orphan.parentItemId).toBeNull();
+    expect(orphan.pozNo).toBe('2');
   });
 });

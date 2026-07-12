@@ -189,33 +189,49 @@ export function computeManagerProfitSummary(
     ) {
       continue;
     }
-    if (item.priceLabel) continue;
-    // Child rows are handled through their parent below — never directly,
-    // so a child sliced into view without its parent adds no phantom cost.
-    if (item.parentItemId) continue;
+    if (item.parentItemId) {
+      // Children are costed through their visible SET parent below — a child
+      // sliced into view without its parent adds no phantom cost. ORPHANS
+      // (parent missing from the list, or not a SET) keep the legacy
+      // behavior: their cost books to their own brand.
+      const parent = itemsById.get(item.parentItemId);
+      if ((!parent || parent.itemType !== 'SET') && !item.priceLabel) {
+        const cost = rowCost(item);
+        if (cost != null) {
+          ensureBrand(item.brand || BRAND_FALLBACK).cost += convert(item, cost);
+        }
+      }
+      continue;
+    }
 
     const isTopLevelPriced =
       item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET';
     if (!isTopLevelPriced) continue;
 
-    // Revenue: attributed to the row's own brand.
-    const bucket = ensureBrand(item.brand || BRAND_FALLBACK);
-    bucket.revenue += convert(item, rowRevenue(item));
-    bucket.count += 1;
+    const brandKey = item.brand || BRAND_FALLBACK;
+    // Revenue: attributed to the row's own brand. priceLabel'd rows (e.g.
+    // "DAHİL") carry no revenue and no count.
+    if (!item.priceLabel) {
+      const bucket = ensureBrand(brandKey);
+      bucket.revenue += convert(item, rowRevenue(item));
+      bucket.count += 1;
+    }
 
     if (item.itemType === 'SET') {
       // SET parent: cost comes from its children (wherever they sit in the
       // flat list), attributed to the PARENT's brand so revenue and cost
-      // land in the same bucket.
+      // land in the same bucket. This applies even when the SET's price is
+      // a label — the children's costs are real regardless of how the
+      // price cell reads.
       for (const child of childrenByParent.get(item.id) ?? []) {
         if (child.priceLabel) continue;
         const cost = rowCost(child);
-        if (cost != null) bucket.cost += convert(child, cost);
+        if (cost != null) ensureBrand(brandKey).cost += convert(child, cost);
       }
-    } else {
+    } else if (!item.priceLabel) {
       // PRODUCT / CUSTOM: own cost.
       const cost = rowCost(item);
-      if (cost != null) bucket.cost += convert(item, cost);
+      if (cost != null) ensureBrand(brandKey).cost += convert(item, cost);
     }
   }
 

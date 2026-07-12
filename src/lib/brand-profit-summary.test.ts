@@ -132,6 +132,28 @@ describe('computeManagerProfitSummary', () => {
     expect(r.totals.totalCost).toBe(0);
   });
 
+  it("counts children costs of a priceLabel'd SET (e.g. DAHİL) — no revenue, real cost", () => {
+    const items: ProfitSummaryItem[] = [
+      item({ id: 's1', itemType: 'SET', brand: 'BTS', quantity: 1, unitPrice: 0, priceLabel: 'DAHİL' }),
+      item({ id: 'c1', itemType: 'PRODUCT', parentItemId: 's1', quantity: 2, unitPrice: 0, costPrice: 50 }),
+    ];
+    const r = computeManagerProfitSummary(items, items, EUR);
+    expect(r.brands).toHaveLength(1);
+    expect(r.brands[0].brand).toBe('BTS');
+    expect(r.brands[0].totalCost).toBe(100); // 50 × 2 — was silently dropped
+    expect(r.brands[0].totalRevenue).toBe(0);
+    expect(r.brands[0].itemCount).toBe(0); // label rows carry no count
+  });
+
+  it('books an orphan child (parent missing from the list) to its own brand', () => {
+    const items: ProfitSummaryItem[] = [
+      item({ id: 'c1', itemType: 'PRODUCT', brand: 'GLT', parentItemId: 'gone', quantity: 1, unitPrice: 0, costPrice: 40 }),
+      item({ id: 'p1', itemType: 'PRODUCT', brand: 'GLT', quantity: 1, unitPrice: 100, costPrice: 10 }),
+    ];
+    const r = computeManagerProfitSummary(items, items, EUR);
+    expect(r.brands[0].totalCost).toBe(50); // 10 own + 40 orphan (legacy behavior)
+  });
+
   it('keeps grand totals identical regardless of attribution', () => {
     const items: ProfitSummaryItem[] = [
       item({ id: 's1', itemType: 'SET', brand: 'ADVANTECH', quantity: 1, unitPrice: 1000 }),

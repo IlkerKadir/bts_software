@@ -6,6 +6,7 @@ import { expandTurkishVariants } from '@/lib/search-helpers';
 import { nextStfNumber } from '@/lib/stf/stf-number';
 import { buildStfSnapshot } from '@/lib/stf/stf-snapshot';
 import { orderVisibilityWhere } from '@/lib/orders/order-access';
+import { canUserAccessQuote } from '@/lib/quote-access';
 
 export async function GET(request: NextRequest) {
   try {
@@ -178,7 +179,14 @@ export async function POST(request: NextRequest) {
       where: { id: quoteId },
       include: {
         company: { select: { name: true, address: true, phone: true, taxNumber: true } },
-        project: { select: { name: true } },
+        project: {
+          select: {
+            name: true,
+            visibility: true,
+            visibleToRoleId: true,
+            visibleTo: { select: { userId: true } },
+          },
+        },
         items: { orderBy: { sortOrder: 'asc' } },
         commercialTerms: { select: { category: true, value: true } },
       },
@@ -186,6 +194,15 @@ export async function POST(request: NextRequest) {
 
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadi' }, { status: 404 });
+    }
+
+    // Visibility: creating an STF snapshots the quote's full pricing and makes
+    // the caller its owner — without this gate a user could copy a hidden
+    // quote's data into an STF they control (and block the real owner with
+    // the one-active-STF-per-quote rule).
+    const isManager = user.role.canApprove || user.role.canManageUsers;
+    if (!canUserAccessQuote(user.id, isManager, quote, user.roleId)) {
+      return NextResponse.json({ error: 'Bu teklife erişim yetkiniz yok' }, { status: 403 });
     }
 
     if (quote.status !== 'KAZANILDI') {

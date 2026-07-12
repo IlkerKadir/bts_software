@@ -57,6 +57,8 @@ interface StfData {
   items: StfItem[];
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = { EUR: '\u20ac', USD: '$', GBP: '\u00a3', TRY: '\u20ba' };
+
 const HEADER_FIELDS: { key: keyof StfData; label: string }[] = [
   { key: 'customerName', label: 'Firma Adı / İlgili Kişi' },
   { key: 'customerAddress', label: 'Firma Adresi' },
@@ -195,7 +197,11 @@ export function StfEditor({ stfId }: { stfId: string }) {
           value={stf.formDate ? stf.formDate.split('T')[0] : ''}
           onChange={(e) => setField('formDate', e.target.value)}
         />
-        <Input label="Para Birimi" value={stf.currency} onChange={(e) => setField('currency', e.target.value)} />
+        {/* Read-only: the currency comes from the source quote, and the
+            stored mixed-currency conversions (totalPriceInOrderCurrency)
+            are pinned to it — changing it would relabel totals without
+            reconverting them. */}
+        <Input label="Para Birimi" value={stf.currency} disabled readOnly />
       </div>
 
       <div className="rounded-lg border border-primary-200 overflow-x-auto">
@@ -299,16 +305,24 @@ export function StfEditor({ stfId }: { stfId: string }) {
                         onChange={(e) => setItem(idx, { unit: e.target.value })} />
                     )}
                   </td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="px-2 py-1 text-right whitespace-nowrap">
                     {isChild ? (
                       <span className="tabular-nums text-primary-400">{Number(it.unitPrice).toFixed(2)}</span>
                     ) : (
                       <input className="w-24 bg-transparent text-right" type="number" value={it.unitPrice}
                         onChange={(e) => setItem(idx, { unitPrice: parseNum(e.target.value, it.unitPrice) })} />
                     )}
+                    {/* Mixed-currency SET: mark the row's own currency (₺) so a
+                        9.000 TL set isn't read as 9.000 EUR (client 12.07). */}
+                    {it.currency && it.currency !== stf.currency && (
+                      <span className="ml-0.5 text-amber-600 font-medium">{CURRENCY_SYMBOLS[it.currency] || it.currency}</span>
+                    )}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">
+                  <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">
                     {it.priceLabel ? it.priceLabel : Number(it.totalPrice).toFixed(2)}
+                    {!it.priceLabel && it.currency && it.currency !== stf.currency && (
+                      <span className="ml-0.5 text-amber-600 font-medium">{CURRENCY_SYMBOLS[it.currency] || it.currency}</span>
+                    )}
                   </td>
                   <td className="px-2 py-1">
                     <input className="w-full bg-transparent" value={it.sectionNote ?? ''}
