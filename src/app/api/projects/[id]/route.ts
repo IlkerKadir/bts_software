@@ -32,6 +32,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             currency: true,
             createdAt: true,
             createdById: true,
+            company: { select: { name: true } },
           },
           orderBy: { createdAt: 'desc' },
         },

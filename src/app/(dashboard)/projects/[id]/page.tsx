@@ -40,6 +40,7 @@ import { PROJECT_LOCATION_OPTIONS } from '@/lib/turkish-provinces';
 interface ProjectQuote {
   id: string;
   quoteNumber: string;
+  company?: { name: string } | null;
   subject?: string | null;
   refNo?: string | null;
   status: string;
@@ -698,6 +699,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
               <thead>
                 <tr className="bg-accent-50 border-b border-accent-200 text-xs uppercase tracking-wider text-accent-600">
                   <th className="px-4 py-2.5 text-left">Teklif No</th>
+                  <th className="px-4 py-2.5 text-left">Firma</th>
                   <th className="px-4 py-2.5 text-left">Fatura Kodu</th>
                   <th className="px-4 py-2.5 text-left">Teklif Adı</th>
                   <th className="px-4 py-2.5 text-left">Durum</th>
@@ -711,7 +713,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
                   .filter((q) => {
                     const term = quoteSearch.trim().toLocaleLowerCase('tr-TR');
                     if (!term) return true;
-                    const haystack = [q.quoteNumber, q.refNo ?? '', q.subject ?? '']
+                    const haystack = [q.quoteNumber, q.refNo ?? '', q.subject ?? '', q.company?.name ?? '']
                       .join(' ')
                       .toLocaleLowerCase('tr-TR');
                     return haystack.includes(term);
@@ -723,6 +725,9 @@ export default function ProjectDetailPage({ params }: PageProps) {
                   >
                     <td className="px-4 py-2.5 font-medium text-primary-900">
                       {quote.quoteNumber}
+                    </td>
+                    <td className="px-4 py-2.5 text-primary-700">
+                      {quote.company?.name || '—'}
                     </td>
                     <td className="px-4 py-2.5 text-primary-700">
                       {quote.refNo || '—'}
