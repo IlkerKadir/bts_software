@@ -91,6 +91,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           parentItemId: item.parentItemId,
           priceLabel: item.priceLabel,
           currency: item.currency ?? null,
+          // SUBTOTAL rows carry the section discount; without this the
+          // profit calc treats every section as 0% and overstates revenue.
+          sectionDiscountPct:
+            item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
         };
       });
       // Only build a currency ctx when the quote actually has a set

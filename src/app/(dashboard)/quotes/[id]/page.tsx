@@ -309,20 +309,36 @@ export default function QuoteDetailPage({ params }: PageProps) {
     });
   };
 
-  // Build POZ NO mapping: sequential for top-level PRODUCT/CUSTOM/SET
-  // only. Sub-rows (children of a SET) are not numbered — their
+  // Build POZ NO mapping for top-level PRODUCT/CUSTOM/SET: custom poz
+  // (serviceMeta.customPozNo) wins, otherwise sequential — mirrors the
+  // editor's pozMap and the PDF template.
+  // Sub-rows (children of a SET) are not numbered — their
   // contribution is rolled into the SET parent's line, same rule as
   // the PDF/editor. Without this filter children would push the POZ
   // counter and make top-level items look like they skip numbers.
   const pozMap = useMemo(() => {
-    if (!quote) return new Map<string, number>();
-    const map = new Map<string, number>();
+    if (!quote) return new Map<string, string>();
+    const map = new Map<string, string>();
     let counter = 1;
     for (const item of quote.items) {
       if (item.parentItemId) continue;
       if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
-        map.set(item.id, counter);
-        counter++;
+        const customPozNo =
+          typeof item.serviceMeta?.customPozNo === 'string' && item.serviceMeta.customPozNo
+            ? item.serviceMeta.customPozNo
+            : null;
+        if (customPozNo) {
+          map.set(item.id, customPozNo);
+          // A purely numeric custom poz re-seats the running counter,
+          // same rule as the PDF and the editor.
+          const num = parseInt(customPozNo, 10);
+          if (!isNaN(num) && String(num) === customPozNo) {
+            counter = num + 1;
+          }
+        } else {
+          map.set(item.id, String(counter));
+          counter++;
+        }
       }
     }
     return map;
@@ -1159,6 +1175,10 @@ export default function QuoteDetailPage({ params }: PageProps) {
             katsayi: Number(item.katsayi),
             unitPrice: Number(item.unitPrice),
             discountPct: Number(item.discountPct),
+            // Section discount lives on SUBTOTAL rows; the summary reads
+            // it to compute net (discounted) revenue per brand.
+            sectionDiscountPct:
+              item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
             vatRate: Number(item.vatRate),
             totalPrice: Number(item.totalPrice),
             notes: item.notes,
@@ -1237,11 +1257,16 @@ export default function QuoteDetailPage({ params }: PageProps) {
                   );
                 }
 
-                // NOTE row
+                // NOTE row — a custom poz set on the note shows in the
+                // poz cell. Unlike the PDF/Excel (which fall back to
+                // "NOT:"), the cell stays empty when unset — deliberate,
+                // to keep existing notes rendering as before.
                 if (item.itemType === 'NOTE') {
+                  const notePoz =
+                    typeof item.serviceMeta?.customPozNo === 'string' ? item.serviceMeta.customPozNo : '';
                   return (
                     <tr key={item.id} className={cn(isHighlighted ? 'bg-yellow-100' : 'bg-amber-50/50')}>
-                      <td className="px-3 py-2" />
+                      <td className="px-3 py-2 text-center tabular-nums text-primary-500 font-medium">{notePoz}</td>
                       <td colSpan={permissions.canViewCosts ? 8 : 7} className="px-3 py-2 text-sm text-primary-700 italic whitespace-pre-wrap break-words">
                         {item.description}
                       </td>

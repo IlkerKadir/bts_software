@@ -342,6 +342,44 @@ describe('ExcelService', () => {
       expect(sheet.getCell(12, 1).value).toBe(3); // CUSTOM
     });
 
+    it('uses customPozNo on data rows instead of the sequential counter', async () => {
+      const service = new ExcelService();
+      const customData = {
+        ...mockQuoteData,
+        items: mockQuoteData.items.map((it) =>
+          it.itemType === 'PRODUCT' ? { ...it, customPozNo: 'E-19-01.1' } : it
+        ),
+      };
+      const buffer = await service.generateQuoteExcel(customData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // Non-numeric custom poz does not advance the counter — the
+      // following rows continue from where the counter actually is.
+      expect(sheet.getCell(9, 1).value).toBe('E-19-01.1'); // PRODUCT (custom)
+      expect(sheet.getCell(10, 1).value).toBe(1);          // SET
+      expect(sheet.getCell(12, 1).value).toBe(2);          // CUSTOM
+    });
+
+    it('re-seats the sequential counter after a numeric customPozNo', async () => {
+      const service = new ExcelService();
+      const customData = {
+        ...mockQuoteData,
+        items: mockQuoteData.items.map((it) =>
+          it.itemType === 'PRODUCT' ? { ...it, customPozNo: '5' } : it
+        ),
+      };
+      const buffer = await service.generateQuoteExcel(customData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      expect(sheet.getCell(9, 1).value).toBe('5'); // PRODUCT (custom, numeric)
+      expect(sheet.getCell(10, 1).value).toBe(6);  // SET continues from 5
+      expect(sheet.getCell(12, 1).value).toBe(7);  // CUSTOM
+    });
+
     it('uses Turkish currency format for prices', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);

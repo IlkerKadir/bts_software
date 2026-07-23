@@ -149,6 +149,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return {
           itemType,
           description,
+          customPozNo: meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : null,
           code: item.code ?? '',
           brand: item.brand ?? '',
           model: item.model ?? '',

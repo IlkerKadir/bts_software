@@ -593,11 +593,23 @@ export class ExcelService {
           sheet.getRow(currentRow).height = 16;
         }
       } else {
-        // PRODUCT / CUSTOM / SET
-        pozCounter++;
+        // PRODUCT / CUSTOM / SET — custom poz wins over the sequential
+        // counter; a purely numeric custom poz re-seats the counter,
+        // same rule as the PDF template and the editor.
+        let pozValue: string | number;
+        if (item.customPozNo) {
+          pozValue = item.customPozNo;
+          const num = parseInt(item.customPozNo, 10);
+          if (!isNaN(num) && String(num) === item.customPozNo) {
+            pozCounter = num;
+          }
+        } else {
+          pozCounter++;
+          pozValue = pozCounter;
+        }
 
         const pozCell = sheet.getCell(currentRow, 1);
-        pozCell.value = pozCounter;
+        pozCell.value = pozValue;
         pozCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         pozCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         pozCell.border = blackBoxBorder();
