@@ -28,8 +28,9 @@ export interface QuoteItemForExcel {
   /** Replaces MIKTAR + BIRIM + TOPLAM columns with a merged cell showing
    *  this literal text. */
   priceLabel?: string | null;
-  /** Optional per-SET currency override. When set on a top-level SET
-   *  row, the MIKTAR/BİRİM/TOPLAM cells render in that currency. */
+  /** Optional per-SET currency override. Honored on SET rows and on
+   *  sub-rows (children inherit their parent SET's currency): the
+   *  MIKTAR/BİRİM/TOPLAM — and MALİYET — cells render in it. */
   currency?: string | null;
   /** Row total converted to quote currency for SUBTOTAL aggregation. */
   totalPriceInQuoteCurrency?: number;
