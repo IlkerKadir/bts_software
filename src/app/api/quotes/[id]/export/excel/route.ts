@@ -5,6 +5,7 @@ import { canUserAccessQuote } from '@/lib/quote-access';
 import { getExcelService, QuoteDataForExcel, QuoteItemForExcel, CompanyInfo } from '@/lib/excel/excel-service';
 import { buildQuoteExportFilename } from '@/lib/filename';
 import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
+import { getEffectiveCostPriceForItem, getSetEffectiveCostPrice } from '@/lib/ek-maliyet';
 import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 
 interface RouteParams {
@@ -17,26 +18,6 @@ interface RouteParams {
 function extractSystemBrand(items: { itemType: string; brand: string | null }[]): string | null {
   const firstProduct = items.find(item => item.itemType === 'PRODUCT' && item.brand);
   return firstProduct?.brand || null;
-}
-
-/**
- * Get item description based on quote language.
- * Uses nameTr for Turkish, nameEn for English, fallback to description.
- */
-function getItemDescription(
-  item: {
-    description: string;
-    product?: { nameTr?: string | null; nameEn?: string | null } | null;
-  },
-  language: string
-): string {
-  if (language === 'EN' && item.product?.nameEn) {
-    return item.product.nameEn;
-  }
-  if (language === 'TR' && item.product?.nameTr) {
-    return item.product.nameTr;
-  }
-  return item.description;
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -111,13 +92,55 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       xlsxCtx = { quoteCurrency: quote.currency, baseForeignRate };
     }
 
-    // Map items to customer-facing interface (no internal columns)
-    // Filter out sub-rows (parentItemId != null) — they are internal cost tracking only
-    const excelItems: QuoteItemForExcel[] = quote.items
-      .filter(item => !item.parentItemId)
+    // SET children ship in the Excel (client 27.07: "STF'deki gibi ama
+    // fiyatları ile") seated directly behind their parent. A dangling
+    // parentItemId (unreachable today — children cascade-delete with the
+    // parent) degrades to a standalone top-level poz'd row rather than
+    // disappearing. Sums in the Excel writer skip sub-rows, so including
+    // them cannot double-count.
+    const knownIds = new Set(quote.items.map(i => i.id));
+    const childrenByParent = new Map<string, typeof quote.items>();
+    const topLevelItems: typeof quote.items = [];
+    for (const it of quote.items) {
+      const pid = it.parentItemId && knownIds.has(it.parentItemId) ? it.parentItemId : null;
+      if (pid) {
+        const list = childrenByParent.get(pid) ?? [];
+        list.push(it);
+        childrenByParent.set(pid, list);
+      } else {
+        topLevelItems.push(it);
+      }
+    }
+    const orderedItems = topLevelItems.flatMap(it => [it, ...(childrenByParent.get(it.id) ?? [])]);
+
+    // MALİYET column is manager-only (canViewCosts) — server-side gate,
+    // never driven by a client parameter.
+    const includeCosts = user.role.canViewCosts === true;
+    const effectiveUnitCost = (item: (typeof quote.items)[number]): number | null => {
+      // Mirrors the editor's Maliyet column: a SET aggregates its
+      // children; a childless SET falls back to its own cost fields.
+      if (item.itemType === 'SET') {
+        const children = (childrenByParent.get(item.id) ?? []).map(c => ({
+          itemType: c.itemType,
+          costPrice: c.costPrice,
+          ekMaliyetDelta: c.ekMaliyetDelta,
+          listPrice: c.listPrice,
+          quantity: Number(c.quantity),
+        }));
+        if (children.length > 0) return getSetEffectiveCostPrice(children);
+      }
+      return getEffectiveCostPriceForItem(item);
+    };
+
+    const excelItems: QuoteItemForExcel[] = orderedItems
       .map(item => {
         const itemType = item.itemType as QuoteItemForExcel['itemType'];
-        const description = getItemDescription(item, quote.language);
+        // The item's OWN description — what the user sees/edited in the
+        // editor and what the PDF prints. The old catalog-name preference
+        // (product.nameTr/nameEn) silently reverted user edits (client 27.07).
+        const description = item.description;
+        const isSubRow = !!(item.parentItemId && knownIds.has(item.parentItemId));
+        const parentSet = isSubRow ? quote.items.find(p => p.id === item.parentItemId) : undefined;
 
         const meta = item.serviceMeta as Record<string, unknown> | null;
         const highlight = meta && meta.highlight === true ? true : undefined;
@@ -141,7 +164,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const rawTotal = Number(item.totalPrice);
         let totalPriceInQuoteCurrency: number | undefined;
-        if (xlsxCtx && item.currency && item.currency !== xlsxCtx.quoteCurrency) {
+        if (!isSubRow && xlsxCtx && item.currency && item.currency !== xlsxCtx.quoteCurrency) {
           totalPriceInQuoteCurrency = convertToQuoteCurrency(rawTotal, item.currency, xlsxCtx);
         }
 
@@ -149,7 +172,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return {
           itemType,
           description,
-          customPozNo: meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : null,
+          customPozNo:
+            !isSubRow && meta && typeof meta.customPozNo === 'string' ? meta.customPozNo : null,
           code: item.code ?? '',
           brand: item.brand ?? '',
           model: item.model ?? '',
@@ -161,8 +185,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           katsayi: Number(item.katsayi),
           listPrice: Number(item.listPrice),
           priceLabel: item.priceLabel,
-          currency: item.currency ?? null,
+          // Children inherit their parent SET's currency so their price
+          // cells render with the SET's symbol (mirrors the editor).
+          currency: isSubRow
+            ? (item.currency ?? parentSet?.currency ?? null)
+            : (item.currency ?? null),
           totalPriceInQuoteCurrency,
+          isSubRow,
+          costPrice: includeCosts ? effectiveUnitCost(item) : undefined,
         };
       });
 
@@ -205,6 +235,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
       commercialTerms,
       notes: notes.length > 0 ? notes : undefined,
+      includeCosts,
     };
 
     // Load optional company info override from system settings

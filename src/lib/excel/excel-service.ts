@@ -40,6 +40,15 @@ export interface QuoteItemForExcel {
   sectionDiscountLabel?: string | null;
   /** When set on a NOTE row, replaces the default "NOT:" marker in column A. */
   customPozNo?: string | null;
+  /** True for SET children. Rendered under their parent with a "*" poz
+   *  marker (like the STF Excel) and their own prices, but excluded from
+   *  poz numbering and from SUBTOTAL / GRAND_TOTAL sums — the parent
+   *  SET's totalPrice already covers them. */
+  isSubRow?: boolean;
+  /** Per-unit effective cost (ek maliyet dahil; SET parents aggregate
+   *  children). Rendered in the MALİYET column when `includeCosts` is
+   *  set on the quote data. Null renders as "-". */
+  costPrice?: number | null;
   /** When true, every cell on the row is given a yellow fill so the row
    *  stands out visually — matches the editor's right-click "Vurgula"
    *  toggle. */
@@ -81,6 +90,10 @@ export interface QuoteDataForExcel {
   };
   commercialTerms?: CommercialTermForExcel[];
   notes?: NoteForExcel[];
+  /** When true, a MALİYET column (I) is appended after TOPLAM FİYAT.
+   *  Only the export route sets this, and only for canViewCosts users —
+   *  the flag must never be driven by client input. */
+  includeCosts?: boolean;
 }
 
 /**
@@ -116,6 +129,10 @@ const TOTAL_COLUMNS = 8;
 const COLUMN_WIDTHS = [7.33, 14, 14, 14, 40, 8.5, 10.66, 11.33];
 
 const TABLE_HEADERS = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
+
+/** Optional 9th column (I), appended only when `includeCosts` is set. */
+const COST_HEADER = 'MALİYET';
+const COST_COLUMN_WIDTH = 11.33;
 
 const FONT_FAMILY = 'Arial';
 const BASE_FONT_SIZE = 8;
@@ -220,6 +237,9 @@ function computeExcelSubtotalSum(items: QuoteItemForExcel[], subtotalIndex: numb
     const item = items[i];
     if (item.itemType === 'SUBTOTAL') break;
     if (item.priceLabel) continue;
+    // SET children are informational breakdown rows — the parent SET's
+    // totalPrice already covers them, so summing both double-counts.
+    if (item.isSubRow) continue;
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
       // Prefer the pre-converted quote-currency total when present
       // (mixed-currency quotes); fall back to raw totalPrice for pure
@@ -250,6 +270,7 @@ function computeExcelGrandTotalAtIndex(items: QuoteItemForExcel[], grandTotalInd
       continue;
     }
     if (item.priceLabel) continue;
+    if (item.isSubRow) continue; // breakdown rows — parent SET covers them
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
       openTail += item.totalPriceInQuoteCurrency ?? item.totalPrice ?? 0;
     }
@@ -276,11 +297,15 @@ export class ExcelService {
    * `public/header` assets), we silently skip — the file still exports
    * with row 1 left blank as a top margin.
    */
-  private async addBanner(workbook: ExcelJS.Workbook, sheet: ExcelJS.Worksheet): Promise<void> {
-    // Approximate pixel width of the full A–E column range. Excel's
+  private async addBanner(
+    workbook: ExcelJS.Workbook,
+    sheet: ExcelJS.Worksheet,
+    columnWidths: number[]
+  ): Promise<void> {
+    // Approximate pixel width of the full column range. Excel's
     // column width uses the default font's max-digit-width
     // (Calibri 11pt ≈ 7 px) plus 5 px padding per column.
-    const totalColPx = COLUMN_WIDTHS.reduce((sum, w) => sum + Math.round(w * 7 + 5), 0);
+    const totalColPx = columnWidths.reduce((sum, w) => sum + Math.round(w * 7 + 5), 0);
     const rowHeightPx = 133; // ≈ 100 pt, matches banner's natural aspect
     sheet.getRow(1).height = 100;
 
@@ -326,7 +351,7 @@ export class ExcelService {
         });
         sheet.addImage(imageId, {
           tl: { col: 0, row: 0 },
-          br: { col: TOTAL_COLUMNS, row: 1 },
+          br: { col: columnWidths.length, row: 1 },
         } as unknown as ExcelJS.ImageRange);
         return;
       } catch (err) {
@@ -428,9 +453,10 @@ export class ExcelService {
    * Row 7 of the template: the items table column headers. Gray fill
    * matching the PROFORMA FATURA panel, bold, centered, bordered.
    */
-  private buildTableHeader(sheet: ExcelJS.Worksheet, row: number): void {
+  private buildTableHeader(sheet: ExcelJS.Worksheet, row: number, includeCosts: boolean): void {
     sheet.getRow(row).height = 18;
-    TABLE_HEADERS.forEach((label, idx) => {
+    const headers = includeCosts ? [...TABLE_HEADERS, COST_HEADER] : TABLE_HEADERS;
+    headers.forEach((label, idx) => {
       const cell = sheet.getCell(row, idx + 1);
       cell.value = label;
       cell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
@@ -451,11 +477,22 @@ export class ExcelService {
     startRow: number,
     items: QuoteItemForExcel[],
     currency: string,
-    grandTotal: number
+    grandTotal: number,
+    includeCosts: boolean
   ): number {
     void grandTotal; // kept for API compat; no longer read — GRAND_TOTAL is now per-row
+    const totalCols = includeCosts ? TOTAL_COLUMNS + 1 : TOTAL_COLUMNS;
     let currentRow = startRow;
     let pozCounter = 0;
+
+    // On totals/label rows the MALİYET column has no value; close the
+    // table frame with a bordered (optionally gray) empty cell.
+    const fillCostGap = (row: number, gray: boolean) => {
+      if (!includeCosts) return;
+      const cell = sheet.getCell(row, TOTAL_COLUMNS + 1);
+      cell.border = blackBoxBorder();
+      if (gray) cell.fill = grayFill();
+    };
 
     // When a row is highlighted, override every cell in the row with a
      // yellow fill once the regular drawing is complete. SUBTOTAL is
@@ -467,7 +504,7 @@ export class ExcelService {
       fgColor: { argb: 'FFFFF9C4' },
     };
     const applyHighlight = (row: number) => {
-      for (let col = 1; col <= TOTAL_COLUMNS; col++) {
+      for (let col = 1; col <= totalCols; col++) {
         sheet.getCell(row, col).fill = HIGHLIGHT_FILL;
       }
     };
@@ -477,12 +514,12 @@ export class ExcelService {
       if (item.itemType === 'HEADER') {
         // Bold section band — B:E merged, column A is left empty so
         // the section marker lines up flush with the description column.
-        sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+        sheet.mergeCells(currentRow, 2, currentRow, totalCols);
         const cell = sheet.getCell(currentRow, 2);
         cell.value = item.description;
         cell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         cell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-        styleMergedRange(sheet, currentRow, 2, TOTAL_COLUMNS);
+        styleMergedRange(sheet, currentRow, 2, totalCols);
 
         // Give column A a border too so the row visually connects to
         // the framed items table above.
@@ -497,12 +534,12 @@ export class ExcelService {
         pozCell.alignment = { horizontal: 'center', vertical: 'middle' };
         pozCell.border = blackBoxBorder();
 
-        sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+        sheet.mergeCells(currentRow, 2, currentRow, totalCols);
         const descCell = sheet.getCell(currentRow, 2);
         descCell.value = item.description;
         descCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
         descCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true, indent: 1 };
-        styleMergedRange(sheet, currentRow, 2, TOTAL_COLUMNS);
+        styleMergedRange(sheet, currentRow, 2, totalCols);
 
         const lineCount = Math.max(
           item.description.split('\n').length,
@@ -529,6 +566,7 @@ export class ExcelService {
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
         sumCell.border = blackBoxBorder();
         sumCell.fill = grayFill();
+        fillCostGap(currentRow, true);
 
         sheet.getRow(currentRow).height = 16;
       } else if (item.itemType === 'SUBTOTAL') {
@@ -554,6 +592,7 @@ export class ExcelService {
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
         sumCell.border = blackBoxBorder();
         sumCell.fill = grayFill();
+        fillCostGap(currentRow, true);
         sheet.getRow(currentRow).height = 16;
 
         if (pct > 0) {
@@ -573,6 +612,7 @@ export class ExcelService {
           discAmtCell.alignment = { horizontal: 'right', vertical: 'middle' };
           discAmtCell.border = blackBoxBorder();
           discAmtCell.fill = grayFill();
+          fillCostGap(currentRow, true);
           sheet.getRow(currentRow).height = 16;
 
           // Row 3 — NET SUBTOTAL.
@@ -590,14 +630,19 @@ export class ExcelService {
           netSumCell.alignment = { horizontal: 'right', vertical: 'middle' };
           netSumCell.border = blackBoxBorder();
           netSumCell.fill = grayFill();
+          fillCostGap(currentRow, true);
           sheet.getRow(currentRow).height = 16;
         }
       } else {
         // PRODUCT / CUSTOM / SET — custom poz wins over the sequential
         // counter; a purely numeric custom poz re-seats the counter,
-        // same rule as the PDF template and the editor.
+        // same rule as the PDF template and the editor. SET children
+        // get a "*" marker (like the STF Excel) and never advance the
+        // counter.
         let pozValue: string | number;
-        if (item.customPozNo) {
+        if (item.isSubRow) {
+          pozValue = '*';
+        } else if (item.customPozNo) {
           pozValue = item.customPozNo;
           const num = parseInt(item.customPozNo, 10);
           if (!isNaN(num) && String(num) === item.customPozNo) {
@@ -635,6 +680,13 @@ export class ExcelService {
         descCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true, indent: 1 };
         descCell.border = blackBoxBorder();
 
+        // Per-row currency: a SET with its own currency (e.g. a TRY-priced
+        // SET in an EUR quote) renders its price cells — and those of its
+        // children — in that currency. Subtotals/grand total below use
+        // the quote currency.
+        const rowCurrency =
+          ((item.itemType === 'SET' || item.isSubRow) && item.currency) ? item.currency : currency;
+
         if (item.priceLabel) {
           // Keep MIKTAR (col F) with the quantity; merge only BIRIM
           // FIYAT + TOPLAM FIYAT (G:H) for the literal label text.
@@ -663,11 +715,6 @@ export class ExcelService {
           qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           qtyCell.border = blackBoxBorder();
 
-          // Per-SET currency override: the row's MIKTAR/BİRİM/TOPLAM
-          // cells render in the SET's own currency when set, otherwise
-          // the quote's currency. Subtotals/grand total below use the
-          // quote currency.
-          const rowCurrency = (item.itemType === 'SET' && item.currency) ? item.currency : currency;
           const unitPriceCell = sheet.getCell(currentRow, 7);
           unitPriceCell.value = formatTurkishCurrency(item.unitPrice ?? 0, rowCurrency);
           unitPriceCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
@@ -679,6 +726,17 @@ export class ExcelService {
           totalCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           totalCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           totalCell.border = blackBoxBorder();
+        }
+
+        // MALİYET (col I) — per-unit effective cost, "-" when unknown.
+        // Rendered on priceLabel rows too (a DAHİL SET still has a cost).
+        if (includeCosts) {
+          const costCell = sheet.getCell(currentRow, TOTAL_COLUMNS + 1);
+          costCell.value =
+            item.costPrice != null ? formatTurkishCurrency(item.costPrice, rowCurrency) : '-';
+          costCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
+          costCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+          costCell.border = blackBoxBorder();
         }
 
         // Roughly fit long descriptions into a taller row. Column E
@@ -712,7 +770,8 @@ export class ExcelService {
     sheet: ExcelJS.Worksheet,
     startRow: number,
     commercialTerms: CommercialTermForExcel[],
-    notes?: NoteForExcel[]
+    notes: NoteForExcel[] | undefined,
+    totalCols: number
   ): number {
     let currentRow = startRow + 1; // blank spacer row
 
@@ -727,7 +786,7 @@ export class ExcelService {
     const dahilOlmayan = termsByCategory.get('DAHIL_OLMAYAN');
     if (dahilOlmayan && dahilOlmayan.length > 0) {
       // Title row, A:E merged
-      sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS);
+      sheet.mergeCells(currentRow, 1, currentRow, totalCols);
       const t = sheet.getCell(currentRow, 1);
       t.value = 'Dahil Olmayan Hizmetler:';
       t.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
@@ -739,7 +798,7 @@ export class ExcelService {
       dahilOlmayan
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .forEach((term) => {
-          sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+          sheet.mergeCells(currentRow, 2, currentRow, totalCols);
           const v = sheet.getCell(currentRow, 2);
           v.value = term.value;
           v.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
@@ -758,7 +817,7 @@ export class ExcelService {
     );
     if (hasStandardTerms) {
       // Title row, A:E merged
-      sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS);
+      sheet.mergeCells(currentRow, 1, currentRow, totalCols);
       const h = sheet.getCell(currentRow, 1);
       h.value = 'TİCARİ ŞARTLAR';
       h.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
@@ -771,7 +830,7 @@ export class ExcelService {
         if (!terms || terms.length === 0) continue;
 
         // Category header row, B:E merged, bold
-        sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+        sheet.mergeCells(currentRow, 2, currentRow, totalCols);
         const t = sheet.getCell(currentRow, 2);
         t.value = label;
         t.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
@@ -785,7 +844,7 @@ export class ExcelService {
         if (key === 'onaylar') {
           // Single comma-joined line (matches PDF behavior)
           const joined = sortedTerms.map((x) => x.value).join(', ');
-          sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+          sheet.mergeCells(currentRow, 2, currentRow, totalCols);
           const v = sheet.getCell(currentRow, 2);
           v.value = joined;
           v.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
@@ -805,7 +864,7 @@ export class ExcelService {
               lines = [term.value];
             }
             for (const line of lines) {
-              sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+              sheet.mergeCells(currentRow, 2, currentRow, totalCols);
               const v = sheet.getCell(currentRow, 2);
               v.value = line;
               v.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
@@ -818,7 +877,7 @@ export class ExcelService {
           // Plain text categories (garanti, teslim_yeri, odeme, kdv,
           // teslimat, opsiyon) — one row per entry
           for (const term of sortedTerms) {
-            sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+            sheet.mergeCells(currentRow, 2, currentRow, totalCols);
             const v = sheet.getCell(currentRow, 2);
             v.value = term.value;
             v.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
@@ -856,7 +915,7 @@ export class ExcelService {
       const sorted = [...allNotes].sort((a, b) => a.sortOrder - b.sortOrder);
 
       // Title row, B:E merged (column A reserved for the note index)
-      sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+      sheet.mergeCells(currentRow, 2, currentRow, totalCols);
       const h = sheet.getCell(currentRow, 2);
       h.value = 'NOTLAR';
       h.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
@@ -873,7 +932,7 @@ export class ExcelService {
           type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.YELLOW },
         };
 
-        sheet.mergeCells(currentRow, 2, currentRow, TOTAL_COLUMNS);
+        sheet.mergeCells(currentRow, 2, currentRow, totalCols);
         const noteCell = sheet.getCell(currentRow, 2);
         noteCell.value = note.text;
         noteCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
@@ -911,20 +970,23 @@ export class ExcelService {
 
     const sheet = workbook.addWorksheet('Proforma Fatura');
 
+    const includeCosts = data.includeCosts === true;
+    const columnWidths = includeCosts ? [...COLUMN_WIDTHS, COST_COLUMN_WIDTH] : COLUMN_WIDTHS;
+
     // Column widths from the reference template
-    COLUMN_WIDTHS.forEach((width, idx) => {
+    columnWidths.forEach((width, idx) => {
       sheet.getColumn(idx + 1).width = width;
     });
 
-    // Row 1: BTS banner image spanning A:E. Falls back to a blank
-    // top-margin row if the image file isn't found.
-    await this.addBanner(workbook, sheet);
+    // Row 1: BTS banner image spanning the full column range. Falls back
+    // to a blank top-margin row if the image file isn't found.
+    await this.addBanner(workbook, sheet, columnWidths);
 
     // Rows 2-6: customer info block
     const afterCustomer = this.buildCustomerBlock(sheet, data);
 
     // Row 7: items table header
-    this.buildTableHeader(sheet, afterCustomer);
+    this.buildTableHeader(sheet, afterCustomer, includeCosts);
 
     // Rows 8+: items
     const afterItems = this.buildItemsSection(
@@ -932,7 +994,8 @@ export class ExcelService {
       afterCustomer + 1,
       data.items,
       data.currency,
-      data.totals.grandTotal
+      data.totals.grandTotal,
+      includeCosts
     );
 
     // Terms + notes (text-only, no borders)
@@ -944,7 +1007,8 @@ export class ExcelService {
         sheet,
         afterItems,
         data.commercialTerms || [],
-        data.notes
+        data.notes,
+        columnWidths.length
       );
     }
 

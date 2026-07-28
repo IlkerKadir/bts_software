@@ -380,6 +380,119 @@ describe('ExcelService', () => {
       expect(sheet.getCell(12, 1).value).toBe(7);  // CUSTOM
     });
 
+    // --- SET children (sub-rows) & MALİYET column ---
+
+    // HEADER(8), PRODUCT(9), SET(10), child×2(11-12), NOTE(13),
+    // CUSTOM(14), SUBTOTAL(15), GRAND_TOTAL(16)
+    const dataWithChildren: QuoteDataForExcel = {
+      ...mockQuoteData,
+      items: [
+        mockQuoteData.items[0], // HEADER
+        { ...mockQuoteData.items[1], costPrice: 40 }, // PRODUCT
+        { ...mockQuoteData.items[2], costPrice: 250 }, // SET
+        {
+          itemType: 'PRODUCT',
+          description: 'Supervizyon Hizmeti',
+          quantity: 3,
+          unitPrice: 100,
+          totalPrice: 300,
+          isSubRow: true,
+          costPrice: 60,
+        },
+        {
+          itemType: 'PRODUCT',
+          description: 'Devreye Alma Hizmeti',
+          quantity: 2,
+          unitPrice: 100,
+          totalPrice: 200,
+          isSubRow: true,
+          costPrice: null,
+        },
+        mockQuoteData.items[3], // NOTE
+        mockQuoteData.items[4], // CUSTOM
+        { itemType: 'SUBTOTAL', description: 'Ara Toplam' },
+        { itemType: 'GRAND_TOTAL', description: 'GENEL TOPLAM' },
+      ],
+    };
+
+    it('renders SET children under the parent with * poz and their prices', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel(dataWithChildren);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      expect(sheet.getCell(11, 1).value).toBe('*');
+      expect(sheet.getCell(12, 1).value).toBe('*');
+      expect(sheet.getCell(11, 5).value).toBe('Supervizyon Hizmeti');
+      // Children keep their prices (unlike the STF Excel)
+      expect(sheet.getCell(11, 7).value?.toString()).toContain('100,00');
+      expect(sheet.getCell(11, 8).value?.toString()).toContain('300,00');
+      // Poz numbering skips sub-rows: CUSTOM after the NOTE is poz 3
+      expect(sheet.getCell(9, 1).value).toBe(1);
+      expect(sheet.getCell(10, 1).value).toBe(2);
+      expect(sheet.getCell(14, 1).value).toBe(3);
+    });
+
+    it('renders sub-row prices in the parent SET currency', async () => {
+      const service = new ExcelService();
+      const tryySetData: QuoteDataForExcel = {
+        ...mockQuoteData,
+        items: [
+          { itemType: 'SET', description: 'TL Set', quantity: 1, unitPrice: 9000, totalPrice: 9000, currency: 'TRY' },
+          { itemType: 'PRODUCT', description: 'TL Cocuk', quantity: 2, unitPrice: 4500, totalPrice: 9000, isSubRow: true, currency: 'TRY' },
+        ],
+      };
+      const buffer = await service.generateQuoteExcel(tryySetData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // Both the TRY SET (row 8) and its child (row 9) show ₺, not €.
+      expect(sheet.getCell(8, 8).value?.toString()).toContain('₺');
+      expect(sheet.getCell(9, 7).value?.toString()).toContain('₺');
+      expect(sheet.getCell(9, 8).value?.toString()).toContain('₺');
+    });
+
+    it('excludes sub-rows from SUBTOTAL and GRAND_TOTAL sums', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel(dataWithChildren);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // 4275 + 500 + 500 — the children's 300/200 must NOT be added
+      // (the SET's 500 already covers them).
+      expect(sheet.getCell(15, 8).value?.toString()).toContain('5.275,00');
+      expect(sheet.getCell(16, 8).value?.toString()).toContain('5.275,00');
+    });
+
+    it('appends a MALİYET column when includeCosts is set', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel({ ...dataWithChildren, includeCosts: true });
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      expect(sheet.getCell(7, 9).value).toBe('MALİYET');
+      expect(sheet.getCell(9, 9).value?.toString()).toContain('40,00');  // PRODUCT
+      expect(sheet.getCell(10, 9).value?.toString()).toContain('250,00'); // SET
+      expect(sheet.getCell(11, 9).value?.toString()).toContain('60,00');  // child
+      expect(sheet.getCell(12, 9).value).toBe('-'); // child without cost
+    });
+
+    it('omits the MALİYET column when includeCosts is not set', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel(dataWithChildren);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      expect(sheet.getCell(7, 9).value ?? null).toBeNull();
+      expect(sheetContains(sheet, 'MALİYET')).toBe(false);
+      expect(sheet.getCell(9, 9).value ?? null).toBeNull();
+    });
+
     it('uses Turkish currency format for prices', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
