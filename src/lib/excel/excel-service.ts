@@ -6,9 +6,10 @@ import sharp from 'sharp';
 // ==================== Interfaces ====================
 
 /**
- * Quote item for Excel export. Mirrors the 5-column PDF layout: the
- * katsayi/listPrice fields are accepted for backwards compatibility but
- * are not rendered in the customer-facing spreadsheet.
+ * Quote item for Excel export. katsayi/listPrice are rendered only in
+ * the manager (`includeCosts`) layout; the customer-facing spreadsheet
+ * stops at TOPLAM FİYAT. listPrice is the DISPLAY value — ek maliyet
+ * dahil, like the editor's Liste Fiyatı column.
  */
 export interface QuoteItemForExcel {
   itemType: 'PRODUCT' | 'HEADER' | 'NOTE' | 'CUSTOM' | 'SET' | 'SUBTOTAL' | 'GRAND_TOTAL';
@@ -50,6 +51,14 @@ export interface QuoteItemForExcel {
    *  children). Rendered in the MALİYET column when `includeCosts` is
    *  set on the quote data. Null renders as "-". */
   costPrice?: number | null;
+  /** Per-product price history for the quote's company (editor's Fiyat
+   *  Geçmişi columns). Rendered only when `includeCosts` is set. */
+  history?: {
+    lastQuoted: { unitPrice: number; date: string } | null;
+    lastOrdered: { unitPrice: number; date: string } | null;
+    highest: { unitPrice: number; date: string } | null;
+    lowest: { unitPrice: number; date: string } | null;
+  } | null;
   /** When true, every cell on the row is given a yellow fill so the row
    *  stands out visually — matches the editor's right-click "Vurgula"
    *  toggle. */
@@ -91,9 +100,10 @@ export interface QuoteDataForExcel {
   };
   commercialTerms?: CommercialTermForExcel[];
   notes?: NoteForExcel[];
-  /** When true, a MALİYET column (I) is appended after TOPLAM FİYAT.
-   *  Only the export route sets this, and only for canViewCosts users —
-   *  the flag must never be driven by client input. */
+  /** When true, the manager columns (KATSAYI / LİSTE FİYATI / MALİYET /
+   *  Fiyat Geçmişi) are appended after TOPLAM FİYAT and the page turns
+   *  landscape. Only the export route sets this, and only for
+   *  canViewCosts users — the flag must never be driven by client input. */
   includeCosts?: boolean;
 }
 
@@ -112,28 +122,32 @@ export interface CompanyInfo {
 
 // ==================== Template Constants ====================
 
-const TOTAL_COLUMNS = 8;
+const TOTAL_COLUMNS = 9;
 
 /**
  * Column widths. POZ NO stays narrow. KOD/MARKA/MODEL get moderate
  * widths sized for typical product codes. AÇIKLAMA takes the remaining
- * space. MIKTAR/BIRIM FIYAT/TOPLAM FIYAT preserve their original widths.
+ * space. MİKTAR is a numeric cell with the unit split into its own
+ * BİRİM column (client 04.08 — "STF'deki gibi").
  *   A  POZ NO       7.33
  *   B  KOD          14.00
  *   C  MARKA        14.00
  *   D  MODEL        14.00
  *   E  AÇIKLAMA    40.00
- *   F  MİKTAR       8.50
- *   G  BİRİM FİYAT 10.66
- *   H  TOPLAM      11.33
+ *   F  MİKTAR       6.50
+ *   G  BİRİM        6.00
+ *   H  BİRİM FİYAT 10.66
+ *   I  TOPLAM      11.33
  */
-const COLUMN_WIDTHS = [7.33, 14, 14, 14, 40, 8.5, 10.66, 11.33];
+const COLUMN_WIDTHS = [7.33, 14, 14, 14, 40, 6.5, 6, 10.66, 11.33];
 
-const TABLE_HEADERS = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
+const TABLE_HEADERS = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
 
-/** Optional 9th column (I), appended only when `includeCosts` is set. */
-const COST_HEADER = 'MALİYET';
-const COST_COLUMN_WIDTH = 11.33;
+/** Manager-only columns (J..P), appended only when `includeCosts` is
+ *  set — mirrors the editor's internal columns: Katsayı, Liste Fiyatı
+ *  (ek maliyet dahil), Maliyet and the four Fiyat Geçmişi metrics. */
+const MANAGER_HEADERS = ['KATSAYI', 'LİSTE FİYATI', 'MALİYET', 'SON TEKLİF', 'SON SİPARİŞ', 'EN YÜKSEK', 'EN DÜŞÜK'];
+const MANAGER_COLUMN_WIDTHS = [8, 11.33, 11.33, 14.5, 14.5, 14.5, 14.5];
 
 const FONT_FAMILY = 'Arial';
 const BASE_FONT_SIZE = 8;
@@ -380,8 +394,9 @@ export class ExcelService {
     }
 
     // --- LEFT SIDE (A:F) ---
-    // With the 8-column table, the left-side company block spans A:F
-    // (6 cols) and the right-side info panel sits in G:H (2 cols).
+    // With the 9-column table, the left-side company block spans A:F
+    // (6 cols) and the right-side info panel sits in G:I (3 cols) so the
+    // header box stays flush with the table's right edge.
     // Row 2: company name
     sheet.mergeCells(START, 1, START, 6);
     const nameCell = sheet.getCell(START, 1);
@@ -416,31 +431,33 @@ export class ExcelService {
       styleMergedRange(sheet, r, 1, 6);
     }
 
-    // --- RIGHT SIDE (G:H) ---
-    // G2:H3 "PROFORMA FATURA" (gray fill, centered, spans 2 rows)
-    sheet.mergeCells(START, 7, START + 1, 8);
+    // --- RIGHT SIDE (G:I) ---
+    // G2:I3 "PROFORMA FATURA" (gray fill, centered, spans 2 rows)
+    sheet.mergeCells(START, 7, START + 1, 9);
     const proforma = sheet.getCell(START, 7);
     proforma.value = 'PROFORMA FATURA';
     proforma.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
     proforma.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     for (let r = START; r <= START + 1; r++) {
-      styleMergedRange(sheet, r, 7, 8, grayFill());
+      styleMergedRange(sheet, r, 7, 9, grayFill());
     }
 
-    // Rows 4-6: Tarih / Ref.No / Teklif No
+    // Rows 4-6: Tarih / Ref.No / Teklif No — label merged G:H (col G
+    // alone is the narrow BİRİM width), value in I.
     const detailRows = [
       { row: START + 2, label: 'Tarih',     value: data.date },
       { row: START + 3, label: 'Ref.No',    value: data.refNo || '' },
       { row: START + 4, label: 'Teklif No', value: data.quoteNumber },
     ];
     for (const { row, label, value } of detailRows) {
+      sheet.mergeCells(row, 7, row, 8);
       const l = sheet.getCell(row, 7);
       l.value = label;
       l.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
       l.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-      l.border = blackBoxBorder();
+      styleMergedRange(sheet, row, 7, 8);
 
-      const v = sheet.getCell(row, 8);
+      const v = sheet.getCell(row, 9);
       v.value = `: ${value}`;
       v.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
       v.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -456,7 +473,7 @@ export class ExcelService {
    */
   private buildTableHeader(sheet: ExcelJS.Worksheet, row: number, includeCosts: boolean): void {
     sheet.getRow(row).height = 18;
-    const headers = includeCosts ? [...TABLE_HEADERS, COST_HEADER] : TABLE_HEADERS;
+    const headers = includeCosts ? [...TABLE_HEADERS, ...MANAGER_HEADERS] : TABLE_HEADERS;
     headers.forEach((label, idx) => {
       const cell = sheet.getCell(row, idx + 1);
       cell.value = label;
@@ -482,17 +499,19 @@ export class ExcelService {
     includeCosts: boolean
   ): number {
     void grandTotal; // kept for API compat; no longer read — GRAND_TOTAL is now per-row
-    const totalCols = includeCosts ? TOTAL_COLUMNS + 1 : TOTAL_COLUMNS;
+    const totalCols = includeCosts ? TOTAL_COLUMNS + MANAGER_HEADERS.length : TOTAL_COLUMNS;
     let currentRow = startRow;
     let pozCounter = 0;
 
-    // On totals/label rows the MALİYET column has no value; close the
-    // table frame with a bordered (optionally gray) empty cell.
+    // On totals rows the manager columns have no values; close the
+    // table frame with bordered (optionally gray) empty cells.
     const fillCostGap = (row: number, gray: boolean) => {
       if (!includeCosts) return;
-      const cell = sheet.getCell(row, TOTAL_COLUMNS + 1);
-      cell.border = blackBoxBorder();
-      if (gray) cell.fill = grayFill();
+      for (let col = TOTAL_COLUMNS + 1; col <= totalCols; col++) {
+        const cell = sheet.getCell(row, col);
+        cell.border = blackBoxBorder();
+        if (gray) cell.fill = grayFill();
+      }
     };
 
     // When a row is highlighted, override every cell in the row with a
@@ -549,18 +568,19 @@ export class ExcelService {
         );
         sheet.getRow(currentRow).height = 12 * lineCount + 2;
       } else if (item.itemType === 'GRAND_TOTAL') {
-        // A:G merged label, H value. Gray fill like the template's row 25.
+        // Label merged up to the value column (TOPLAM FİYAT). Gray fill
+        // like the template's row 25.
         const currencyName = CURRENCY_NAMES[currency] || currency;
         const label = `${item.description || 'GENEL TOPLAM'} (${currencyName})`;
 
-        sheet.mergeCells(currentRow, 1, currentRow, 7);
+        sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
         const labelCell = sheet.getCell(currentRow, 1);
         labelCell.value = label;
         labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         labelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-        styleMergedRange(sheet, currentRow, 1, 7, grayFill());
+        styleMergedRange(sheet, currentRow, 1, TOTAL_COLUMNS - 1, grayFill());
 
-        const sumCell = sheet.getCell(currentRow, 8);
+        const sumCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
         const runningTotal = computeExcelGrandTotalAtIndex(items, index);
         sumCell.value = formatTurkishCurrency(runningTotal, currency);
         sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
@@ -579,15 +599,16 @@ export class ExcelService {
         const baseLabel = item.description || 'Ara Toplam';
         const customDiscountLabel = item.sectionDiscountLabel?.trim() || 'İskonto';
 
-        // Row 1 — gross SUBTOTAL (always emitted). Label A:G, value H.
-        sheet.mergeCells(currentRow, 1, currentRow, 7);
+        // Row 1 — gross SUBTOTAL (always emitted). Label merged up to
+        // the value column (TOPLAM FİYAT).
+        sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
         const labelCell = sheet.getCell(currentRow, 1);
         labelCell.value = `${baseLabel} (${currencyName})`;
         labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         labelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-        styleMergedRange(sheet, currentRow, 1, 7, grayFill());
+        styleMergedRange(sheet, currentRow, 1, TOTAL_COLUMNS - 1, grayFill());
 
-        const sumCell = sheet.getCell(currentRow, 8);
+        const sumCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
         sumCell.value = formatTurkishCurrency(sectionSum, currency);
         sumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
         sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -599,14 +620,14 @@ export class ExcelService {
         if (pct > 0) {
           // Row 2 — İskonto line.
           currentRow++;
-          sheet.mergeCells(currentRow, 1, currentRow, 7);
+          sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
           const discLabelCell = sheet.getCell(currentRow, 1);
           discLabelCell.value = `${customDiscountLabel} (%${pct})`;
           discLabelCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
           discLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-          styleMergedRange(sheet, currentRow, 1, 7, grayFill());
+          styleMergedRange(sheet, currentRow, 1, TOTAL_COLUMNS - 1, grayFill());
 
-          const discAmtCell = sheet.getCell(currentRow, 8);
+          const discAmtCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
           discAmtCell.value = -discAmt;
           discAmtCell.numFmt = '#,##0.00';
           discAmtCell.font = { name: FONT_FAMILY, italic: true, size: BASE_FONT_SIZE, color: { argb: 'FFDC2626' } };
@@ -618,14 +639,14 @@ export class ExcelService {
 
           // Row 3 — NET SUBTOTAL.
           currentRow++;
-          sheet.mergeCells(currentRow, 1, currentRow, 7);
+          sheet.mergeCells(currentRow, 1, currentRow, TOTAL_COLUMNS - 1);
           const netLabelCell = sheet.getCell(currentRow, 1);
           netLabelCell.value = `NET ${baseLabel} (${currencyName})`;
           netLabelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           netLabelCell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-          styleMergedRange(sheet, currentRow, 1, 7, grayFill());
+          styleMergedRange(sheet, currentRow, 1, TOTAL_COLUMNS - 1, grayFill());
 
-          const netSumCell = sheet.getCell(currentRow, 8);
+          const netSumCell = sheet.getCell(currentRow, TOTAL_COLUMNS);
           netSumCell.value = formatTurkishCurrency(net, currency);
           netSumCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           netSumCell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -688,56 +709,71 @@ export class ExcelService {
         const rowCurrency =
           ((item.itemType === 'SET' || item.isSubRow) && item.currency) ? item.currency : currency;
 
-        if (item.priceLabel) {
-          // Keep MIKTAR (col F) with the quantity; merge only BIRIM
-          // FIYAT + TOPLAM FIYAT (G:H) for the literal label text.
-          // Client still needs the "adet" information on rows like
-          // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR".
-          const qty = item.quantity ?? 0;
-          const unit = unitAbbr(item.unit || 'Adet');
-          const qtyCell = sheet.getCell(currentRow, 6);
-          qtyCell.value = `${qty} ${unit}`;
-          qtyCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
-          qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          qtyCell.border = blackBoxBorder();
+        // MİKTAR (F, numeric) + BİRİM (G) — split like the STF Excel
+        // (client 04.08) so the quantity is usable in formulas.
+        const qtyCell = sheet.getCell(currentRow, 6);
+        qtyCell.value = Number(item.quantity ?? 0);
+        qtyCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
+        qtyCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        qtyCell.border = blackBoxBorder();
 
-          sheet.mergeCells(currentRow, 7, currentRow, 8);
-          const labelCell = sheet.getCell(currentRow, 7);
+        const unitCell = sheet.getCell(currentRow, 7);
+        unitCell.value = unitAbbr(item.unit || 'Adet');
+        unitCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
+        unitCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        unitCell.border = blackBoxBorder();
+
+        if (item.priceLabel) {
+          // Merge only BİRİM FİYAT + TOPLAM FİYAT (H:I) for the literal
+          // label text — the "adet" info stays visible on rows like
+          // "TARAFINIZCA SAĞLANACAKTIR" / "FİYATA DAHİLDİR".
+          sheet.mergeCells(currentRow, 8, currentRow, 9);
+          const labelCell = sheet.getCell(currentRow, 8);
           labelCell.value = item.priceLabel;
           labelCell.font = { name: FONT_FAMILY, bold: true, size: BASE_FONT_SIZE };
           labelCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          styleMergedRange(sheet, currentRow, 7, 8);
+          styleMergedRange(sheet, currentRow, 8, 9);
         } else {
-          const qty = item.quantity ?? 0;
-          const unit = unitAbbr(item.unit || 'Adet');
-          const qtyCell = sheet.getCell(currentRow, 6);
-          qtyCell.value = `${qty} ${unit}`;
-          qtyCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
-          qtyCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          qtyCell.border = blackBoxBorder();
-
-          const unitPriceCell = sheet.getCell(currentRow, 7);
+          const unitPriceCell = sheet.getCell(currentRow, 8);
           unitPriceCell.value = formatTurkishCurrency(item.unitPrice ?? 0, rowCurrency);
           unitPriceCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           unitPriceCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           unitPriceCell.border = blackBoxBorder();
 
-          const totalCell = sheet.getCell(currentRow, 8);
+          const totalCell = sheet.getCell(currentRow, 9);
           totalCell.value = formatTurkishCurrency(item.totalPrice ?? 0, rowCurrency);
           totalCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
           totalCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
           totalCell.border = blackBoxBorder();
         }
 
-        // MALİYET (col I) — per-unit effective cost, "-" when unknown.
-        // Rendered on priceLabel rows too (a DAHİL SET still has a cost).
+        // Manager columns (J..P): KATSAYI, LİSTE FİYATI, MALİYET and the
+        // four Fiyat Geçmişi metrics. Rendered on priceLabel rows too
+        // (a DAHİL SET still has a katsayı/cost). All money cells use
+        // the row currency — same as the editor, which passes the SET's
+        // rowCurrency down to its history cells.
         if (includeCosts) {
-          const costCell = sheet.getCell(currentRow, TOTAL_COLUMNS + 1);
-          costCell.value =
-            item.costPrice != null ? formatTurkishCurrency(item.costPrice, rowCurrency) : '-';
-          costCell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
-          costCell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
-          costCell.border = blackBoxBorder();
+          const histText = (stat: { unitPrice: number; date: string } | null | undefined) =>
+            stat
+              ? `${formatTurkishCurrency(stat.unitPrice, rowCurrency)} (${new Date(stat.date).toLocaleDateString('tr-TR')})`
+              : '-';
+          const managerValues: (string | number)[] = [
+            item.katsayi != null ? Number(item.katsayi) : '-',
+            item.listPrice != null ? formatTurkishCurrency(item.listPrice, rowCurrency) : '-',
+            item.costPrice != null ? formatTurkishCurrency(item.costPrice, rowCurrency) : '-',
+            histText(item.history?.lastQuoted),
+            histText(item.history?.lastOrdered),
+            histText(item.history?.highest),
+            histText(item.history?.lowest),
+          ];
+          managerValues.forEach((value, i) => {
+            const cell = sheet.getCell(currentRow, TOTAL_COLUMNS + 1 + i);
+            cell.value = value;
+            if (typeof value === 'number') cell.numFmt = '0.0000'; // katsayı — 4 dp like the editor
+            cell.font = { name: FONT_FAMILY, size: BASE_FONT_SIZE };
+            cell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+            cell.border = blackBoxBorder();
+          });
         }
 
         // Roughly fit long descriptions into a taller row. Column E
@@ -972,16 +1008,18 @@ export class ExcelService {
     const sheet = workbook.addWorksheet('Proforma Fatura');
 
     const includeCosts = data.includeCosts === true;
-    const columnWidths = includeCosts ? [...COLUMN_WIDTHS, COST_COLUMN_WIDTH] : COLUMN_WIDTHS;
+    const columnWidths = includeCosts ? [...COLUMN_WIDTHS, ...MANAGER_COLUMN_WIDTHS] : COLUMN_WIDTHS;
 
     // Column widths from the reference template
     columnWidths.forEach((width, idx) => {
       sheet.getColumn(idx + 1).width = width;
     });
 
-    // Row 1: BTS banner image spanning the full column range. Falls back
-    // to a blank top-margin row if the image file isn't found.
-    await this.addBanner(workbook, sheet, columnWidths);
+    // Row 1: BTS banner image spanning the BASE column range only —
+    // in the 16-column manager layout the banner would stretch ~1.7x
+    // if it spanned the manager columns too. Falls back to a blank
+    // top-margin row if the image file isn't found.
+    await this.addBanner(workbook, sheet, columnWidths.slice(0, TOTAL_COLUMNS));
 
     // Rows 2-6: customer info block
     const afterCustomer = this.buildCustomerBlock(sheet, data);
@@ -1013,10 +1051,11 @@ export class ExcelService {
       );
     }
 
-    // Print setup: A4 portrait, fit to one page wide, centered
-    // horizontally so the table isn't flushed left when the column
-    // total is narrower than the A4 printable area.
-    sheet.pageSetup.orientation = 'portrait';
+    // Print setup: A4, fit to one page wide, centered horizontally so
+    // the table isn't flushed left when the column total is narrower
+    // than the printable area. The 16-column manager layout goes
+    // landscape so the extra columns stay legible.
+    sheet.pageSetup.orientation = includeCosts ? 'landscape' : 'portrait';
     sheet.pageSetup.paperSize = 9; // A4
     sheet.pageSetup.fitToPage = true;
     sheet.pageSetup.fitToWidth = 1;

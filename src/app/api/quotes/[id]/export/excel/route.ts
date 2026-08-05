@@ -6,6 +6,7 @@ import { getExcelService, QuoteDataForExcel, QuoteItemForExcel, CompanyInfo } fr
 import { buildQuoteExportFilename } from '@/lib/filename';
 import { convertToQuoteCurrency, type QuoteCurrencyContext } from '@/lib/quote-calculations';
 import { getEffectiveCostPriceForItem, getSetEffectiveCostPrice } from '@/lib/ek-maliyet';
+import { computePriceHistoryStats, type PriceHistoryStats } from '@/lib/price-history-stats';
 import { getQuoteDisplayDate } from '@/lib/quote-display-date';
 
 interface RouteParams {
@@ -132,6 +133,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return getEffectiveCostPriceForItem(item);
     };
 
+    // Fiyat Geçmişi columns (manager Excel only): per-product price
+    // stats for this company — same helper the editor's batch-stats
+    // endpoint uses, so the two surfaces always agree.
+    let historyByProduct: Record<string, PriceHistoryStats> = {};
+    if (includeCosts) {
+      const productIds = [
+        ...new Set(orderedItems.map(i => i.productId).filter((id): id is string => !!id)),
+      ];
+      historyByProduct = await computePriceHistoryStats(quote.companyId, productIds);
+    }
+
     const excelItems: QuoteItemForExcel[] = orderedItems
       .map(item => {
         const itemType = item.itemType as QuoteItemForExcel['itemType'];
@@ -182,8 +194,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           unitPrice: Number(item.unitPrice),
           totalPrice: rawTotal,
           highlight,
-          katsayi: Number(item.katsayi),
-          listPrice: Number(item.listPrice),
+          // Internal fields ship only in the manager payload — the
+          // writer ignores them otherwise, this is defense-in-depth.
+          katsayi: includeCosts ? Number(item.katsayi) : undefined,
+          // Display value — ek maliyet dahil, like the editor's Liste
+          // Fiyatı column (only rendered in the manager layout).
+          listPrice: includeCosts
+            ? Number(item.listPrice) +
+              (item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0)
+            : undefined,
           priceLabel: item.priceLabel,
           // Children inherit their parent SET's currency so their price
           // cells render with the SET's symbol (mirrors the editor).
@@ -193,6 +212,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           totalPriceInQuoteCurrency,
           isSubRow,
           costPrice: includeCosts ? effectiveUnitCost(item) : undefined,
+          history:
+            includeCosts && item.productId
+              ? historyByProduct[item.productId] ?? null
+              : null,
         };
       });
 

@@ -183,7 +183,7 @@ describe('ExcelService', () => {
 
     // --- 8-Column Table Header ---
 
-    it('has 8-column header (POZ NO / KOD / MARKA / MODEL / AÇIKLAMA / MİKTAR / BİRİM FİYAT / TOPLAM FİYAT)', async () => {
+    it('has 9-column header (POZ NO / KOD / MARKA / MODEL / AÇIKLAMA / MİKTAR / BİRİM / BİRİM FİYAT / TOPLAM FİYAT)', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(mockQuoteData);
 
@@ -193,7 +193,7 @@ describe('ExcelService', () => {
       // Column header is at row 7 (row 1 banner, rows 2-6 customer block:
       // name, address, subject, description spanning 2 rows).
       const headerRow = sheet.getRow(7);
-      const expectedHeaders = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
+      const expectedHeaders = ['POZ NO', 'KOD', 'MARKA', 'MODEL', 'AÇIKLAMA', 'MİKTAR', 'BİRİM', 'BİRİM FİYAT', 'TOPLAM FİYAT'];
 
       const actualHeaders: string[] = [];
       headerRow.eachCell({ includeEmpty: false }, (cell) => {
@@ -203,7 +203,7 @@ describe('ExcelService', () => {
       expectedHeaders.forEach(header => {
         expect(actualHeaders).toContain(header);
       });
-      expect(actualHeaders.length).toBe(8);
+      expect(actualHeaders.length).toBe(9);
     });
 
     it('does NOT include internal KATSAYI / LİSTE FİYATI columns or group headers', async () => {
@@ -426,8 +426,8 @@ describe('ExcelService', () => {
       expect(sheet.getCell(12, 1).value).toBe('*');
       expect(sheet.getCell(11, 5).value).toBe('Supervizyon Hizmeti');
       // Children keep their prices (unlike the STF Excel)
-      expect(sheet.getCell(11, 7).value?.toString()).toContain('100,00');
-      expect(sheet.getCell(11, 8).value?.toString()).toContain('300,00');
+      expect(sheet.getCell(11, 8).value?.toString()).toContain('100,00');
+      expect(sheet.getCell(11, 9).value?.toString()).toContain('300,00');
       // Poz numbering skips sub-rows: CUSTOM after the NOTE is poz 3
       expect(sheet.getCell(9, 1).value).toBe(1);
       expect(sheet.getCell(10, 1).value).toBe(2);
@@ -449,9 +449,9 @@ describe('ExcelService', () => {
       const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       // Both the TRY SET (row 8) and its child (row 9) show ₺, not €.
-      expect(sheet.getCell(8, 8).value?.toString()).toContain('₺');
-      expect(sheet.getCell(9, 7).value?.toString()).toContain('₺');
+      expect(sheet.getCell(8, 9).value?.toString()).toContain('₺');
       expect(sheet.getCell(9, 8).value?.toString()).toContain('₺');
+      expect(sheet.getCell(9, 9).value?.toString()).toContain('₺');
     });
 
     it('excludes sub-rows from SUBTOTAL and GRAND_TOTAL sums', async () => {
@@ -463,34 +463,108 @@ describe('ExcelService', () => {
 
       // 4275 + 500 + 500 — the children's 300/200 must NOT be added
       // (the SET's 500 already covers them).
-      expect(sheet.getCell(15, 8).value?.toString()).toContain('5.275,00');
-      expect(sheet.getCell(16, 8).value?.toString()).toContain('5.275,00');
+      expect(sheet.getCell(15, 9).value?.toString()).toContain('5.275,00');
+      expect(sheet.getCell(16, 9).value?.toString()).toContain('5.275,00');
     });
 
-    it('appends a MALİYET column when includeCosts is set', async () => {
+    it('appends the manager columns when includeCosts is set', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel({ ...dataWithChildren, includeCosts: true });
 
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
-      expect(sheet.getCell(7, 9).value).toBe('MALİYET');
-      expect(sheet.getCell(9, 9).value?.toString()).toContain('40,00');  // PRODUCT
-      expect(sheet.getCell(10, 9).value?.toString()).toContain('250,00'); // SET
-      expect(sheet.getCell(11, 9).value?.toString()).toContain('60,00');  // child
-      expect(sheet.getCell(12, 9).value).toBe('-'); // child without cost
+      // Headers J..P
+      expect(sheet.getCell(7, 10).value).toBe('KATSAYI');
+      expect(sheet.getCell(7, 11).value).toBe('LİSTE FİYATI');
+      expect(sheet.getCell(7, 12).value).toBe('MALİYET');
+      expect(sheet.getCell(7, 13).value).toBe('SON TEKLİF');
+      expect(sheet.getCell(7, 14).value).toBe('SON SİPARİŞ');
+      expect(sheet.getCell(7, 15).value).toBe('EN YÜKSEK');
+      expect(sheet.getCell(7, 16).value).toBe('EN DÜŞÜK');
+
+      // PRODUCT row (9): katsayı numeric, liste fiyatı formatted, maliyet
+      expect(sheet.getCell(9, 10).value).toBe(1.2);
+      expect(sheet.getCell(9, 11).value?.toString()).toContain('71,25');
+      expect(sheet.getCell(9, 12).value?.toString()).toContain('40,00');
+      expect(sheet.getCell(10, 12).value?.toString()).toContain('250,00'); // SET
+      expect(sheet.getCell(11, 12).value?.toString()).toContain('60,00');  // child
+      expect(sheet.getCell(12, 12).value).toBe('-'); // child without cost
+
+      // Manager layout prints landscape
+      expect(sheet.pageSetup.orientation).toBe('landscape');
     });
 
-    it('omits the MALİYET column when includeCosts is not set', async () => {
+    it('renders Fiyat Geçmişi stats when provided', async () => {
+      const service = new ExcelService();
+      const withHistory: QuoteDataForExcel = {
+        ...dataWithChildren,
+        includeCosts: true,
+        items: dataWithChildren.items.map((it) =>
+          it.itemType === 'PRODUCT' && !it.isSubRow
+            ? {
+                ...it,
+                history: {
+                  lastQuoted: { unitPrice: 82.5, date: '2026-05-12T00:00:00.000Z' },
+                  lastOrdered: null,
+                  highest: { unitPrice: 95, date: '2026-01-03T00:00:00.000Z' },
+                  lowest: { unitPrice: 70, date: '2026-03-20T00:00:00.000Z' },
+                },
+              }
+            : it
+        ),
+      };
+      const buffer = await service.generateQuoteExcel(withHistory);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      expect(sheet.getCell(9, 13).value?.toString()).toContain('82,50'); // Son Teklif
+      expect(sheet.getCell(9, 13).value?.toString()).toContain('12.05.2026');
+      expect(sheet.getCell(9, 14).value).toBe('-'); // Son Sipariş yok
+      expect(sheet.getCell(9, 15).value?.toString()).toContain('95,00'); // En Yüksek
+      expect(sheet.getCell(9, 16).value?.toString()).toContain('70,00'); // En Düşük
+    });
+
+    it('omits the manager columns when includeCosts is not set', async () => {
       const service = new ExcelService();
       const buffer = await service.generateQuoteExcel(dataWithChildren);
 
       const workbook = await loadWorkbook(buffer);
       const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
-      expect(sheet.getCell(7, 9).value ?? null).toBeNull();
+      expect(sheet.getCell(7, 10).value ?? null).toBeNull();
       expect(sheetContains(sheet, 'MALİYET')).toBe(false);
-      expect(sheet.getCell(9, 9).value ?? null).toBeNull();
+      expect(sheetContains(sheet, 'KATSAYI')).toBe(false);
+      expect(sheet.getCell(9, 10).value ?? null).toBeNull();
+      expect(sheet.pageSetup.orientation).toBe('portrait');
+    });
+
+    it('keeps the header info panel flush with the 9-column table', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel(mockQuoteData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // Detail values live in col I (Tarih row 4, Ref.No row 5,
+      // Teklif No row 6) so the panel ends at the table's right edge.
+      expect(String(sheet.getCell(4, 9).value)).toContain('15.01.2026');
+      expect(String(sheet.getCell(6, 9).value)).toContain('BTS-2026-0001');
+    });
+
+    it('splits MİKTAR and BİRİM into separate columns (STF-style)', async () => {
+      const service = new ExcelService();
+      const buffer = await service.generateQuoteExcel(mockQuoteData);
+
+      const workbook = await loadWorkbook(buffer);
+      const sheet = workbook.getWorksheet('Proforma Fatura')!;
+
+      // PRODUCT row 9: quantity 50 as a NUMBER, unit in its own column
+      expect(sheet.getCell(9, 6).value).toBe(50);
+      expect(String(sheet.getCell(9, 7).value).toLowerCase()).toContain('ad');
+      expect(sheet.getCell(7, 6).value).toBe('MİKTAR');
+      expect(sheet.getCell(7, 7).value).toBe('BİRİM');
     });
 
     it('uses Turkish currency format for prices', async () => {
@@ -597,8 +671,8 @@ describe('ExcelService', () => {
       });
       expect(gtRow).toBeGreaterThan(0);
 
-      // Col 8 (H) holds the formatted amount
-      const amount = String(sheet.getRow(gtRow).getCell(8).value);
+      // Col 9 (I, TOPLAM FİYAT) holds the formatted amount
+      const amount = String(sheet.getRow(gtRow).getCell(9).value);
       // Running net above GRAND_TOTAL: 100 - 10% = 90
       expect(amount).toContain('90');
       // Must NOT contain 590 (the whole-quote total regression)
@@ -865,16 +939,15 @@ describe('ExcelService', () => {
       const sheet = workbook.getWorksheet('Proforma Fatura')!;
 
       // SET item should appear at row 8 (row 1 banner, rows 2-6
-      // customer block, row 7 column headers). With the 8-column
+      // customer block, row 7 column headers). With the 9-column
       // layout: A=POZ, B/C/D=KOD/MARKA/MODEL (empty here), E=AÇIKLAMA,
-      // F=MİKTAR, G=BİRİM FİYAT, H=TOPLAM.
+      // F=MİKTAR (numeric), G=BİRİM, H=BİRİM FİYAT, I=TOPLAM.
       expect(sheet.getCell(8, 1).value).toBe(1); // POZ NO = 1
       expect(sheet.getCell(8, 5).value).toBe('Muhendislik Hizmeti');
-      // Combined miktar cell, e.g. "5 ad."
-      expect(String(sheet.getCell(8, 6).value).toLowerCase()).toContain('5');
-      expect(String(sheet.getCell(8, 6).value).toLowerCase()).toContain('ad.');
-      expect(String(sheet.getCell(8, 7).value)).toContain('200');
-      expect(String(sheet.getCell(8, 8).value)).toContain('1.000');
+      expect(sheet.getCell(8, 6).value).toBe(5); // MİKTAR numeric
+      expect(String(sheet.getCell(8, 7).value).toLowerCase()).toContain('ad.');
+      expect(String(sheet.getCell(8, 8).value)).toContain('200');
+      expect(String(sheet.getCell(8, 9).value)).toContain('1.000');
     });
 
     // --- Print Setup ---
