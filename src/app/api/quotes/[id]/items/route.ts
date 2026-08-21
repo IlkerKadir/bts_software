@@ -301,14 +301,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id: quoteId } = await params;
     const body = await request.json();
 
-    // Validate input using schema
+    // Validate input using schema. Point the user at the offending ROW —
+    // a bare field message ("Katsayı 0 veya negatif olamaz") on a
+    // 40-item quote is undebuggable from the editor (client 21.08).
     const validation = bulkQuoteItemUpdateSchema.safeParse(body);
     if (!validation.success) {
       const firstError = validation.error.issues[0];
-      return NextResponse.json(
-        { error: firstError?.message || 'Geçersiz kalem verisi' },
-        { status: 400 }
-      );
+      let message = firstError?.message || 'Geçersiz kalem verisi';
+      const path = firstError?.path;
+      if (path && path[0] === 'items' && typeof path[1] === 'number') {
+        const idx = path[1];
+        const raw = Array.isArray((body as { items?: unknown[] })?.items)
+          ? ((body as { items: unknown[] }).items[idx] as { description?: unknown } | undefined)
+          : undefined;
+        const desc =
+          raw && typeof raw.description === 'string' && raw.description.trim()
+            ? raw.description.trim().slice(0, 40)
+            : null;
+        // "sıradaki satır" — positional index (headers/notes count too),
+        // deliberately NOT the poz number, which skips structural rows.
+        message = desc ? `"${desc}" satırı: ${message}` : `${idx + 1}. sıradaki satır: ${message}`;
+      }
+      return NextResponse.json({ error: message }, { status: 400 });
     }
     const { items: validatedItems } = validation.data;
 

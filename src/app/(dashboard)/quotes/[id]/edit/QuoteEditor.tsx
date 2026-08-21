@@ -624,6 +624,43 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     setError(null);
 
     try {
+      // Pre-flight: catch rows the server would reject BEFORE sending,
+      // with a message that NAMES the row. Otherwise one bad cell
+      // anywhere fails the whole bulk save with an opaque error and the
+      // user can't find it (client 21.08). Server ids are cuids (no
+      // dashes); a dash means the optimistic insert never reached the
+      // server — a phantom row that would fail every save.
+      if (itemsDirtyRef.current) {
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          const rowLabel = it.description?.trim()
+            ? `"${it.description.trim().slice(0, 40)}" satırı`
+            : `${i + 1}. sıradaki satır`;
+          if (it.id.includes('-')) {
+            // The row may also simply be mid-flight (slow network + a
+            // quick Ctrl+S) — advise waiting first, deleting only if it
+            // persists, so users don't delete a row that's about to land.
+            throw new Error(
+              `${rowLabel} henüz sunucuya kaydedilmemiş. Birkaç saniye bekleyip tekrar kaydedin; sorun sürerse satırı silip yeniden ekleyin.`
+            );
+          }
+          if (!it.description || !String(it.description).trim()) {
+            throw new Error(
+              `${i + 1}. sıradaki satırın açıklaması boş — açıklama girin veya satırı silin.`
+            );
+          }
+          if (!(Number(it.katsayi) > 0)) {
+            throw new Error(`${rowLabel}: katsayı 0 veya negatif olamaz.`);
+          }
+          if (Number(it.listPrice) < 0) {
+            throw new Error(`${rowLabel}: liste fiyatı negatif olamaz.`);
+          }
+          if (Number(it.quantity) < 0) {
+            throw new Error(`${rowLabel}: miktar negatif olamaz.`);
+          }
+        }
+      }
+
       // 1. Save header fields if changed (or if rateSnapshot is pending).
       //    The header PUT fires whenever anything stored on the Quote
       //    row has changed, including a new rateSnapshot pushed by the
@@ -985,6 +1022,31 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     [quoteId, items]
   );
 
+  // Rollback for optimistic row inserts whose POST failed or never
+  // reached the server (Wi-Fi blip, timeout). A silently surviving
+  // temp-id row is a "phantom": the bulk save PUTs it, the server has
+  // no such id, and EVERY later save fails until the page is reloaded
+  // (client 21.08 — "arada kaydetmiyor, gir çık düzeliyor"). Drop the
+  // temp row(s), optionally pop the undo snapshot the optimistic
+  // insert pushed, and tell the user.
+  const rollbackFailedInsert = useCallback(
+    (tempIds: string | string[], opts?: { popHistory?: boolean; message?: string }) => {
+      const idSet = new Set(Array.isArray(tempIds) ? tempIds : [tempIds]);
+      setItemsRaw((prev) => prev.filter((item) => !idSet.has(item.id)));
+      if (opts?.popHistory !== false) {
+        const stack = itemsHistoryRef.current;
+        if (stack.length > 0) {
+          stack.pop();
+          setUndoDepth(stack.length);
+        }
+      }
+      setError(
+        opts?.message ?? 'Satır sunucuya eklenemedi — bağlantıyı kontrol edip tekrar deneyin.'
+      );
+    },
+    []
+  );
+
   const handleItemDuplicate = useCallback(
     async (itemId: string) => {
       const original = items.find((item) => item.id === itemId);
@@ -1088,21 +1150,30 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
                     notes: tempSub.notes || undefined,
                     sortOrder: tempSub.sortOrder,
                   }),
-                }).then(async (subRes) => ({
-                  tempId: tempSub.id,
-                  ok: subRes.ok,
-                  data: subRes.ok ? await subRes.json() : null,
-                }))
+                })
+                  .then(async (subRes) => ({
+                    tempId: tempSub.id,
+                    ok: subRes.ok,
+                    data: subRes.ok ? await subRes.json() : null,
+                  }))
+                  // Network failure: resolve with ok:false so the temp id
+                  // is still known and the phantom row can be removed.
+                  .catch(() => ({ tempId: tempSub.id, ok: false, data: null }))
               )
             );
 
             // Replace all temp sub-row IDs with server-returned IDs in a single state update
             const replacements = new Map<string, QuoteItemData>();
+            const failedSubIds: string[] = [];
             for (const result of subResults) {
-              if (result.status === 'fulfilled' && result.value.ok && result.value.data) {
+              // The fetch chain's .catch resolves network failures with
+              // ok:false, so every result is fulfilled and carries its
+              // temp id — collect failures so no phantom row survives.
+              if (result.status !== 'fulfilled') continue;
+              if (result.value.ok && result.value.data) {
                 replacements.set(result.value.tempId, mapApiItemToLocal(result.value.data.item));
-              } else if (result.status === 'rejected') {
-                console.error('Sub-row duplicate error:', result.reason);
+              } else {
+                failedSubIds.push(result.value.tempId);
               }
             }
 
@@ -1111,13 +1182,30 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
                 prev.map((item) => replacements.get(item.id) ?? item)
               );
             }
+
+            const knownFailed = failedSubIds;
+            if (knownFailed.length > 0) {
+              // Insert succeeded for the parent — keep the undo snapshot,
+              // just drop the sub-rows that never reached the server.
+              rollbackFailedInsert(knownFailed, {
+                popHistory: false,
+                message: 'Kopyalanan alt satırlardan bazıları kaydedilemedi — seti kontrol edin.',
+              });
+            }
           }
+        } else {
+          rollbackFailedInsert([tempId, ...tempSubRows.map((s) => s.id)], {
+            message: 'Satır kopyalanamadı — lütfen tekrar deneyin.',
+          });
         }
       } catch (err) {
         console.error('Item duplicate error:', err);
+        rollbackFailedInsert([tempId, ...tempSubRows.map((s) => s.id)], {
+          message: 'Satır kopyalanamadı — bağlantıyı kontrol edip tekrar deneyin.',
+        });
       }
     },
-    [items, quoteId]
+    [items, quoteId, rollbackFailedInsert]
   );
 
   // Build the bulk PUT payload for /items. Used by both drag-reorder and
@@ -1404,21 +1492,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             await persistItemsOrder(persisted);
           }
         } else {
-          // Remove optimistic item on failure. Pop the snapshot we
-          // pushed during the optimistic insert so the user doesn't
-          // see a phantom undo step pointing at pre-failed state.
-          setItemsRaw((prev) => prev.filter((item) => item.id !== tempId));
-          const stack = itemsHistoryRef.current;
-          if (stack.length > 0) {
-            stack.pop();
-            setUndoDepth(stack.length);
-          }
+          rollbackFailedInsert(tempId, { message: 'Ürün eklenemedi — lütfen tekrar deneyin.' });
         }
       } catch (err) {
         console.error('Add product error:', err);
+        rollbackFailedInsert(tempId, { message: 'Ürün eklenemedi — bağlantıyı kontrol edip tekrar deneyin.' });
       }
     },
-    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items, subItemParentId, insertBeforeId, setCreationMode, defaultVatRate, persistItemsOrder]
+    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items, subItemParentId, insertBeforeId, setCreationMode, defaultVatRate, persistItemsOrder, rollbackFailedInsert]
   );
 
   // ── Bulk delete + duplicate for the multi-row toolbar (#5) ───────────────
@@ -1688,11 +1769,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           );
           await persistItemsOrder(persisted);
         }
+      } else {
+        rollbackFailedInsert(tempId);
       }
     } catch (err) {
       console.error('Add header error:', err);
+      rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items, persistItemsOrder]);
+  }, [quoteId, items, persistItemsOrder, rollbackFailedInsert]);
 
   // ── Add note row ───────────────────────────────────────────────────────────
 
@@ -1742,11 +1826,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             return { ...item, ...serverItem, description: item.description };
           })
         );
+      } else {
+        rollbackFailedInsert(tempId);
       }
     } catch (err) {
       console.error('Add note error:', err);
+      rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length]);
+  }, [quoteId, items.length, rollbackFailedInsert]);
 
   // ── Add custom item ──────────────────────────────────────────────────────
 
@@ -1799,11 +1886,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             return { ...item, ...serverItem, description: item.description };
           })
         );
+      } else {
+        rollbackFailedInsert(tempId);
       }
     } catch (err) {
       console.error('Add custom item error:', err);
+      rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, defaultVatRate]);
+  }, [quoteId, items.length, defaultVatRate, rollbackFailedInsert]);
 
   // ── Add custom sub-item to a SET ─────────────────────────────────────────
 
@@ -1869,11 +1959,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             return { ...item, ...serverItem, description: item.description };
           })
         );
+      } else {
+        rollbackFailedInsert(tempId);
       }
     } catch (err) {
       console.error('Add custom sub-item error:', err);
+      rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items, defaultVatRate]);
+  }, [quoteId, items, defaultVatRate, rollbackFailedInsert]);
 
   // ── Add subtotal row ────────────────────────────────────────────────────
 
@@ -1922,11 +2015,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             return { ...item, ...serverItem, description: item.description };
           })
         );
+      } else {
+        rollbackFailedInsert(tempId);
       }
     } catch (err) {
       console.error('Add subtotal error:', err);
+      rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length]);
+  }, [quoteId, items.length, rollbackFailedInsert]);
 
   // ── Add grand total row ────────────────────────────────────────────────
   // A single "GENEL TOPLAM" item appended at the end of the quote. Renders
@@ -1981,11 +2077,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             return { ...item, ...serverItem, description: item.description };
           })
         );
+      } else {
+        rollbackFailedInsert(tempId);
       }
     } catch (err) {
       console.error('Add grand total error:', err);
+      rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items]);
+  }, [quoteId, items, rollbackFailedInsert]);
 
   // ── Add sub-item to a parent ──────────────────────────────────────────
 

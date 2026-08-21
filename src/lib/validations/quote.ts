@@ -44,12 +44,12 @@ export const quoteItemSchema = z.object({
   code: z.string().nullish(),
   brand: z.string().nullish(),
   model: z.string().nullish(),
-  description: z.string().min(1, 'Description is required'),
-  quantity: z.number().min(0, 'Quantity must be non-negative').default(1),
+  description: z.string().min(1, 'Açıklama boş olamaz'),
+  quantity: z.number().min(0, 'Miktar negatif olamaz').default(1),
   unit: z.string().default('Adet'),
-  listPrice: z.number().min(0, 'List price must be non-negative').default(0),
-  katsayi: z.number().positive('Katsayi must be positive').default(1),
-  discountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').default(0),
+  listPrice: z.number().min(0, 'Liste fiyatı negatif olamaz').default(0),
+  katsayi: z.number().positive('Katsayı 0 veya negatif olamaz').default(1),
+  discountPct: z.number().min(0, 'İskonto negatif olamaz').max(100, 'İskonto %100 üzerinde olamaz').default(0),
   vatRate: z.number().min(0).max(100).default(20),
   notes: z.string().nullish(),
   priceLabel: z.string().nullish(),
@@ -71,7 +71,7 @@ export const quoteItemSchema = z.object({
   /** Per-section discount %. Only meaningful on SUBTOTAL rows; the API
    *  coerces it to null on non-SUBTOTAL rows so the DB never holds a
    *  stale value on a PRODUCT/CUSTOM/SET row. */
-  sectionDiscountPct: z.number().min(0).max(100, 'Discount cannot exceed 100%').nullish(),
+  sectionDiscountPct: z.number().min(0, 'İskonto negatif olamaz').max(100, 'İskonto %100 üzerinde olamaz').nullish(),
   /** Optional custom label for the section's İskonto line on PDF/Excel.
    *  Null → renderers fall back to "İskonto". Only meaningful on
    *  SUBTOTAL rows; coerced to null on other rows. */

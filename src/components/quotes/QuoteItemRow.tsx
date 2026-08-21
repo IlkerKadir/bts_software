@@ -265,11 +265,20 @@ function EditableCell({
           multiline && 'whitespace-pre-wrap break-words block',
           className,
         )}
-        onClick={() => setEditing(true)}
+        onClick={() => {
+          // Re-sync the draft on open: a guard-rejected commit (e.g. a
+          // cleared description) leaves a stale draft behind, since the
+          // kept `value` never changed and the sync effect didn't fire.
+          setDraft(String(value));
+          setEditing(true);
+        }}
         onKeyDown={(e) => {
           // In single-line cells Enter/Space opens the editor; multi-line
           // cells still open on Enter (the textarea then handles newlines).
-          if (e.key === 'Enter' || e.key === ' ') setEditing(true);
+          if (e.key === 'Enter' || e.key === ' ') {
+            setDraft(String(value));
+            setEditing(true);
+          }
         }}
       >
         {displayValue ?? String(value)}
@@ -521,7 +530,13 @@ export function QuoteItemRow({
           >
             <EditableCell
               value={item.description}
-              onChange={(v) => onUpdate({ description: String(v) })}
+              onChange={(v) => {
+                const s = String(v);
+                // Empty description fails server validation and blocks the
+                // whole save — keep the previous text instead.
+                if (!s.trim()) return;
+                onUpdate({ description: s });
+              }}
               className="font-bold"
             />
           </td>
@@ -606,7 +621,13 @@ export function QuoteItemRow({
           >
             <EditableCell
               value={item.description}
-              onChange={(v) => onUpdate({ description: String(v) })}
+              onChange={(v) => {
+                const s = String(v);
+                // Empty description fails server validation and blocks the
+                // whole save — keep the previous text instead.
+                if (!s.trim()) return;
+                onUpdate({ description: s });
+              }}
               className="italic"
               multiline
             />
@@ -704,7 +725,13 @@ export function QuoteItemRow({
               )}
               <EditableCell
                 value={item.description || 'Ara Toplam'}
-                onChange={(v) => onUpdate({ description: String(v) })}
+                onChange={(v) => {
+                const s = String(v);
+                // Empty description fails server validation and blocks the
+                // whole save — keep the previous text instead.
+                if (!s.trim()) return;
+                onUpdate({ description: s });
+              }}
                 className="font-bold text-right"
               />
             </span>
@@ -810,7 +837,13 @@ export function QuoteItemRow({
           >
             <EditableCell
               value={item.description || 'GENEL TOPLAM'}
-              onChange={(v) => onUpdate({ description: String(v) })}
+              onChange={(v) => {
+                const s = String(v);
+                // Empty description fails server validation and blocks the
+                // whole save — keep the previous text instead.
+                if (!s.trim()) return;
+                onUpdate({ description: s });
+              }}
               className="font-bold text-right"
             />
           </td>
@@ -954,7 +987,13 @@ export function QuoteItemRow({
             {isSubRow && <span className="text-accent-400 mr-1">↳</span>}
             <EditableCell
               value={item.description}
-              onChange={(v) => onUpdate({ description: String(v) })}
+              onChange={(v) => {
+                const s = String(v);
+                // Empty description fails server validation and blocks the
+                // whole save — keep the previous text instead.
+                if (!s.trim()) return;
+                onUpdate({ description: s });
+              }}
               multiline
               className={cn(
                 'text-sm break-words block',
@@ -985,6 +1024,7 @@ export function QuoteItemRow({
                 type="number"
                 onChange={(v) => {
                   const qty = Number(v);
+                  if (qty < 0) return; // server rejects negatives — don't let them into state
                   const total = qty * Number(item.unitPrice) * (1 - Number(item.discountPct) / 100);
                   onUpdate({ quantity: qty, totalPrice: total });
                 }}
@@ -1143,6 +1183,10 @@ export function QuoteItemRow({
                       type="number"
                       onChange={(v) => {
                         const k = Number(v);
+                        // 0 / negative katsayı is always a slip (ör. "0,85"
+                        // yarıda kalmış) and the server rejects the whole
+                        // save over it — refuse it at the cell (client 21.08).
+                        if (!(k > 0)) return;
                         const shouldCalc = isCustom || !item.isManualPrice;
                         // Include ek maliyet delta in effective list price,
                         // then tier-round the resulting unit price.
@@ -1175,6 +1219,7 @@ export function QuoteItemRow({
                   type="number"
                   onChange={(v) => {
                     const lp = Number(v);
+                    if (lp < 0) return; // server rejects negatives — don't let them into state
                     const shouldCalc = isCustom || !item.isManualPrice;
                     // unitPrice calculation uses the effective list price
                     // (base + ek maliyet delta), tier-rounded so display
