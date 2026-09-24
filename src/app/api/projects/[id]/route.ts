@@ -85,11 +85,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Proje bulunamadı' }, { status: 404 });
     }
 
-    // Transform date strings to Date objects if provided
-    // Convert empty string clientId to null
+    // Transform date strings to Date objects if provided.
+    // clientId: only touch it when the caller actually sent the key — the
+    // project form no longer has a Firma field, so an unconditional
+    // `clientId || null` silently wiped the company link on every edit.
     const updateData = {
       ...validatedData,
-      clientId: validatedData.clientId || null,
+      ...('clientId' in body ? { clientId: validatedData.clientId || null } : {}),
       estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
       estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
     };

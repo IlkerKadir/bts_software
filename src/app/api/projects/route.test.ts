@@ -103,9 +103,47 @@ describe('GET /api/projects (non-manager visibility filter)', () => {
     await GET(req);
 
     const call = vi.mocked(db.project.findMany).mock.calls[0][0];
-    const orBranches = (call?.where as any)?.OR;
-    expect(orBranches).toBeDefined();
-    expect(orBranches).toEqual(
+    // Visibility is one OR-group inside where.AND (so it composes with
+    // the search and company filters instead of clobbering them).
+    const andGroups = (call?.where as any)?.AND as Array<{ OR?: unknown[] }>;
+    expect(andGroups).toHaveLength(1);
+    expect(andGroups[0].OR).toEqual(
+      expect.arrayContaining([{ createdById: 'user-sales-1' }]),
+    );
+  });
+
+  it('company filter matches the legacy owner column OR projects with a quote for that company', async () => {
+    vi.mocked(getSession).mockResolvedValue(makeUser({ canApprove: true }) as any);
+    vi.mocked(db.project.findMany).mockResolvedValue([] as any);
+    vi.mocked(db.project.count).mockResolvedValue(0);
+
+    const req = new NextRequest('http://localhost/api/projects?clientId=comp-1');
+    await GET(req);
+
+    const call = vi.mocked(db.project.findMany).mock.calls[0][0];
+    const where = call?.where as any;
+    expect(where.clientId).toBeUndefined(); // no longer a bare column filter
+    expect(where.AND).toEqual([
+      { OR: [{ clientId: 'comp-1' }, { quotes: { some: { companyId: 'comp-1' } } }] },
+    ]);
+  });
+
+  it('ANDs search, company and visibility groups together for non-managers', async () => {
+    vi.mocked(getSession).mockResolvedValue(makeUser() as any);
+    vi.mocked(db.project.findMany).mockResolvedValue([] as any);
+    vi.mocked(db.project.count).mockResolvedValue(0);
+
+    const req = new NextRequest('http://localhost/api/projects?search=fabrika&clientId=comp-1');
+    await GET(req);
+
+    const call = vi.mocked(db.project.findMany).mock.calls[0][0];
+    const andGroups = (call?.where as any)?.AND as Array<{ OR: unknown[] }>;
+    expect(andGroups).toHaveLength(3);
+    // company group present and visibility group still carries the creator branch
+    expect(andGroups[1]).toEqual({
+      OR: [{ clientId: 'comp-1' }, { quotes: { some: { companyId: 'comp-1' } } }],
+    });
+    expect(andGroups[2].OR).toEqual(
       expect.arrayContaining([{ createdById: 'user-sales-1' }]),
     );
   });

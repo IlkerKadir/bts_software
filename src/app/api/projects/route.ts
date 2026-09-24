@@ -25,15 +25,32 @@ export async function GET(request: NextRequest) {
     const where: Prisma.ProjectWhereInput = {};
 
     const searchVariants = expandTurkishVariants(query.search ?? '');
+    // Every filter is its own OR-group; they are ANDed together at the
+    // end so none clobbers another (search × company × visibility).
+    const andGroups: Prisma.ProjectWhereInput[] = [];
+
     if (searchVariants.length > 0) {
-      where.OR = searchVariants.flatMap((v) => [
-        { name: { contains: v, mode: 'insensitive' as const } },
-        { client: { is: { name: { contains: v, mode: 'insensitive' as const } } } },
-      ]);
+      andGroups.push({
+        OR: searchVariants.flatMap((v) => [
+          { name: { contains: v, mode: 'insensitive' as const } },
+          { client: { is: { name: { contains: v, mode: 'insensitive' as const } } } },
+          // Company reached through the project's quotes (see below).
+          { quotes: { some: { company: { name: { contains: v, mode: 'insensitive' as const } } } } },
+        ]),
+      });
     }
 
+    // Company filter. `Project.clientId` (legacy "owner" company) is no
+    // longer set by the project form, so filtering on it alone returned
+    // nothing (client 02.09). The real project↔company link lives on the
+    // quotes: a project "belongs" to every company it has a quote for.
     if (query.clientId) {
-      where.clientId = query.clientId;
+      andGroups.push({
+        OR: [
+          { clientId: query.clientId },
+          { quotes: { some: { companyId: query.clientId } } },
+        ],
+      });
     }
 
     if (query.status) {
@@ -61,13 +78,11 @@ export async function GET(request: NextRequest) {
         // Projects visible to the user's role (client 30.06)
         { visibility: 'ROLE', visibleToRoleId: user.roleId },
       ];
-      if (where.OR) {
-        const searchOR = where.OR;
-        delete where.OR;
-        where.AND = [{ OR: searchOR }, { OR: visibilityOR }];
-      } else {
-        where.OR = visibilityOR;
-      }
+      andGroups.push({ OR: visibilityOR });
+    }
+
+    if (andGroups.length > 0) {
+      where.AND = andGroups;
     }
 
     const [projects, total] = await Promise.all([

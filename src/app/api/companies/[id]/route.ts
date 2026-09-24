@@ -20,11 +20,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const company = await db.company.findUnique({
       where: { id },
       include: {
-        projects: {
-          select: { id: true, name: true, status: true },
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-        },
+        // `projects` (via the legacy clientId relation) is intentionally NOT
+        // included — see the quote-linked project query below.
         quotes: {
           select: {
             id: true, quoteNumber: true, subject: true, status: true, grandTotal: true,
@@ -34,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           take: 5,
         },
         _count: {
-          select: { projects: true, quotes: true },
+          select: { quotes: true },
         },
       },
     });
@@ -43,9 +40,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Firma bulunamadı' }, { status: 404 });
     }
 
+    // Projects linked to this company: the legacy owner column
+    // (`Project.clientId`, no longer set by the form) OR any project that
+    // has a quote for this company — same rule as the Projeler filter
+    // (client 02.09). Overrides the relation-based include above.
+    const projectWhere = {
+      OR: [{ clientId: id }, { quotes: { some: { companyId: id } } }],
+    };
+    const [linkedProjects, linkedProjectCount] = await Promise.all([
+      db.project.findMany({
+        where: projectWhere,
+        select: { id: true, name: true, status: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }),
+      db.project.count({ where: projectWhere }),
+    ]);
+
     // Convert Decimal fields to numbers to avoid serialization issues
     const serializedCompany = {
       ...company,
+      projects: linkedProjects,
+      _count: { ...company._count, projects: linkedProjectCount },
       quotes: company.quotes.map((q) => ({
         ...q,
         projectName: q.project?.name ?? null,
