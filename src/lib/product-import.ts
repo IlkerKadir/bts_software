@@ -32,6 +32,7 @@ interface ColumnIndices {
   urunKodu: number;
   urunAdi: number;
   ingAciklama: number; // İNGİLİZCE AÇIKLAMA column
+  trAciklama: number; // optional TÜRKÇE AÇIKLAMA / TÜRKÇE ADI column (client 02.09)
   birim: number;
   listeFiyati: number;
   maliyetFiyati: number;
@@ -103,6 +104,9 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         columns.urunKodu = col;
       } else if (val.includes('INGILIZCE') && val.includes('ACIKLAMA')) {
         columns.ingAciklama = col;
+      } else if (val.includes('TURKCE') && (val.includes('ACIKLAMA') || val.includes('ADI'))) {
+        // Explicit Turkish description — wins over ÜRÜN ADI for nameTr.
+        columns.trAciklama = col;
       } else if (val.includes('URUN ADI') || val.includes('URUN_ADI') || val === 'URUNADI' || val === 'ACIKLAMA') {
         columns.urunAdi = col;
       } else if (
@@ -163,6 +167,7 @@ function detectHeaderRow(worksheet: ExcelJS.Worksheet): { headerRow: number; col
         urunKodu: columns.urunKodu,
         urunAdi: columns.urunAdi || 0,
         ingAciklama: columns.ingAciklama || 0,
+        trAciklama: columns.trAciklama || 0,
         birim: columns.birim || 0,
         listeFiyati: columns.listeFiyati || 0,
         maliyetFiyati: columns.maliyetFiyati || 0,
@@ -293,6 +298,7 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
     const shortCode = getCellString(row, columns.kisaKod);
     const name = getCellString(row, columns.urunAdi);
     const engDescription = getCellString(row, columns.ingAciklama);
+    const trDescription = getCellString(row, columns.trAciklama);
     const unit = getCellString(row, columns.birim);
     const listPrice = getCellNumber(row, columns.listeFiyati);
     const costPrice = getCellNumber(row, columns.maliyetFiyati);
@@ -318,6 +324,10 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
       // If İNGİLİZCE AÇIKLAMA column exists, use it for English name
       if (engDescription) {
         existing.nameEn = engDescription;
+      }
+      // Explicit TÜRKÇE AÇIKLAMA column wins for the Turkish name
+      if (trDescription) {
+        existing.nameTr = trDescription;
       }
 
       // Update other fields if they were empty before
@@ -350,6 +360,10 @@ export async function parseProductExcel(buffer: Buffer): Promise<ImportedProduct
       // İNGİLİZCE AÇIKLAMA column overrides English name
       if (engDescription) {
         nameEn = engDescription;
+      }
+      // Explicit TÜRKÇE AÇIKLAMA column overrides the Turkish name
+      if (trDescription) {
+        nameTr = trDescription;
       }
 
       const product: ImportedProduct = {

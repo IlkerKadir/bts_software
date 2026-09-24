@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { cn } from '@/lib/cn';
+import type { PreviewProduct as LibPreviewProduct } from '@/lib/product-import';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,15 +25,9 @@ interface ProductImportModalProps {
   onImportComplete?: () => void;
 }
 
-interface PreviewProduct {
-  code: string;
-  brandName: string;
-  name: string;
-  listPrice: number;
-  currency: string;
-  status: 'new' | 'price_change' | 'unchanged';
-  oldPrice?: number;
-}
+// Preview rows are the parser's own shape (nameTr/nameEn, no `name`) —
+// reuse the lib type so the modal can't drift from the payload again.
+type PreviewProduct = LibPreviewProduct;
 
 interface PreviewData {
   totalProducts: number;
@@ -532,7 +527,7 @@ export function ProductImportModal({
                             {product.brandName}
                           </td>
                           <td className="px-3 py-2 text-primary-800 truncate max-w-[200px]">
-                            {product.name}
+                            {product.nameTr || product.nameEn || '-'}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">
                             {product.status === 'price_change' &&

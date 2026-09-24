@@ -170,6 +170,18 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     }
   };
 
+  // Quotes seed a new row's description from `nameTr` (falling back to
+  // `name`). Editing only Ürün Adı therefore never reached the quotes and
+  // looked like "the change didn't apply" (client 02.09). While Türkçe Adı
+  // is un-customized (empty or identical to the current Ürün Adı) keep it
+  // mirrored; once the user types something different there, leave it alone.
+  const handleNameChange = (value: string) => {
+    setFormData(prev => {
+      const trSynced = !prev.nameTr || prev.nameTr === prev.name;
+      return { ...prev, name: value, nameTr: trSynced ? value : prev.nameTr };
+    });
+  };
+
   const handleChange = (field: keyof ProductFormData, value: string | number | boolean | undefined | null) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -232,7 +244,7 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
           <Input
             label="Ürün Adı *"
             value={formData.name}
-            onChange={(e) => handleChange('name', e.target.value)}
+            onChange={(e) => handleNameChange(e.target.value)}
             placeholder="Ürün adı"
             required
           />
@@ -244,12 +256,17 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
             placeholder="Product Name (EN)"
           />
 
-          <Input
-            label="Türkçe Adı"
-            value={formData.nameTr || ''}
-            onChange={(e) => handleChange('nameTr', e.target.value)}
-            placeholder="Türkçe ürün adı"
-          />
+          <div className="space-y-1">
+            <Input
+              label="Türkçe Adı"
+              value={formData.nameTr || ''}
+              onChange={(e) => handleChange('nameTr', e.target.value)}
+              placeholder="Türkçe ürün adı"
+            />
+            <p className="text-xs text-accent-500">
+              Teklife eklenen ürünün açıklaması bu alandan gelir. Boş bırakılırsa Ürün Adı kullanılır.
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

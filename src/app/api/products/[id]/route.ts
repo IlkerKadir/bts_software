@@ -81,9 +81,27 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Keep `nameTr` in step with `name` while it was never customized
+    // (null or identical to the old name) and the caller didn't change it
+    // themselves — quotes read `nameTr` first, so a renamed Ürün Adı must
+    // reach them (client 02.09). Same rule as the form's live mirroring.
+    // Blank ('' / whitespace) counts as empty — older form saves stored ''.
+    const blank = (v: string | null | undefined) => v == null || !v.trim();
+    const nameChanged = validatedData.name !== existingProduct.name;
+    const trWasSynced =
+      blank(existingProduct.nameTr) || existingProduct.nameTr === existingProduct.name;
+    const callerLeftTrAlone =
+      blank(validatedData.nameTr) || validatedData.nameTr === existingProduct.nameTr;
+    const data =
+      nameChanged && trWasSynced && callerLeftTrAlone
+        ? { ...validatedData, nameTr: validatedData.name }
+        : // Never persist '' — normalize a blank Türkçe Adı to null so the
+          // quote seeding fallback (`nameTr || name`) and this rule stay clean.
+          { ...validatedData, nameTr: blank(validatedData.nameTr) ? null : validatedData.nameTr };
+
     const product = await db.product.update({
       where: { id },
-      data: validatedData,
+      data,
       include: {
         brand: { select: { id: true, name: true } },
         category: { select: { id: true, name: true } },
