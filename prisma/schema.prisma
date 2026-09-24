@@ -748,6 +748,10 @@ model OrderConfirmation {
   /// item table and the footer blocks (above ÜRETİCİ FİRMALAR). Optional —
   /// nothing renders when empty.
   freeNote             String?
+  /// "Dahil Olmayan Hizmetler" — seeded from the quote's DAHIL_OLMAYAN
+  /// commercial terms at STF creation, editable, printed above NOTLAR on
+  /// the STF PDF/Excel. Optional — nothing renders when empty (client 02.09).
+  excludedServices     String?
 
   items         OrderItem[]
 

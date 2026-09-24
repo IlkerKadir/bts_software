@@ -26,6 +26,7 @@ export interface OrderHeaderForPdf {
   vatNote: string | null;
   notes: string | null;
   freeNote: string | null;
+  excludedServices: string | null;
   customerApprovalName: string | null;
   btsResponsibleName: string | null;
 }
@@ -277,6 +278,7 @@ export function generateOrderHtml(data: OrderDataForPdf): string {
     footerRow('ÖDEME', order.paymentTerms),
     footerRow('KDV', order.vatNote),
     footerRow('TESLİMAT', order.deliveryTime),
+    footerRow('DAHİL OLMAYAN HİZMETLER', order.excludedServices),
     footerRow('NOTLAR', order.notes),
   ].join('\n');
 

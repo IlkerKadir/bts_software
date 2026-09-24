@@ -86,6 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         vatNote: order.vatNote,
         notes: order.notes,
         freeNote: order.freeNote,
+        excludedServices: order.excludedServices,
         customerApprovalName: order.customerApprovalName,
         btsResponsibleName: order.btsResponsibleName,
       },

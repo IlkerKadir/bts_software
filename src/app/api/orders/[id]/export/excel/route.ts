@@ -38,6 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         currency: order.currency, manufacturers: order.manufacturers, warranty: order.warranty,
         deliveryPlace: order.deliveryPlace, deliveryTime: order.deliveryTime, paymentTerms: order.paymentTerms,
         vatNote: order.vatNote, notes: order.notes, freeNote: order.freeNote,
+        excludedServices: order.excludedServices,
         customerApprovalName: order.customerApprovalName,
         btsResponsibleName: order.btsResponsibleName,
       },

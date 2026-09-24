@@ -1,6 +1,8 @@
 export interface TermLike {
   category: string;
   value: string;
+  /** Quote ordering; when present, multi-value categories keep it. */
+  sortOrder?: number;
 }
 
 export interface FooterDefaults {
@@ -11,10 +13,14 @@ export interface FooterDefaults {
   warranty: string | null;
   vatNote: string | null;
   notes: string | null;
+  excludedServices: string | null;
 }
 
 function join(terms: TermLike[], category: string): string | null {
-  const vals = terms.filter((t) => t.category === category).map((t) => t.value);
+  const vals = terms
+    .filter((t) => t.category === category)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((t) => t.value);
   return vals.length ? vals.join('\n') : null;
 }
 
@@ -57,5 +63,6 @@ export function footerDefaultsFromTerms(terms: TermLike[]): FooterDefaults {
     warranty: join(terms, 'garanti'),
     vatNote: join(terms, 'kdv'),
     notes: join(terms, 'NOTLAR'),
+    excludedServices: join(terms, 'DAHIL_OLMAYAN'),
   };
 }

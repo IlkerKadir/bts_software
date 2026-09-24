@@ -188,7 +188,10 @@ export async function POST(request: NextRequest) {
           },
         },
         items: { orderBy: { sortOrder: 'asc' } },
-        commercialTerms: { select: { category: true, value: true } },
+        commercialTerms: {
+          select: { category: true, value: true, sortOrder: true },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 

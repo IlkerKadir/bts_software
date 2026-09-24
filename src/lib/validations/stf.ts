@@ -48,6 +48,7 @@ export const stfUpdateSchema = z.object({
   vatNote: nullableStr,
   notes: nullableStr,
   freeNote: nullableStr,
+  excludedServices: nullableStr,
   customerApprovalName: nullableStr,
   btsResponsibleName: nullableStr,
   items: z.array(stfItemSchema),

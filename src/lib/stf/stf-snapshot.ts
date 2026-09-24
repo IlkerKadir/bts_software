@@ -60,6 +60,7 @@ export interface StfHeader {
   warranty: string | null;
   vatNote: string | null;
   notes: string | null;
+  excludedServices: string | null;
 }
 
 export interface StfItem {

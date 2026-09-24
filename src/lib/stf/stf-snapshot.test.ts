@@ -14,7 +14,11 @@ const quote: QuoteForSnapshot = {
     { id: 'q2', itemType: 'PRODUCT', sortOrder: 2, code: 'MKII-OP', brand: 'Fyreye', model: 'MKII', description: 'Optik Dedektör', quantity: 1, unit: 'Adet', unitPrice: 31.4, totalPrice: 31.4, priceLabel: null, parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
     { id: 'q3', itemType: 'CUSTOM', sortOrder: 3, code: null, brand: null, model: null, description: 'Montaj', quantity: 1, unit: 'Adet', unitPrice: 0, totalPrice: 0, priceLabel: 'tarafınızca sağlanacaktır', parentItemId: null, discountPct: 0, sectionDiscountPct: null, sectionDiscountLabel: null },
   ],
-  commercialTerms: [{ category: 'odeme', value: '30 gün' }],
+  commercialTerms: [
+    { category: 'odeme', value: '30 gün' },
+    { category: 'DAHIL_OLMAYAN', value: 'İskele', sortOrder: 2 },
+    { category: 'DAHIL_OLMAYAN', value: 'Kablo çekimi', sortOrder: 1 },
+  ],
 };
 
 describe('buildStfSnapshot', () => {
@@ -29,6 +33,8 @@ describe('buildStfSnapshot', () => {
     expect(header.grandTotal).toBe(3005);
     expect(header.formDate).toEqual(new Date('2026-06-18'));
     expect(header.paymentTerms).toBe('30 gün');
+    // Dahil Olmayan Hizmetler seeded from DAHIL_OLMAYAN terms, in quote order
+    expect(header.excludedServices).toBe('Kablo çekimi\nİskele');
   });
 
   it('copies items preserving type/order and assigns poz only to priced rows', () => {

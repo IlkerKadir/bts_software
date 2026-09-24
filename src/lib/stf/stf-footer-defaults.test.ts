@@ -19,6 +19,16 @@ describe('footerDefaultsFromTerms', () => {
     expect(r.notes).toBe('Bir bütün halinde geçerlidir');
   });
 
+  it('maps DAHIL_OLMAYAN terms to excludedServices in quote (sortOrder) order', () => {
+    const r = footerDefaultsFromTerms([
+      { category: 'DAHIL_OLMAYAN', value: 'İskele', sortOrder: 2 },
+      { category: 'DAHIL_OLMAYAN', value: 'Kablo çekimi', sortOrder: 1 },
+      { category: 'NOTLAR', value: 'Not' },
+    ]);
+    expect(r.excludedServices).toBe('Kablo çekimi\nİskele');
+    expect(r.notes).toBe('Not');
+  });
+
   it('joins multiple NOTLAR terms with newlines', () => {
     const r = footerDefaultsFromTerms([
       { category: 'NOTLAR', value: 'Not 1' },
@@ -65,6 +75,7 @@ describe('footerDefaultsFromTerms', () => {
     expect(footerDefaultsFromTerms([])).toEqual({
       manufacturers: null, paymentTerms: null, deliveryPlace: null,
       deliveryTime: null, warranty: null, vatNote: null, notes: null,
+      excludedServices: null,
     });
   });
 });

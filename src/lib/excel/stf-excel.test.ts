@@ -11,6 +11,7 @@ const data: StfExcelData = {
     deliveryPlace: 'İstanbul depo.', deliveryTime: '8-10 hafta.', paymentTerms: '30 gün.',
     vatNote: 'KDV dahil değildir.', notes: 'Bir bütün halinde geçerlidir.',
     freeNote: 'Serbest kalem satırı.',
+    excludedServices: 'Kablo çekimi\nİskele',
     customerApprovalName: 'İLKER ÇETİN', btsResponsibleName: 'ÖZNUR SAYIN',
   },
   items: [
@@ -42,6 +43,9 @@ describe('generateStfExcel', () => {
     expect(all).toContain('SİPARİŞ TEYİT FORMU'); // document title row under the banner
     expect(all).toContain('DURAN DOĞAN A.Ş');
     expect(all).toContain('Serbest kalem satırı.'); // free-form row between items and footer
+    expect(all).toContain('DAHİL OLMAYAN HİZMETLER'); // excluded-services block above NOTLAR
+    expect(all).toContain('Kablo çekimi');
+    expect(all.indexOf('DAHİL OLMAYAN HİZMETLER')).toBeLessThan(all.indexOf('NOTLAR'));
     expect(all).toContain('STF-6000');
     expect(all).toContain('316A');           // teklif/ref combined
     expect(all).toContain('TRAFO 1');         // section header

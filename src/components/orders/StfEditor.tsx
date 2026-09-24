@@ -51,6 +51,7 @@ interface StfData {
   vatNote: string | null;
   notes: string | null;
   freeNote: string | null;
+  excludedServices: string | null;
   customerApprovalName: string | null;
   btsResponsibleName: string | null;
   status: string;
@@ -366,6 +367,20 @@ export function StfEditor({ stfId }: { stfId: string }) {
           + Not Ekle
         </button>
       ) : null}
+
+      {/* Dahil Olmayan Hizmetler — seeded from the quote's DAHIL_OLMAYAN
+          terms at creation; always visible so it isn't forgotten (client
+          02.09). Prints above NOTLAR on the PDF/Excel when filled. */}
+      <div className="space-y-1 rounded-lg border border-primary-200 p-4">
+        <label className="text-xs font-medium text-primary-700">Dahil Olmayan Hizmetler</label>
+        <textarea
+          rows={3}
+          placeholder="Teklife dahil olmayan hizmetler (her satıra bir madde)..."
+          className="w-full px-2 py-1 border border-primary-300 rounded text-sm"
+          value={stf.excludedServices ?? ''}
+          onChange={(e) => setField('excludedServices', e.target.value)}
+        />
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-primary-200 p-4">
         {FOOTER_FIELDS.map(([key, label]) => (

@@ -19,7 +19,7 @@ export interface StfExcelHeader {
   formDate: Date | null; siparisNo: string | null; currency: string;
   manufacturers: string | null; warranty: string | null; deliveryPlace: string | null; deliveryTime: string | null;
   paymentTerms: string | null; vatNote: string | null; notes: string | null;
-  freeNote: string | null;
+  freeNote: string | null; excludedServices: string | null;
   customerApprovalName: string | null; btsResponsibleName: string | null;
 }
 export interface StfExcelData { order: StfExcelHeader; items: StfExcelItem[]; }
@@ -290,7 +290,8 @@ export async function generateStfExcel(data: StfExcelData): Promise<Buffer> {
   const blocks: [string, string | null][] = [
     ['ÜRETİCİ FİRMALAR', order.manufacturers], ['GARANTİ', order.warranty],
     ['TESLİM YERİ', order.deliveryPlace], ['ÖDEME', order.paymentTerms],
-    ['KDV', order.vatNote], ['TESLİMAT', order.deliveryTime], ['NOTLAR', order.notes],
+    ['KDV', order.vatNote], ['TESLİMAT', order.deliveryTime],
+    ['DAHİL OLMAYAN HİZMETLER', order.excludedServices], ['NOTLAR', order.notes],
   ];
   for (const [lbl, value] of blocks) {
     if (!value || !value.trim()) continue;

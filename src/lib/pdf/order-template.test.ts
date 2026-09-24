@@ -22,6 +22,7 @@ const data: OrderDataForPdf = {
     vatNote: 'Fiyatlarımıza KDV dahil değildir.',
     notes: 'Teklifimiz bir bütün halinde geçerlidir.',
     freeNote: 'Serbest kalem satırı içeriği.',
+    excludedServices: 'Kablo çekimi\nİskele kurulumu',
     customerApprovalName: 'İLKER ÇETİN',
     btsResponsibleName: 'ÖZNUR SAYIN',
   },
@@ -76,6 +77,10 @@ describe('generateOrderHtml (STF customer PDF)', () => {
   });
   it('renders footer blocks and signature names', () => {
     expect(html).toContain('Serbest kalem satırı içeriği.'); // free note row above the footer
+    // DAHİL OLMAYAN HİZMETLER prints as its own footer block, before NOTLAR
+    expect(html).toContain('DAHİL OLMAYAN HİZMETLER');
+    expect(html).toContain('Kablo çekimi<br/>İskele kurulumu');
+    expect(html.indexOf('DAHİL OLMAYAN HİZMETLER')).toBeLessThan(html.indexOf('NOTLAR'));
     expect(html).toContain('ÜRETİCİ FİRMALAR');
     expect(html).toContain('GARANTİ');
     expect(html).toContain('TESLİMAT');
