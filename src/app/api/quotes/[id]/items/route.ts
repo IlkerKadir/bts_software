@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { getQuoteEditDenial, quoteEditAccessInclude } from '@/lib/quote-edit-access';
 import {
   calculateUnitPrice,
   recalculateAndPersistQuoteTotals,
@@ -80,18 +81,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
     const data = validation.data;
 
-    // Verify quote exists
-    const quote = await db.quote.findUnique({ where: { id: quoteId } });
+    // Verify quote exists + shared edit rule (visibility + status)
+    const quote = await db.quote.findUnique({ where: { id: quoteId }, include: quoteEditAccessInclude });
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
-
-    // Regular users cannot add items to ONAY_BEKLIYOR quotes — only approvers can
-    if (quote.status === 'ONAY_BEKLIYOR' && !user.role.canApprove) {
-      return NextResponse.json(
-        { error: 'Onay bekleyen tekliflere sadece onay yetkisi olan kullanıcılar kalem ekleyebilir' },
-        { status: 403 }
-      );
+    const denial = getQuoteEditDenial(user, quote);
+    if (denial) {
+      return NextResponse.json({ error: denial.error }, { status: denial.status });
     }
 
     // Get max sort order
@@ -326,18 +323,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
     const { items: validatedItems } = validation.data;
 
-    // Verify quote exists
-    const quote = await db.quote.findUnique({ where: { id: quoteId } });
+    // Verify quote exists + shared edit rule (visibility + status)
+    const quote = await db.quote.findUnique({ where: { id: quoteId }, include: quoteEditAccessInclude });
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
-
-    // Regular users cannot update items on ONAY_BEKLIYOR quotes — only approvers can
-    if (quote.status === 'ONAY_BEKLIYOR' && !user.role.canApprove) {
-      return NextResponse.json(
-        { error: 'Onay bekleyen tekliflerin kalemleri sadece onay yetkisi olan kullanıcılar tarafından düzenlenebilir' },
-        { status: 403 }
-      );
+    const denial = getQuoteEditDenial(user, quote);
+    if (denial) {
+      return NextResponse.json({ error: denial.error }, { status: denial.status });
     }
 
     // Pre-validate SET currency overrides across the batch so a bad

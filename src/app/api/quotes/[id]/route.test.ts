@@ -100,6 +100,17 @@ describe('PUT /api/quotes/[id] - input validation', () => {
     expect(response.status).toBe(403);
   });
 
+  it('allows a non-owner who can see the quote via project visibility (client 02.09)', async () => {
+    vi.mocked(db.quote.findUnique).mockResolvedValue({
+      ...mockQuote,
+      createdById: 'other-user',
+      project: { visibility: 'EVERYONE', visibleTo: [] },
+    } as never);
+    const request = createPutRequest({ subject: 'test' });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'quote1' }) });
+    expect(response.status).toBe(200);
+  });
+
   it('allows admin to edit any quote', async () => {
     vi.mocked(getSession).mockResolvedValue({
       ...mockUser,

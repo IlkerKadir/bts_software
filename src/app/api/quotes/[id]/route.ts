@@ -8,6 +8,7 @@ import { quoteUpdateSchema } from '@/lib/validations/quote';
 // Shared visibility rule (incl. the ROLE mode) — the same boundary as the
 // tracking/interactions routes and the STF access checks.
 import { canUserAccessQuote } from '@/lib/quote-access';
+import { getQuoteEditDenial } from '@/lib/quote-edit-access';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -165,30 +166,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
 
-    // Visibility check
-    const isManager = user.role.canApprove || user.role.canManageUsers;
-    if (!canUserAccessQuote(user.id, isManager, existingQuote, user.roleId)) {
-      return NextResponse.json({ error: 'Bu teklifi düzenleme yetkiniz bulunmamaktadır' }, { status: 403 });
-    }
-
-    // Authorization: only quote creator or admin can edit
-    // For ONAY_BEKLIYOR quotes, only users with canApprove permission can edit
-    const isOwnerOrAdmin = existingQuote.createdById === user.id || user.role.canManageUsers;
-    const isApproverOnPending = existingQuote.status === 'ONAY_BEKLIYOR' && user.role.canApprove;
-
-    if (!isOwnerOrAdmin && !isApproverOnPending) {
-      return NextResponse.json(
-        { error: 'Bu teklifi düzenleme yetkiniz bulunmamaktadır' },
-        { status: 403 }
-      );
-    }
-
-    // Regular users (non-approvers) cannot edit quotes in ONAY_BEKLIYOR status
-    if (existingQuote.status === 'ONAY_BEKLIYOR' && !user.role.canApprove) {
-      return NextResponse.json(
-        { error: 'Onay bekleyen teklifler sadece onay yetkisi olan kullanıcılar tarafından düzenlenebilir' },
-        { status: 403 }
-      );
+    // Edit rule shared with items + commercial terms (client 02.09):
+    // whoever can see the quote may edit it; ONAY_BEKLIYOR is approver-only.
+    const denial = getQuoteEditDenial(user, existingQuote);
+    if (denial) {
+      return NextResponse.json({ error: denial.error }, { status: denial.status });
     }
 
     // Build update data

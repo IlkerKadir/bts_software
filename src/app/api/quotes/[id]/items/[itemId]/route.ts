@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { getQuoteEditDenial, quoteEditAccessInclude } from '@/lib/quote-edit-access';
 import { recalculateAndPersistQuoteTotals } from '@/lib/quote-calculations';
 
 interface RouteParams {
@@ -15,6 +16,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id: quoteId, itemId } = await params;
+
+    // Shared edit rule (visibility + status) — previously unguarded.
+    const quote = await db.quote.findUnique({ where: { id: quoteId }, include: quoteEditAccessInclude });
+    if (!quote) {
+      return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
+    }
+    const denial = getQuoteEditDenial(user, quote);
+    if (denial) {
+      return NextResponse.json({ error: denial.error }, { status: denial.status });
+    }
 
     // Verify item exists and belongs to quote
     const item = await db.quoteItem.findFirst({

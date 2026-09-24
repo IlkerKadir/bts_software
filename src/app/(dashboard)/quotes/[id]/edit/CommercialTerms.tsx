@@ -81,6 +81,9 @@ export function CommercialTerms({ quoteId, onUpdate }: CommercialTermsProps) {
         await fetchTerms();
         setShowTemplates(false);
         onUpdate?.();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || 'Ticari şart eklenemedi');
       }
     } catch (err) {
       console.error('Error adding term:', err);
@@ -105,6 +108,8 @@ export function CommercialTerms({ quoteId, onUpdate }: CommercialTermsProps) {
         setEditingTerm(data.term.id);
         setEditValues({ category: data.term.category, value: data.term.value });
         onUpdate?.();
+      } else {
+        alert(data.error || 'Ticari şart eklenemedi');
       }
     } catch (err) {
       console.error('Error adding term:', err);
@@ -122,13 +127,20 @@ export function CommercialTerms({ quoteId, onUpdate }: CommercialTermsProps) {
     if (!editingTerm) return;
 
     try {
-      await fetch(`/api/quotes/${quoteId}/terms`, {
+      const res = await fetch(`/api/quotes/${quoteId}/terms`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           terms: [{ id: editingTerm, ...editValues }],
         }),
       });
+      if (!res.ok) {
+        // Previously the response was never checked: a 403 looked like a
+        // successful save and silently reverted on reload (client 02.09).
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Ticari şart kaydedilemedi');
+        return;
+      }
 
       setTerms(prev => prev.map(t =>
         t.id === editingTerm ? { ...t, ...editValues } : t
@@ -151,6 +163,10 @@ export function CommercialTerms({ quoteId, onUpdate }: CommercialTermsProps) {
         setTerms(prev => prev.filter(t => t.id !== termId));
         setShowDeleteConfirm(null);
         onUpdate?.();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setShowDeleteConfirm(null);
+        alert(data.error || 'Ticari şart silinemedi');
       }
     } catch (err) {
       console.error('Error deleting term:', err);

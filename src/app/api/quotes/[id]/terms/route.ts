@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
+import { getQuoteEditDenial, quoteEditAccessInclude } from '@/lib/quote-edit-access';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -49,10 +50,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id: quoteId } = await params;
     const body = await request.json();
 
-    // Verify quote exists
-    const quote = await db.quote.findUnique({ where: { id: quoteId } });
+    // Verify quote exists + shared edit rule (visibility + status)
+    const quote = await db.quote.findUnique({ where: { id: quoteId }, include: quoteEditAccessInclude });
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
+    }
+    const denial = getQuoteEditDenial(user, quote);
+    if (denial) {
+      return NextResponse.json({ error: denial.error }, { status: denial.status });
     }
 
     // Get max sort order
@@ -99,18 +104,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Terms array required' }, { status: 400 });
     }
 
-    // Verify quote exists
-    const quote = await db.quote.findUnique({ where: { id: quoteId } });
+    // Verify quote exists + shared edit rule (client 02.09: same rule as
+    // items/header — the old creator-or-admin gate blocked Satış users who
+    // could already edit the quote's items).
+    const quote = await db.quote.findUnique({ where: { id: quoteId }, include: quoteEditAccessInclude });
     if (!quote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });
     }
-
-    // Authorization: only quote creator or admin can edit commercial terms
-    if (quote.createdById !== user.id && !user.role.canManageUsers) {
-      return NextResponse.json(
-        { error: 'Bu teklifi düzenleme yetkiniz bulunmamaktadır' },
-        { status: 403 }
-      );
+    const denial = getQuoteEditDenial(user, quote);
+    if (denial) {
+      return NextResponse.json({ error: denial.error }, { status: denial.status });
     }
 
     // Replace all terms in a transaction (delete + create)
