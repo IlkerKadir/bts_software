@@ -41,6 +41,16 @@ describe('parseProductExcel — Turkish name handling', () => {
     expect(p.nameTr).toBe('Türkçe İsim');
   });
 
+  it('round-trips the export header "ÜRÜN ADI (TÜRKÇE)" as the Turkish name', async () => {
+    const buf = await sheetToBuffer(
+      ['ÜRÜN KODU', 'ÜRÜN ADI (TÜRKÇE)', 'İNGİLİZCE AÇIKLAMA', 'LİSTE FİYATI'],
+      [['P-5', 'Optik Duman Dedektörü', 'Optical Smoke Detector', 10]],
+    );
+    const [p] = await parseProductExcel(buf);
+    expect(p.nameTr).toBe('Optik Duman Dedektörü');
+    expect(p.nameEn).toBe('Optical Smoke Detector');
+  });
+
   it('falls back to ÜRÜN ADI when the Turkish column exists but the cell is empty', async () => {
     const buf = await sheetToBuffer(
       ['ÜRÜN KODU', 'ÜRÜN ADI', 'TÜRKÇE AÇIKLAMA', 'LİSTE FİYATI'],

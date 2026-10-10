@@ -9,6 +9,7 @@ const PRODUCT_SEARCH_FIELDS = [
   'shortCode',
   'name',
   'nameTr',
+  'nameEn',
   'model',
   'brand.name',
 ];

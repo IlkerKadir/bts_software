@@ -170,16 +170,10 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
     }
   };
 
-  // Quotes seed a new row's description from `nameTr` (falling back to
-  // `name`). Editing only Ürün Adı therefore never reached the quotes and
-  // looked like "the change didn't apply" (client 02.09). While Türkçe Adı
-  // is un-customized (empty or identical to the current Ürün Adı) keep it
-  // mirrored; once the user types something different there, leave it alone.
+  // Ürün Adı and Türkçe Adı are one value (client 10.2026) — the single
+  // field writes both; quotes seed new rows from it.
   const handleNameChange = (value: string) => {
-    setFormData(prev => {
-      const trSynced = !prev.nameTr || prev.nameTr === prev.name;
-      return { ...prev, name: value, nameTr: trSynced ? value : prev.nameTr };
-    });
+    setFormData(prev => ({ ...prev, name: value, nameTr: value }));
   };
 
   const handleChange = (field: keyof ProductFormData, value: string | number | boolean | undefined | null) => {
@@ -240,31 +234,29 @@ export function ProductForm({ isOpen, onClose, onSuccess, initialData, canViewCo
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input
-            label="Ürün Adı *"
-            value={formData.name}
-            onChange={(e) => handleNameChange(e.target.value)}
-            placeholder="Ürün adı"
-            required
-          />
-
-          <Input
-            label="Ürün Adı (EN)"
-            value={formData.nameEn || ''}
-            onChange={(e) => handleChange('nameEn', e.target.value)}
-            placeholder="Product Name (EN)"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Input
+              label="Ürün Adı (Türkçe) *"
+              value={formData.name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Ürün adı"
+              required
+            />
+            <p className="text-xs text-accent-500">
+              Türkçe tekliflere eklenen ürünün açıklaması bu alandan gelir.
+            </p>
+          </div>
 
           <div className="space-y-1">
             <Input
-              label="Türkçe Adı"
-              value={formData.nameTr || ''}
-              onChange={(e) => handleChange('nameTr', e.target.value)}
-              placeholder="Türkçe ürün adı"
+              label="Ürün Adı (EN)"
+              value={formData.nameEn || ''}
+              onChange={(e) => handleChange('nameEn', e.target.value)}
+              placeholder="Product Name (EN)"
             />
             <p className="text-xs text-accent-500">
-              Teklife eklenen ürünün açıklaması bu alandan gelir. Boş bırakılırsa Ürün Adı kullanılır.
+              İngilizce tekliflerde kullanılır. Boş bırakılırsa Türkçe ad gelir.
             </p>
           </div>
         </div>

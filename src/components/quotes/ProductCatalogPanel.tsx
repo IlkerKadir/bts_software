@@ -81,8 +81,9 @@ export function ProductCatalogPanel({
     const fetchFilters = async () => {
       try {
         const [brandsRes, categoriesRes] = await Promise.all([
-          fetch('/api/products/brands'),
-          fetch('/api/products/categories'),
+          // Only brands/categories with active products, A→Z (client 10.2026)
+          fetch('/api/products/brands?activeOnly=1'),
+          fetch('/api/products/categories?activeOnly=1'),
         ]);
 
         if (brandsRes.ok) {

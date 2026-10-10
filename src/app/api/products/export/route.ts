@@ -40,7 +40,10 @@ export async function GET() {
       { header: 'MODEL', key: 'model', width: 20 },
       { header: 'KISA KOD', key: 'shortCode', width: 14 },
       { header: 'ÜRÜN KODU', key: 'code', width: 18 },
-      { header: 'ÜRÜN ADI', key: 'nameTr', width: 30 },
+      // One name column: Ürün Adı and Türkçe Adı are the same value. The
+      // import parser maps this header (contains TÜRKÇE + ADI) to the
+      // Turkish name, and still accepts legacy "ÜRÜN ADI" sheets.
+      { header: 'ÜRÜN ADI (TÜRKÇE)', key: 'nameTr', width: 30 },
       { header: 'İNGİLİZCE AÇIKLAMA', key: 'nameEn', width: 30 },
       { header: 'BİRİM', key: 'unit', width: 10 },
       { header: 'LİSTE FİYATI', key: 'listPrice', width: 15 },

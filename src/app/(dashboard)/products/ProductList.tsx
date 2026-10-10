@@ -71,6 +71,15 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   const [isCoefficientModalOpen, setIsCoefficientModalOpen] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [isBulkPriceModalOpen, setIsBulkPriceModalOpen] = useState(false);
+  // Bulk delete (client 10.2026): confirm → delete unused → list the
+  // products that are used in quotes and offer to make them passive.
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteResult, setBulkDeleteResult] = useState<{
+    deleted: number;
+    blocked: { id: string; code: string; name: string; quoteItemCount: number }[];
+  } | null>(null);
+  const [bulkDeleteError, setBulkDeleteError] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [sortField, setSortField] = usePersistentState<SortField | null>('products:sortField', null);
   const [sortDirection, setSortDirection] = usePersistentState<SortDirection>('products:sortDirection', 'asc');
@@ -145,6 +154,12 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
   useEffect(() => {
     fetchProducts(page);
   }, [fetchProducts, page]);
+
+  // Selection is per visible page — clear it when the page, filters or sort
+  // change so a bulk action never touches rows the user can't see.
+  useEffect(() => {
+    setSelectedProducts(new Set());
+  }, [page, filterKey]);
 
   const handleEdit = (product: Product) => {
     setEditingProduct({
@@ -278,6 +293,60 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     }
   };
 
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    setBulkDeleteError('');
+    try {
+      const response = await fetch('/api/products/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Only selected rows that are on screen (a row edited out of the
+        // current filter stays "selected" but must not be deleted unseen).
+        body: JSON.stringify({ productIds: selectedProductsForBulk.map((p) => p.id), action: 'delete' }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setBulkDeleteError(data.error || 'Silme işlemi başarısız');
+        return;
+      }
+      setIsBulkDeleteConfirmOpen(false);
+      setSelectedProducts(new Set());
+      setBulkDeleteResult({ deleted: data.deleted, blocked: data.blocked || [] });
+      fetchProducts(pagination?.page ?? 1);
+    } catch {
+      setBulkDeleteError('Sunucu ile bağlantı kurulamadı');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleDeactivateBlocked = async () => {
+    if (!bulkDeleteResult?.blocked.length) return;
+    setIsBulkDeleting(true);
+    setBulkDeleteError('');
+    try {
+      const response = await fetch('/api/products/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productIds: bulkDeleteResult.blocked.map((b) => b.id),
+          action: 'deactivate',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setBulkDeleteError(data.error || 'Pasife alma başarısız');
+        return;
+      }
+      setBulkDeleteResult(null);
+      fetchProducts(pagination?.page ?? 1);
+    } catch {
+      setBulkDeleteError('Sunucu ile bağlantı kurulamadı');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const selectedProductsForBulk = products.filter(p => selectedProducts.has(p.id)).map(p => ({
     id: p.id,
     code: p.code,
@@ -389,6 +458,19 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
           >
             Toplu Fiyat Güncelle
           </Button>
+          {canDelete && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                setBulkDeleteError('');
+                setIsBulkDeleteConfirmOpen(true);
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Seçilenleri Sil
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -651,6 +733,96 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
             <strong>{deletingProduct?.name}</strong> ürününü silmek istediğinize emin misiniz?
             Bu işlem geri alınamaz.
           </p>
+        )}
+      </Modal>
+
+      {/* Bulk Delete — confirmation */}
+      <Modal
+        isOpen={isBulkDeleteConfirmOpen}
+        onClose={() => !isBulkDeleting && setIsBulkDeleteConfirmOpen(false)}
+        title="Seçilen Ürünleri Sil"
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setIsBulkDeleteConfirmOpen(false)}
+              disabled={isBulkDeleting}
+            >
+              İptal
+            </Button>
+            <Button variant="danger" onClick={handleBulkDelete} disabled={isBulkDeleting}>
+              {isBulkDeleting ? 'Siliniyor...' : 'Sil'}
+            </Button>
+          </>
+        }
+      >
+        {bulkDeleteError ? (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {bulkDeleteError}
+          </div>
+        ) : (
+          <p className="text-primary-700">
+            <strong>{selectedProductsForBulk.length} ürün</strong> silinecek. Daha önce teklifte kullanılmış
+            ürünler silinmez; size ayrıca listelenir. Bu işlem geri alınamaz.
+          </p>
+        )}
+      </Modal>
+
+      {/* Bulk Delete — result: products that are used in quotes */}
+      <Modal
+        isOpen={!!bulkDeleteResult}
+        onClose={() => !isBulkDeleting && setBulkDeleteResult(null)}
+        title="Toplu Silme Sonucu"
+        size="md"
+        footer={
+          bulkDeleteResult && bulkDeleteResult.blocked.length > 0 ? (
+            <>
+              <Button variant="secondary" onClick={() => setBulkDeleteResult(null)} disabled={isBulkDeleting}>
+                Kapat
+              </Button>
+              <Button onClick={handleDeactivateBlocked} disabled={isBulkDeleting}>
+                {isBulkDeleting ? 'İşleniyor...' : 'Bunları Pasife Al'}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setBulkDeleteResult(null)}>Tamam</Button>
+          )
+        }
+      >
+        {bulkDeleteResult && (
+          <div className="space-y-3 text-sm text-primary-700">
+            <p>
+              <strong>{bulkDeleteResult.deleted} ürün</strong> silindi.
+            </p>
+            {bulkDeleteResult.blocked.length > 0 && (
+              <>
+                <p>
+                  Aşağıdaki <strong>{bulkDeleteResult.blocked.length} ürün</strong> tekliflerde
+                  kullanıldığı için silinmedi. İsterseniz pasife alabilirsiniz; pasif ürünler
+                  teklif ekranında görünmez, eski teklifler etkilenmez.
+                </p>
+                <div className="max-h-64 overflow-y-auto border border-primary-200 rounded-lg divide-y divide-primary-100">
+                  {bulkDeleteResult.blocked.map((b) => (
+                    <div key={b.id} className="px-3 py-2 flex items-center justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="font-mono text-xs text-primary-500 mr-2">{b.code}</span>
+                        <span className="truncate">{b.name}</span>
+                      </span>
+                      <span className="text-xs text-primary-500 whitespace-nowrap">
+                        {b.quoteItemCount > 0 ? `${b.quoteItemCount} teklif kalemi` : 'Fiyat geçmişi var'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {bulkDeleteError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                {bulkDeleteError}
+              </div>
+            )}
+          </div>
         )}
       </Modal>
 

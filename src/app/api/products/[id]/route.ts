@@ -81,23 +81,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Keep `nameTr` in step with `name` while it was never customized
-    // (null or identical to the old name) and the caller didn't change it
-    // themselves — quotes read `nameTr` first, so a renamed Ürün Adı must
-    // reach them (client 02.09). Same rule as the form's live mirroring.
-    // Blank ('' / whitespace) counts as empty — older form saves stored ''.
-    const blank = (v: string | null | undefined) => v == null || !v.trim();
-    const nameChanged = validatedData.name !== existingProduct.name;
-    const trWasSynced =
-      blank(existingProduct.nameTr) || existingProduct.nameTr === existingProduct.name;
-    const callerLeftTrAlone =
-      blank(validatedData.nameTr) || validatedData.nameTr === existingProduct.nameTr;
-    const data =
-      nameChanged && trWasSynced && callerLeftTrAlone
-        ? { ...validatedData, nameTr: validatedData.name }
-        : // Never persist '' — normalize a blank Türkçe Adı to null so the
-          // quote seeding fallback (`nameTr || name`) and this rule stay clean.
-          { ...validatedData, nameTr: blank(validatedData.nameTr) ? null : validatedData.nameTr };
+    // Ürün Adı and Türkçe Adı are a single value (client 10.2026: two
+    // diverging names confused the product database). Quotes seed from
+    // `nameTr || name`, so both always carry the same text.
+    const data = { ...validatedData, nameTr: validatedData.name };
 
     const product = await db.product.update({
       where: { id },
@@ -147,7 +134,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const existingProduct = await db.product.findUnique({
       where: { id },
       include: {
-        _count: { select: { quoteItems: true } },
+        _count: { select: { quoteItems: true, priceHistory: true } },
       },
     });
 
@@ -155,10 +142,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Ürün bulunamadı' }, { status: 404 });
     }
 
-    // Check if product is used in quotes
-    if (existingProduct._count.quoteItems > 0) {
+    // Used in a quote, or has price history (FK is ON DELETE RESTRICT, so
+    // the delete would otherwise fail with a generic 500).
+    if (existingProduct._count.quoteItems > 0 || existingProduct._count.priceHistory > 0) {
       return NextResponse.json(
-        { error: 'Bu ürün tekliflerde kullanıldığı için silinemez. Ürünü pasif yapabilirsiniz.' },
+        { error: 'Bu ürün tekliflerde kullanıldığı (veya fiyat geçmişi olduğu) için silinemez. Ürünü pasif yapabilirsiniz.' },
         { status: 400 }
       );
     }

@@ -101,7 +101,16 @@ export async function POST(request: NextRequest) {
             where: { code: product.code },
           });
 
-          const productName = product.nameEn || product.nameTr || product.code;
+          // Ürün Adı = Türkçe Adı (client 10.2026). Turkish text wins; the
+          // English description only names a product that has no Turkish
+          // name at all. Previously English-first, which put English text
+          // into Ürün Adı on every import.
+          const productName =
+            product.nameTr ||
+            existing?.nameTr ||
+            product.nameEn ||
+            existing?.nameEn ||
+            product.code;
 
           if (existing) {
             await tx.product.update({
@@ -112,7 +121,7 @@ export async function POST(request: NextRequest) {
                 categoryId: category?.id ?? existing.categoryId,
                 model: product.model || existing.model,
                 name: productName,
-                nameTr: product.nameTr || existing.nameTr,
+                nameTr: productName,
                 nameEn: product.nameEn || existing.nameEn,
                 unit: product.unit || existing.unit,
                 listPrice: product.listPrice,
@@ -132,7 +141,7 @@ export async function POST(request: NextRequest) {
                 categoryId: category?.id ?? null,
                 model: product.model || null,
                 name: productName,
-                nameTr: product.nameTr || null,
+                nameTr: productName,
                 nameEn: product.nameEn || null,
                 unit: product.unit || 'Adet',
                 listPrice: product.listPrice,

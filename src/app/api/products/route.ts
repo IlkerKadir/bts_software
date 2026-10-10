@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
         { shortCode: { contains: v, mode: 'insensitive' as const } },
         { name: { contains: v, mode: 'insensitive' as const } },
         { nameTr: { contains: v, mode: 'insensitive' as const } },
+        { nameEn: { contains: v, mode: 'insensitive' as const } },
         { model: { contains: v, mode: 'insensitive' as const } },
         { brand: { name: { contains: v, mode: 'insensitive' as const } } },
       ]);
@@ -162,7 +163,8 @@ export async function POST(request: NextRequest) {
     }
 
     const product = await db.product.create({
-      data: validatedData,
+      // Ürün Adı and Türkçe Adı are a single value (client 10.2026).
+      data: { ...validatedData, nameTr: validatedData.name },
       include: {
         brand: { select: { id: true, name: true } },
         category: { select: { id: true, name: true } },
