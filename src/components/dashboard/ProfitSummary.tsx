@@ -14,6 +14,10 @@ interface ProfitData {
   totalRevenue: number;
   totalProfit: number;
   avgMargin: number;
+  /** % of sent revenue with no known cost (excluded from profit/margin). */
+  uncostedPct?: number;
+  /** Sent quotes left out of the amounts (no known EUR rate). */
+  noRateCount?: number;
 }
 
 interface ProfitSummaryProps {
@@ -68,7 +72,18 @@ export function ProfitSummary({ data }: ProfitSummaryProps) {
 
   return (
     <div className="space-y-3">
-      <h2 className="font-semibold text-primary-900">Kar Özeti (Bu Ay)</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-semibold text-primary-900">Kar Özeti (Bu Ay)</h2>
+        <p className="text-xs text-primary-500">
+          Bu ay gönderilen teklifler · revizyonlar bir kez sayılır · tutarlar EUR&apos;ya çevrilmiştir
+          {data.uncostedPct != null && data.uncostedPct > 0 && (
+            <> · maliyeti girilmemiş ciro payı: %{data.uncostedPct < 1 ? data.uncostedPct.toFixed(1) : data.uncostedPct.toFixed(0)} (kâr ve marja dahil edilmedi)</>
+          )}
+          {data.noRateCount != null && data.noRateCount > 0 && (
+            <> · {data.noRateCount} teklif kur bilgisi olmadığı için tutarlara dahil edilmedi</>
+          )}
+        </p>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {statConfig.map((stat) => {
           const Icon = stat.icon;

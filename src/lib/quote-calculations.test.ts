@@ -443,6 +443,37 @@ describe('Quote Calculations', () => {
       expect(result.totalRevenue).toBe(2000);
     });
 
+    it('reports revenue of rows with no known cost as uncostedRevenue', () => {
+      const items = [
+        { id: 'a', totalPrice: 100, costPrice: 60, quantity: 1, itemType: 'PRODUCT', parentItemId: null },
+        { id: 'b', totalPrice: 50, costPrice: null, quantity: 1, itemType: 'PRODUCT', parentItemId: null },
+        { id: 'c', totalPrice: 40, costPrice: null, listPrice: 30, quantity: 1, itemType: 'CUSTOM', parentItemId: null },
+        { id: 's', totalPrice: 200, costPrice: null, quantity: 1, itemType: 'SET', parentItemId: null },
+        { id: 's1', totalPrice: 200, costPrice: null, quantity: 1, itemType: 'PRODUCT', parentItemId: 's' },
+        { id: 't', totalPrice: 300, costPrice: null, quantity: 1, itemType: 'SET', parentItemId: null },
+        { id: 't1', totalPrice: 300, costPrice: 80, quantity: 1, itemType: 'PRODUCT', parentItemId: 't' },
+        // SET u: 1 costed child worth 100, 1 uncosted child worth 300 → 75% uncosted
+        { id: 'u', totalPrice: 400, costPrice: null, quantity: 1, itemType: 'SET', parentItemId: null },
+        { id: 'u1', totalPrice: 100, costPrice: 50, quantity: 1, itemType: 'PRODUCT', parentItemId: 'u' },
+        { id: 'u2', totalPrice: 300, costPrice: null, quantity: 1, itemType: 'PRODUCT', parentItemId: 'u' },
+      ];
+      const r = calculateQuoteProfitSummary(items);
+      // b (50) + s (200, no child cost) + u's uncosted share (0.75 × 400 = 300);
+      // CUSTOM c uses listPrice, SET t is fully costed
+      expect(r.uncostedRevenue).toBe(550);
+      expect(r.totalRevenue).toBe(1090);
+    });
+
+    it('a SET with quantity 0 contributes 0 cost (client FP0240)', () => {
+      const items = [
+        { id: 'set1', totalPrice: 0, costPrice: null, quantity: 0, itemType: 'SET', parentItemId: null },
+        { id: 'c1', totalPrice: 0, costPrice: 2060, quantity: 1, itemType: 'PRODUCT', parentItemId: 'set1' },
+      ];
+      const result = calculateQuoteProfitSummary(items);
+      expect(result.totalCost).toBe(0);
+      expect(result.totalRevenue).toBe(0);
+    });
+
     it('uses listPrice as the cost for CUSTOM (serbest kalem) rows without costPrice', () => {
       const items = [
         { id: 'f1', totalPrice: 200, costPrice: null, listPrice: 100, quantity: 1, itemType: 'CUSTOM', parentItemId: null },

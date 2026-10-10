@@ -9,6 +9,7 @@ import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { UpcomingReminders } from '@/components/dashboard/UpcomingReminders';
 import { quoteVisibilityWhere } from '@/lib/quote-visibility';
 import { Prisma } from '@prisma/client';
+import { getDashboardProfitSummary } from '@/lib/dashboard-data';
 
 interface DashboardUser {
   id: string;
@@ -46,51 +47,11 @@ async function getPipelineCounts(user: DashboardUser) {
   };
 }
 
+// Kar Özeti (Bu Ay) — sent-this-month quotes in EUR with shared profit
+// math (src/lib/dashboard-data.ts). The previous inline copy summed mixed
+// currencies as euros and counted uncosted rows as 100% margin.
 async function getProfitSummary(user: DashboardUser) {
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const sentThisMonth = await db.quote.findMany({
-    where: withVisibility(user, {
-      status: 'GONDERILDI',
-      updatedAt: { gte: startOfMonth },
-    }),
-    select: {
-      subtotal: true,
-      discountTotal: true,
-      items: {
-        where: { itemType: 'PRODUCT' },
-        select: {
-          costPrice: true,
-          quantity: true,
-        },
-      },
-    },
-  });
-
-  const sentCount = sentThisMonth.length;
-  let totalRevenue = 0;
-  let totalCost = 0;
-
-  // Revenue = subtotal - discount (pre-VAT, post-discount)
-  for (const quote of sentThisMonth) {
-    totalRevenue += Number(quote.subtotal) - Number(quote.discountTotal);
-    for (const item of quote.items) {
-      if (item.costPrice) {
-        totalCost += Number(item.costPrice) * Number(item.quantity);
-      }
-    }
-  }
-
-  const totalProfit = totalRevenue - totalCost;
-  const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-
-  return {
-    sentCount,
-    totalRevenue,
-    totalProfit,
-    avgMargin,
-  };
+  return getDashboardProfitSummary(user);
 }
 
 export default async function DashboardPage() {
@@ -101,7 +62,7 @@ export default async function DashboardPage() {
 
   const [pipelineCounts, profitData] = await Promise.all([
     getPipelineCounts(user),
-    canViewCosts ? getProfitSummary(user) : Promise.resolve(null),
+    canViewCosts ? getProfitSummary(user).catch((e) => { console.error('Dashboard profit summary error:', e); return null; }) : Promise.resolve(null),
   ]);
 
   return (

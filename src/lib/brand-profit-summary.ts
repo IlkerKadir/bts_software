@@ -156,7 +156,9 @@ export function computeManagerProfitSummary(
     // the parent's total qty (qty × unitPrice) — scale the child cost by the
     // parent SET's quantity so cost and revenue cover the same unit count.
     const parent = item.parentItemId ? itemsById.get(item.parentItemId) : undefined;
-    const setQty = parent && parent.itemType === 'SET' ? num(parent.quantity) || 1 : 1;
+    // A SET with quantity 0 is a real value (optional set, not ordered):
+    // its children contribute 0 cost. No `|| 1` fallback (client FP0240).
+    const setQty = parent && parent.itemType === 'SET' ? num(parent.quantity) : 1;
     return effectiveCost * qty * setQty;
   };
 

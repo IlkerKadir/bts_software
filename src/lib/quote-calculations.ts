@@ -388,6 +388,12 @@ export interface QuoteProfitSummary {
   totalCost: number;
   totalProfit: number;
   overallMarginPct: number;
+  /** Revenue (after section discount, quote currency) of priced top-level
+   *  rows whose cost is unknown: no costPrice and not a CUSTOM row with a
+   *  liste fiyatı; for a SET, the uncosted children's share of it. Their cost
+   *  counts as 0 above, so they read as 100% margin — the dashboard
+   *  excludes them from margin math (client 10.2026). */
+  uncostedRevenue: number;
 }
 
 /**
@@ -470,12 +476,37 @@ export function calculateQuoteProfitSummary(
   const setQtyById = new Map<string, number>();
   for (const it of items) {
     if (it.itemType === 'SET' && !it.parentItemId && it.id) {
-      setQtyById.set(it.id, Number(it.quantity) || 1);
+      // qty 0 is legitimate (SET not ordered) → children cost 0, not ×1.
+      setQtyById.set(it.id, Number(it.quantity) || 0);
     }
   }
 
+  // Which rows have a known cost (for uncostedRevenue).
+  const hasKnownCost = (it: (typeof items)[number]) =>
+    it.costPrice != null || (it.itemType === 'CUSTOM' && Number(it.listPrice) > 0);
+  // Per SET: share of its children's value (sum of child totalPrice — the
+  // SET's unit price is built from them) that has no known cost. A SET with
+  // 1 costed and 9 uncosted children is mostly uncosted, not fully costed.
+  const setChildTotal = new Map<string, number>();
+  const setUncostedChildTotal = new Map<string, number>();
+  for (const it of items) {
+    if (!it.parentItemId || it.priceLabel) continue;
+    const v = Math.abs(Number(it.totalPrice) || 0);
+    setChildTotal.set(it.parentItemId, (setChildTotal.get(it.parentItemId) ?? 0) + v);
+    if (!hasKnownCost(it)) {
+      setUncostedChildTotal.set(it.parentItemId, (setUncostedChildTotal.get(it.parentItemId) ?? 0) + v);
+    }
+  }
+  const setUncostedShare = (setId: string | undefined): number => {
+    if (!setId) return 1;
+    const total = setChildTotal.get(setId) ?? 0;
+    if (total <= 0) return 1; // no priced children → cost unknown
+    return (setUncostedChildTotal.get(setId) ?? 0) / total;
+  };
+
   let itemRevenue = 0;
   let totalCost = 0;
+  let uncostedRevenue = 0;
 
   for (const item of items) {
     if (item.itemType === 'PRODUCT' || item.itemType === 'CUSTOM' || item.itemType === 'SET') {
@@ -484,7 +515,13 @@ export function calculateQuoteProfitSummary(
       if (!item.parentItemId) {
         const sectionPct = item.id ? (itemIdToSectionDiscountPct.get(item.id) ?? 0) : 0;
         const revenueConverted = convert(item.totalPrice, item.id);
-        itemRevenue += revenueConverted * (1 - sectionPct / 100);
+        const rowRevenue = revenueConverted * (1 - sectionPct / 100);
+        itemRevenue += rowRevenue;
+        if (item.itemType === 'SET') {
+          uncostedRevenue += rowRevenue * setUncostedShare(item.id);
+        } else if (!hasKnownCost(item)) {
+          uncostedRevenue += rowRevenue;
+        }
       }
       const isSetParent = item.itemType === 'SET' && !item.parentItemId;
       if (!isSetParent) {
@@ -511,6 +548,7 @@ export function calculateQuoteProfitSummary(
     totalCost: Math.round(totalCost * 100) / 100,
     totalProfit: Math.round(totalProfit * 100) / 100,
     overallMarginPct: Math.round(overallMarginPct * 100) / 100,
+    uncostedRevenue: Math.round(uncostedRevenue * 100) / 100,
   };
 }
 

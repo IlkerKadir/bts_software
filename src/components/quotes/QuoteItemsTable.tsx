@@ -877,7 +877,8 @@ export function QuoteItemsTable({
     for (const it of flatItemsWithChildren) {
       if (it.itemType === 'SET' && !it.parentItemId) {
         if (it.currency) setCurrencyByParentId.set(it.id, it.currency);
-        setQtyByParentId.set(it.id, Number(it.quantity) || 1);
+        // qty 0 is legitimate (SET not ordered) → children cost 0, not ×1.
+        setQtyByParentId.set(it.id, Number(it.quantity) || 0);
       }
     }
     for (const item of flatItemsWithChildren) {

@@ -7,7 +7,8 @@ import {
 
 interface ChartData {
   monthlyRevenue: { month: string; kazanilan: number }[];
-  winRate: { month: string; rate: number }[];
+  /** null = no quote won/lost that month (drawn as a gap, not 0%). */
+  winRate: { month: string; rate: number | null }[];
   pipeline: { name: string; value: number; color: string }[];
 }
 
@@ -60,7 +61,8 @@ export function DashboardCharts() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Monthly Revenue */}
       <div className="bg-white rounded-xl border border-primary-200 p-5">
-        <h3 className="font-semibold text-primary-900 mb-4">Aylık Gelir</h3>
+        <h3 className="font-semibold text-primary-900">Aylık Gelir</h3>
+        <p className="text-xs text-primary-500 mb-4">Kazanılan teklifler, kazanıldığı aya göre · EUR</p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data.monthlyRevenue}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
@@ -75,14 +77,15 @@ export function DashboardCharts() {
 
       {/* Win Rate Trend */}
       <div className="bg-white rounded-xl border border-primary-200 p-5">
-        <h3 className="font-semibold text-primary-900 mb-4">Kazanma Oranı Trendi</h3>
+        <h3 className="font-semibold text-primary-900">Kazanma Oranı Trendi</h3>
+        <p className="text-xs text-primary-500 mb-4">O ay kazanılan / (kazanılan + kaybedilen) teklif</p>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={data.winRate}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis dataKey="month" fontSize={12} tick={{ fill: '#64748B' }} />
             <YAxis fontSize={12} tick={{ fill: '#64748B' }} tickFormatter={(v) => `%${v}`} domain={[0, 100]} />
-            <Tooltip formatter={(value) => [`%${Number(value).toFixed(1)}`, 'Kazanma Oranı']} />
-            <Line type="monotone" dataKey="rate" stroke="#0369A1" strokeWidth={2} dot={{ fill: '#0369A1', r: 4 }} />
+            <Tooltip filterNull={false} formatter={(value) => [value == null ? 'Karar yok' : `%${Number(value).toFixed(1)}`, 'Kazanma Oranı']} />
+            <Line type="monotone" dataKey="rate" stroke="#0369A1" strokeWidth={2} dot={{ fill: '#0369A1', r: 4 }} connectNulls={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

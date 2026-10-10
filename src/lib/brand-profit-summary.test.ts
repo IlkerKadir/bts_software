@@ -88,6 +88,17 @@ describe('computeManagerProfitSummary', () => {
     expect(r.brands[0].totalCost).toBe(600);
   });
 
+  it('a SET with quantity 0 contributes 0 cost (client FP0240)', () => {
+    const items: ProfitSummaryItem[] = [
+      item({ id: 's1', itemType: 'SET', brand: 'ADVANTECH', description: 'Opsiyonel set', quantity: 0, unitPrice: 6536 }),
+      item({ id: 'c1', itemType: 'PRODUCT', brand: 'ADVANTECH', parentItemId: 's1', quantity: 1, unitPrice: 2472, costPrice: 2060 }),
+    ];
+    const r = computeManagerProfitSummary(items, items, EUR);
+    expect(r.brands[0].totalRevenue).toBe(0);
+    expect(r.brands[0].totalCost).toBe(0);
+    expect(r.sets[0].totalCost).toBe(0);
+  });
+
   it('uses listPrice as the cost for CUSTOM (serbest kalem) rows without a costPrice', () => {
     // Client 30.06: serbest kalem liste 100 / katsayı 2 → satış 200; maliyet
     // must show 100, not blank/0.
