@@ -12,7 +12,9 @@ export function useKeyboardShortcuts(shortcuts: ShortcutMap) {
         // Only allow Ctrl+S in inputs
         if (!(e.key === 's' && (e.ctrlKey || e.metaKey))) return;
       }
-      const key = `${e.ctrlKey || e.metaKey ? 'Ctrl+' : ''}${e.key.toUpperCase()}`;
+      // Shift is part of the combo, so Ctrl/Cmd+Shift+Z (the common "redo")
+      // no longer fires Ctrl+Z (undo).
+      const key = `${e.ctrlKey || e.metaKey ? 'Ctrl+' : ''}${e.shiftKey ? 'Shift+' : ''}${e.key.toUpperCase()}`;
       const action = shortcuts[key];
       if (action) {
         e.preventDefault();

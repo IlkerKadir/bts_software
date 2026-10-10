@@ -322,6 +322,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
     const { items: validatedItems } = validation.data;
+    const deletedIds = validation.data.deletedIds ?? [];
 
     // Verify quote exists + shared edit rule (visibility + status)
     const quote = await db.quote.findUnique({ where: { id: quoteId }, include: quoteEditAccessInclude });
@@ -331,6 +332,30 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const denial = getQuoteEditDenial(user, quote);
     if (denial) {
       return NextResponse.json({ error: denial.error }, { status: denial.status });
+    }
+
+    // Every row to update must exist IN THIS QUOTE. A missing id (deleted
+    // in another session, or an id from another quote) used to surface as
+    // a Prisma P2025 → opaque 500 that blocked every later save; name the
+    // row instead. Also scopes updates to this quote.
+    const updateIds = validatedItems.map((it) => it.id);
+    if (updateIds.length > 0) {
+      const existingRows = await db.quoteItem.findMany({
+        where: { quoteId, id: { in: updateIds } },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingRows.map((r) => r.id));
+      const missing = validatedItems.filter((it) => !existingIds.has(it.id));
+      if (missing.length > 0) {
+        const desc = missing[0].description?.trim().slice(0, 40);
+        return NextResponse.json(
+          {
+            error: `${desc ? `"${desc}" satırı` : 'Bir satır'} sunucuda bulunamadı. Sayfayı yenileyip tekrar deneyin.`,
+            missingIds: missing.map((it) => it.id),
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // Pre-validate SET currency overrides across the batch so a bad
@@ -348,9 +373,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Deferred deletes from the editor (scoped to this quote; children
+    // cascade). Rows also present in the update payload are never deleted.
+    const keep = new Set(updateIds);
+    const toDelete = deletedIds.filter((id) => !keep.has(id));
+    const deleteSet = new Set(toDelete);
+
     // Update items in a transaction
+    let deletedCount = 0;
+    let updatedCount = 0;
     await db.$transaction(async (tx) => {
+      if (toDelete.length > 0) {
+        const del = await tx.quoteItem.deleteMany({ where: { quoteId, id: { in: toDelete } } });
+        deletedCount = del.count;
+      }
+
       for (const item of validatedItems) {
+        // A child of a row deleted above is gone by cascade — updating it
+        // would throw and roll back the whole save.
+        if (item.parentItemId && deleteSet.has(item.parentItemId)) continue;
+        updatedCount++;
         const { listPrice, katsayi, quantity, discountPct, vatRate } = item;
         const isManualPrice = item.isManualPrice === true;
         const isNonPriced =
@@ -511,7 +553,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         quoteId,
         userId: user.id,
         action: 'UPDATE',
-        changes: { itemsUpdated: validatedItems.length },
+        changes: { itemsUpdated: updatedCount, itemsDeleted: deletedCount },
       },
     });
 
@@ -539,6 +581,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ items });
   } catch (error) {
+    // A row deleted between the existence pre-check and the transaction.
+    if ((error as { code?: string })?.code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Bir satır bu sırada başka bir oturumda silinmiş. Lütfen tekrar kaydedin.' },
+        { status: 409 }
+      );
+    }
     console.error('Quote items PUT error:', error);
     return NextResponse.json(
       { error: 'Kalemler güncellenirken bir hata oluştu' },

@@ -19,6 +19,7 @@ import { buildRateMatrix, maxRateDriftPct, type TcmbDirectRate } from '@/lib/ser
 import { reconvertEkMaliyetTotal, type EkMaliyetEntryLike } from '@/lib/ek-maliyet-reconvert';
 import { isRateSensitiveRow } from '@/lib/quote-item-classification';
 import { insertItemBefore } from '@/lib/quote-item-order';
+import { isTempId, remapTempIds, scrubIds, computeDeletedIds } from '@/lib/quote-editor-history';
 import { RateDriftBanner } from '@/components/quotes/RateDriftBanner';
 import { RateUpdateDialog } from '@/components/quotes/RateUpdateDialog';
 
@@ -128,7 +129,8 @@ export function recalculateParentTotals(
 
   return items.map((item) => {
     if (item.id !== parentId) return item;
-    const qty = Number(item.quantity) || 1;
+    // qty 0 must yield a 0 row total (the server computes the same).
+    const qty = Number(item.quantity) || 0;
     const disc = Number(item.discountPct) || 0;
     const unitPrice = round2(childrenTotal);
     return {
@@ -224,8 +226,50 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ref means it's the same logical setItems call replayed.
   const lastSnapshottedPrevRef = useRef<QuoteItemData[] | null>(null);
   const [undoDepth, setUndoDepth] = useState(0);
+  // Undo ↔ server consistency (client 10.2026 — "Geri al sonrası kaydetmiyor"):
+  //  - tempIdMapRef: temp UUID → server cuid for every optimistic insert,
+  //    so snapshots taken while a POST was in flight can be remapped.
+  //  - knownServerIdsRef: rows this editor knows exist on the server.
+  //    Deletes are deferred to the save (deletedIds = known − current),
+  //    so undoing a delete or an add never leaves state and DB apart.
+  const tempIdMapRef = useRef<Map<string, string>>(new Map());
+  const knownServerIdsRef = useRef<Set<string>>(new Set());
+  const noteResolvedId = useCallback((tempId: string, serverId: string) => {
+    tempIdMapRef.current.set(tempId, serverId);
+    knownServerIdsRef.current.add(serverId);
+    // The user removed the row (delete / undo) before its POST came back:
+    // it now exists on the server only, so the editor has an unsaved delete.
+    if (!itemsRef.current.some((it) => it.id === tempId)) {
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
+      // Counts as a change for an in-flight save too: it must keep this id
+      // known (not replace knownServerIds by its reload) and stay dirty.
+      itemsVersionRef.current++;
+    }
+  }, []);
+  // Adding a row while a save is in flight races the post-save reload
+  // (the new row could be dropped from state yet stay on the server, and
+  // then be deleted by the next save). Block adds for that short window.
+  const isSavingRef = useRef(false);
+  // Latest items (for callbacks that run after async work) and a counter
+  // bumped on every user-driven items change — lets a save detect edits
+  // made while it was in flight instead of overwriting them.
+  const itemsRef = useRef<QuoteItemData[]>([]);
+  const itemsVersionRef = useRef(0);
+  // One save at a time: a second Ctrl+S / Dışa Aktar while saving joins the
+  // in-flight save instead of racing it.
+  const savePromiseRef = useRef<Promise<boolean> | null>(null);
+  // In-flight reorder/insert-above persist; a save waits for it so the
+  // persist's (older) values can't land after the save.
+  const persistPromisesRef = useRef<Set<Promise<void>>>(new Set());
+  const blockIfSaving = useCallback((): boolean => {
+    if (!isSavingRef.current) return false;
+    setError('Kaydetme sürerken yeni satır eklenemez — birkaç saniye sonra tekrar deneyin.');
+    return true;
+  }, []);
   const setItems = useCallback(
     (updater: QuoteItemData[] | ((prev: QuoteItemData[]) => QuoteItemData[])) => {
+      itemsVersionRef.current++;
       setItemsRaw((prev) => {
         if (lastSnapshottedPrevRef.current !== prev) {
           // The very first setItems call comes from the initial fetch
@@ -251,9 +295,20 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const handleUndo = useCallback(() => {
     const stack = itemsHistoryRef.current;
     if (stack.length === 0) return;
-    const prev = stack.pop()!;
+    // Rows inserted while this snapshot was taken may still carry their
+    // temp id — map them to the server ids they resolved to.
+    const prev = remapTempIds(stack.pop()!, tempIdMapRef.current);
+    // A pending reorder persist belongs to the state being undone.
+    if (reorderTimerRef.current) {
+      clearTimeout(reorderTimerRef.current);
+      reorderTimerRef.current = null;
+    }
     // Direct setter bypasses our wrapper — undo itself shouldn't
-    // record on the history stack.
+    // record on the history stack. Reset the dedupe ref: the restored
+    // array must be snapshotted again by the next edit, otherwise the
+    // following undo would skip a step.
+    lastSnapshottedPrevRef.current = null;
+    itemsVersionRef.current++;
     setItemsRaw(prev);
     setUndoDepth(stack.length);
     itemsDirtyRef.current = true;
@@ -375,6 +430,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       const mappedItems = (q.items || []).map(mapApiItemToLocal);
       const flatItems = flattenSubRows(mappedItems);
       setItems(flatItems);
+      knownServerIdsRef.current = new Set(flatItems.map((it) => it.id));
 
       // Set user session
       setUser(sessionData.user);
@@ -583,7 +639,25 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    // In-app links (sidebar, breadcrumbs…) navigate client-side and never
+    // fire beforeunload. Unsaved edits — and, since 10.2026, deletes — would
+    // be lost silently, so confirm first.
+    const handleLinkClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
+      if (!window.confirm('Kaydedilmemiş değişiklikler var. Kaydetmeden çıkmak istediğinize emin misiniz?')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener('click', handleLinkClick, true);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('click', handleLinkClick, true);
+    };
   }, [hasChanges]);
 
   // ── Success message auto-dismiss ───────────────────────────────────────────
@@ -605,11 +679,19 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // All items go into the unified table (no service split)
   // Build parent-child relationships from the flat items list so sub-rows
   // always appear under their parent, even when created sequentially.
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   const topLevelItems = useMemo(() => {
     const top = items.filter((item) => !item.parentItemId);
     return top.map((item) => {
       const children = items.filter((sub) => sub.parentItemId === item.id);
-      return children.length > 0 ? { ...item, subRows: children } : item;
+      if (children.length > 0) return { ...item, subRows: children };
+      // Drop a stale `subRows` copy (from the initial load) once all
+      // children are gone — otherwise deleted children render as ghosts
+      // and a drag-reorder would flatten them back into state.
+      return item.subRows ? { ...item, subRows: undefined } : item;
     });
   }, [items]);
 
@@ -618,10 +700,19 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // Returns true when the quote was persisted cleanly, false when any
   // step failed. Callers chain on this to block exports (PDF preview,
   // Excel download) until the DB matches the editor's live state.
-  const handleSave = useCallback(async (): Promise<boolean> => {
+  const doSave = useCallback(async (): Promise<boolean> => {
     if (!quote) return false;
     setIsSaving(true);
+    isSavingRef.current = true;
+    const versionAtStart = itemsVersionRef.current;
     setError(null);
+    let editedDuringSave = false;
+    // A pending reorder persist would later overwrite this save with the
+    // array it captured — the save already sends the current order.
+    if (reorderTimerRef.current) {
+      clearTimeout(reorderTimerRef.current);
+      reorderTimerRef.current = null;
+    }
 
     try {
       // Pre-flight: catch rows the server would reject BEFORE sending,
@@ -630,13 +721,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // user can't find it (client 21.08). Server ids are cuids (no
       // dashes); a dash means the optimistic insert never reached the
       // server — a phantom row that would fail every save.
-      if (itemsDirtyRef.current) {
+      // Rows the user deleted (or whose insertion was undone) since the
+      // last load/save — deleted server-side as part of this save.
+      const deletedIds = computeDeletedIds(knownServerIdsRef.current, items);
+      if (itemsDirtyRef.current || deletedIds.length > 0) {
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
           const rowLabel = it.description?.trim()
             ? `"${it.description.trim().slice(0, 40)}" satırı`
             : `${i + 1}. sıradaki satır`;
-          if (it.id.includes('-')) {
+          if (isTempId(it.id)) {
             // The row may also simply be mid-flight (slow network + a
             // quick Ctrl+S) — advise waiting first, deleting only if it
             // persists, so users don't delete a row that's about to land.
@@ -709,8 +803,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         }
       }
 
-      // 2. Save items if dirty (reorder or modifications)
-      if (itemsDirtyRef.current) {
+      // 2. Save items if dirty (reorder, modifications or deletions)
+      if (itemsDirtyRef.current || deletedIds.length > 0) {
         // Compute the FX factor for an item from product currency to
         // target currency (quote or per-SET override). Mirrors the
         // formula in `recalcItemPrices` (line ~2068-2078) and
@@ -753,7 +847,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           return rate * (1 + protectionPct / 100);
         };
 
-        const bulkItems = items.map((item) => {
+        const presentIds = new Set(items.map((it) => it.id));
+        const bulkItems = items
+          .filter((item) => !item.parentItemId || presentIds.has(item.parentItemId))
+          .map((item) => {
           const factor = computeFactorForItem(item);
           return {
             id: item.id,
@@ -799,15 +896,31 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           };
         });
 
-        if (bulkItems.length > 0) {
+        if (bulkItems.length > 0 || deletedIds.length > 0) {
+          // Let an in-flight reorder/insert-above persist land first.
+          if (persistPromisesRef.current.size > 0) {
+            await Promise.all(Array.from(persistPromisesRef.current)).catch(() => {});
+          }
           const itemsRes = await fetch(`/api/quotes/${quoteId}/items`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: bulkItems }),
+            body: JSON.stringify({ items: bulkItems, deletedIds }),
           });
 
           if (!itemsRes.ok) {
             const data = await itemsRes.json();
+            // Rows deleted elsewhere (another tab/user): drop them here and
+            // let the user save again — no page reload, no lost edits.
+            if (itemsRes.status === 409 && Array.isArray(data.missingIds) && data.missingIds.length) {
+              const gone = new Set<string>(data.missingIds);
+              setItemsRaw((prev) => scrubIds(prev, gone));
+              for (const id of gone) knownServerIdsRef.current.delete(id);
+              itemsHistoryRef.current = itemsHistoryRef.current.map((snap) => scrubIds(snap, gone));
+              throw new Error(
+                `${data.error || 'Bazı satırlar sunucuda bulunamadı.'} Bu satırlar başka bir oturumda silinmiş ve listeden kaldırıldı — lütfen tekrar kaydedin.`
+                  .replace(' Sayfayı yenileyip tekrar deneyin.', '')
+              );
+            }
             throw new Error(data.error || 'Kalemler kaydedilemedi');
           }
 
@@ -817,7 +930,28 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             // shouldn't push the user's pre-save state onto the undo
             // stack. Otherwise Ctrl+Z after save would revert the
             // editor to the pre-save view while the DB stays saved.
-            setItemsRaw(flattenSubRows(itemsData.items.map(mapApiItemToLocal)));
+            if (itemsVersionRef.current !== versionAtStart) {
+              // The user kept editing while this save was in flight: keep
+              // their newer state (don't overwrite it with the reload) and
+              // stay dirty so it goes out on the next save. Rows this save
+              // deleted are gone server-side — forget them everywhere.
+              editedDuringSave = true;
+              const gone = new Set(deletedIds);
+              for (const id of gone) knownServerIdsRef.current.delete(id);
+              itemsHistoryRef.current = itemsHistoryRef.current.map((snap) => scrubIds(snap, gone));
+              setItemsRaw((prev) => scrubIds(prev, gone));
+            } else {
+              const reloaded = flattenSubRows(itemsData.items.map(mapApiItemToLocal));
+              setItemsRaw(reloaded);
+              knownServerIdsRef.current = new Set(reloaded.map((it) => it.id));
+              // The editor now mirrors the server exactly. Undo snapshots
+              // from before this save could resurrect deleted rows or drop
+              // rows other sessions added (and delete them on the next
+              // save) — so undo starts fresh after every successful save.
+              itemsHistoryRef.current = [];
+              lastSnapshottedPrevRef.current = null;
+              setUndoDepth(0);
+            }
           }
         }
       }
@@ -827,10 +961,16 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         await commercialTermsRef.current.save();
       }
 
-      // 4. Reset change tracking
+      // 4. Reset change tracking (unless the user edited during the save —
+      // including during a header-only save or the terms save above)
+      if (itemsVersionRef.current !== versionAtStart) editedDuringSave = true;
       savedHeaderRef.current = { ...headerFields };
-      itemsDirtyRef.current = false;
-      setHasChanges(false);
+      if (!editedDuringSave) {
+        itemsDirtyRef.current = false;
+        setHasChanges(false);
+      }
+      // An "add blocked while saving" notice is obsolete once saved.
+      setError((prev) => (prev && prev.startsWith('Kaydetme sürerken') ? null : prev));
       setSuccessMessage('Teklif başarıyla kaydedildi');
       return true;
     } catch (err) {
@@ -839,9 +979,33 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       );
       return false;
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   }, [quote, quoteId, headerFields, items, exchangeRates, checkHeaderChanges]);
+
+  // Latest doSave (its closure holds the current items/header).
+  const doSaveRef = useRef(doSave);
+  useEffect(() => {
+    doSaveRef.current = doSave;
+  }, [doSave]);
+
+  const handleSave = useCallback((): Promise<boolean> => {
+    const start = (): Promise<boolean> => {
+      const p = doSaveRef.current().finally(() => {
+        if (savePromiseRef.current === p) savePromiseRef.current = null;
+      });
+      savePromiseRef.current = p;
+      return p;
+    };
+    const inFlight = savePromiseRef.current;
+    if (inFlight) {
+      // Join the running save; if the user changed things meanwhile, save
+      // once more with the latest state (so export/preview get it too).
+      return inFlight.then((ok) => (ok && itemsDirtyRef.current ? start() : ok));
+    }
+    return start();
+  }, []);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
 
@@ -981,11 +1145,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         : 'Bu kalemi silmek istediğinize emin misiniz?';
       if (!window.confirm(confirmMsg)) return;
 
-      // Bug #2: Store deleted items for rollback
-      const deletedItems = items.filter(
-        (item) => item.id === itemId || item.parentItemId === itemId
-      );
-
+      // Deletes are applied locally and sent with the next save
+      // (deletedIds) — an immediate server DELETE made "Geri al" restore a
+      // row the server no longer had, which blocked every later save.
       setItems((prev) => {
         // Remove the item and its sub-rows
         let remaining = prev.filter((item) => item.id !== itemId && item.parentItemId !== itemId);
@@ -997,29 +1159,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
         return remaining;
       });
-
-      // Bug #2: API call with rollback on failure
-      try {
-        const res = await fetch(`/api/quotes/${quoteId}/items/${itemId}`, {
-          method: 'DELETE',
-        });
-        // 404 is OK — item was already deleted (e.g. cascade-deleted with parent)
-        if (!res.ok && res.status !== 404) {
-          throw new Error('Silme işlemi başarısız oldu');
-        }
-      } catch (err) {
-        console.error('Item delete error:', err);
-        // Restore deleted items on failure
-        setItems((prev) => {
-          // Re-insert deleted items at their original sort positions
-          const merged = [...prev, ...deletedItems];
-          merged.sort((a, b) => a.sortOrder - b.sortOrder);
-          return merged;
-        });
-        setError('Kalem silinirken bir hata oluştu. Değişiklikler geri alındı.');
-      }
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
     },
-    [quoteId, items]
+    [items]
   );
 
   // Rollback for optimistic row inserts whose POST failed or never
@@ -1032,14 +1175,13 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const rollbackFailedInsert = useCallback(
     (tempIds: string | string[], opts?: { popHistory?: boolean; message?: string }) => {
       const idSet = new Set(Array.isArray(tempIds) ? tempIds : [tempIds]);
-      setItemsRaw((prev) => prev.filter((item) => !idSet.has(item.id)));
-      if (opts?.popHistory !== false) {
-        const stack = itemsHistoryRef.current;
-        if (stack.length > 0) {
-          stack.pop();
-          setUndoDepth(stack.length);
-        }
-      }
+      setItemsRaw((prev) => scrubIds(prev, idSet));
+      // Remove the failed rows from EVERY snapshot (a blind pop removed
+      // the wrong one when the user edited while the POST was in flight).
+      // `popHistory` is kept for call-site compatibility; scrubbing makes
+      // the pre-insert snapshot a harmless no-op step at worst.
+      void opts?.popHistory;
+      itemsHistoryRef.current = itemsHistoryRef.current.map((snap) => scrubIds(snap, idSet));
       setError(
         opts?.message ?? 'Satır sunucuya eklenemedi — bağlantıyı kontrol edip tekrar deneyin.'
       );
@@ -1049,6 +1191,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   const handleItemDuplicate = useCallback(
     async (itemId: string) => {
+      if (blockIfSaving()) return;
       const original = items.find((item) => item.id === itemId);
       if (!original) return;
 
@@ -1118,12 +1261,17 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         if (res.ok) {
           const data = await res.json();
           const newParentId = data.item.id;
+          noteResolvedId(tempId, newParentId);
           // Replace temp ID with server-returned ID. Raw setter —
           // ID resolution isn't a user action.
           setItemsRaw((prev) =>
-            prev.map((item) =>
-              item.id === tempId ? mapApiItemToLocal(data.item) : item
-            )
+            prev.map((item) => {
+              if (item.id === tempId) return mapApiItemToLocal(data.item);
+              // Children still waiting for their own POST must point at the
+              // parent's server id, or they're orphaned (invisible) meanwhile.
+              if (item.parentItemId === tempId) return { ...item, parentItemId: newParentId };
+              return item;
+            })
           );
 
           // Duplicate sub-rows in parallel, pointing to the new server parent ID
@@ -1172,6 +1320,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
               if (result.status !== 'fulfilled') continue;
               if (result.value.ok && result.value.data) {
                 replacements.set(result.value.tempId, mapApiItemToLocal(result.value.data.item));
+                noteResolvedId(result.value.tempId, result.value.data.item.id);
               } else {
                 failedSubIds.push(result.value.tempId);
               }
@@ -1205,7 +1354,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         });
       }
     },
-    [items, quoteId, rollbackFailedInsert]
+    [items, quoteId, rollbackFailedInsert, noteResolvedId, blockIfSaving]
   );
 
   // Build the bulk PUT payload for /items. Used by both drag-reorder and
@@ -1241,17 +1390,29 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // Persist the current ordering of `flatItems` immediately (bulk PUT).
   const persistItemsOrder = useCallback(
-    async (flatItems: QuoteItemData[]) => {
+    (flatItems: QuoteItemData[]): Promise<void> => {
+      const run = async () => {
       try {
-        await fetch(`/api/quotes/${quoteId}/items`, {
+        // Rows still in flight (temp ids) aren't on the server yet. Never
+        // clear itemsDirtyRef here: `flatItems` is a captured (possibly
+        // stale) array, so edits made since must still go out on Save.
+        const res = await fetch(`/api/quotes/${quoteId}/items`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: buildBulkItemsPayload(flatItems) }),
+          body: JSON.stringify({
+            items: buildBulkItemsPayload(flatItems.filter((it) => !isTempId(it.id))),
+          }),
         });
-        itemsDirtyRef.current = false;
+        if (!res.ok) console.error('Persist items order failed:', res.status);
       } catch (err) {
         console.error('Persist items order error:', err);
       }
+      };
+      const p: Promise<void> = run().finally(() => {
+        persistPromisesRef.current.delete(p);
+      });
+      persistPromisesRef.current.add(p);
+      return p;
     },
     [quoteId, buildBulkItemsPayload]
   );
@@ -1262,7 +1423,8 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // We need to re-flatten them back into the items state array.
       const flatItems: QuoteItemData[] = [];
       for (const item of reorderedItems) {
-        flatItems.push(item);
+        // Keep state flat: no nested subRows copies (they go stale).
+        flatItems.push(item.subRows ? { ...item, subRows: undefined } : item);
         if (item.subRows && item.subRows.length > 0) {
           for (const sub of item.subRows) {
             flatItems.push(sub);
@@ -1312,6 +1474,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   const handleAddProduct = useCallback(
     async (product: ProductForQuote, quantity?: number) => {
+      if (blockIfSaving()) return;
       const tempId = generateId();
       const lang = headerFields.language;
       const quoteCurrency = headerFields.currency;
@@ -1474,6 +1637,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         if (res.ok) {
           const data = await res.json();
           const serverItem = mapApiItemToLocal(data.item);
+          noteResolvedId(tempId, serverItem.id);
           // Replace temp ID with server-returned ID. Use raw setter —
           // the optimistic insert above already snapshotted history;
           // resolving the server ID isn't a separate undoable step.
@@ -1499,7 +1663,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         rollbackFailedInsert(tempId, { message: 'Ürün eklenemedi — bağlantıyı kontrol edip tekrar deneyin.' });
       }
     },
-    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items, subItemParentId, insertBeforeId, setCreationMode, defaultVatRate, persistItemsOrder, rollbackFailedInsert]
+    [quoteId, headerFields.language, headerFields.currency, headerFields.protectionPct, headerFields.protectionMap, exchangeRates, items, subItemParentId, insertBeforeId, setCreationMode, defaultVatRate, persistItemsOrder, rollbackFailedInsert, noteResolvedId, blockIfSaving]
   );
 
   // ── Bulk delete + duplicate for the multi-row toolbar (#5) ───────────────
@@ -1510,31 +1674,28 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const handleBulkDelete = useCallback(
     async (ids: string[]) => {
       if (ids.length === 0) return;
-      // Drop any IDs whose parent is also being deleted — the cascade
-      // handles them server-side and a direct DELETE would 404.
       const idSet = new Set(ids);
-      const directIds = ids.filter((id) => {
-        const it = items.find((x) => x.id === id);
-        return !it?.parentItemId || !idSet.has(it.parentItemId);
-      });
 
       const totalCount = ids.length;
       if (!window.confirm(`${totalCount} satır silinecek. Devam edilsin mi?`)) return;
 
-      // Optimistic local removal — drop targets and any descendants.
-      setItems((prev) =>
-        prev.filter((it) => !idSet.has(it.id) && !(it.parentItemId && idSet.has(it.parentItemId)))
-      );
-
-      // Fire DELETEs in parallel. Failures aren't surfaced individually
-      // — at this scale a refetch on the next save covers any drift.
-      await Promise.allSettled(
-        directIds.map((id) =>
-          fetch(`/api/quotes/${quoteId}/items/${id}`, { method: 'DELETE' })
-        )
-      );
+      // Local removal (targets + descendants); the server delete goes out
+      // with the next save (deletedIds) so "Geri al" stays consistent.
+      // Surviving SET parents that lost children get their price re-summed.
+      setItems((prev) => {
+        let next = scrubIds(prev, idSet);
+        const parents = new Set(
+          prev
+            .filter((it) => idSet.has(it.id) && it.parentItemId && !idSet.has(it.parentItemId))
+            .map((it) => it.parentItemId as string)
+        );
+        for (const pid of parents) next = recalculateParentTotals(next, pid);
+        return next;
+      });
+      itemsDirtyRef.current = true;
+      setHasChanges(true);
     },
-    [items, quoteId]
+    []
   );
 
   const handleBulkDuplicate = useCallback(
@@ -1712,6 +1873,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // ── Add header row ─────────────────────────────────────────────────────────
 
   const handleAddHeader = useCallback(async (beforeId?: string | null) => {
+    if (blockIfSaving()) return;
     const tempId = generateId();
     const insertIdx = beforeId ? items.findIndex((i) => i.id === beforeId) : -1;
     const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : items.length + 1;
@@ -1757,6 +1919,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
+        noteResolvedId(tempId, serverItem.id);
         setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
@@ -1776,11 +1939,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add header error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items, persistItemsOrder, rollbackFailedInsert]);
+  }, [quoteId, items, persistItemsOrder, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add note row ───────────────────────────────────────────────────────────
 
   const handleAddNote = useCallback(async () => {
+    if (blockIfSaving()) return;
     const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
@@ -1819,6 +1983,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
+        noteResolvedId(tempId, serverItem.id);
         setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
@@ -1833,11 +1998,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add note error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, rollbackFailedInsert]);
+  }, [quoteId, items.length, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add custom item ──────────────────────────────────────────────────────
 
   const handleAddCustomItem = useCallback(async () => {
+    if (blockIfSaving()) return;
     const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
@@ -1880,6 +2046,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
+        noteResolvedId(tempId, serverItem.id);
         setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
@@ -1893,11 +2060,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add custom item error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, defaultVatRate, rollbackFailedInsert]);
+  }, [quoteId, items.length, defaultVatRate, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add custom sub-item to a SET ─────────────────────────────────────────
 
   const handleAddCustomSubItem = useCallback(async (parentId: string) => {
+    if (blockIfSaving()) return;
     const tempId = generateId();
     // Insert after the last child of the parent SET
     const parentIdx = items.findIndex((i) => i.id === parentId);
@@ -1953,6 +2121,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
+        noteResolvedId(tempId, serverItem.id);
         setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
@@ -1966,11 +2135,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add custom sub-item error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items, defaultVatRate, rollbackFailedInsert]);
+  }, [quoteId, items, defaultVatRate, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add subtotal row ────────────────────────────────────────────────────
 
   const handleAddSubtotal = useCallback(async () => {
+    if (blockIfSaving()) return;
     const tempId = generateId();
     const newItem: QuoteItemData = {
       id: tempId,
@@ -2009,6 +2179,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
+        noteResolvedId(tempId, serverItem.id);
         setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
@@ -2022,7 +2193,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add subtotal error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, rollbackFailedInsert]);
+  }, [quoteId, items.length, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add grand total row ────────────────────────────────────────────────
   // A single "GENEL TOPLAM" item appended at the end of the quote. Renders
@@ -2031,6 +2202,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // quote — calling this when one already exists does nothing.
 
   const handleAddGrandTotal = useCallback(async () => {
+    if (blockIfSaving()) return;
     if (items.some((i) => i.itemType === 'GRAND_TOTAL')) return;
     const tempId = generateId();
     const sortOrder = items.length + 1;
@@ -2071,6 +2243,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (res.ok) {
         const data = await res.json();
         const serverItem = mapApiItemToLocal(data.item);
+        noteResolvedId(tempId, serverItem.id);
         setItemsRaw((prev) =>
           prev.map((item) => {
             if (item.id !== tempId) return item;
@@ -2084,7 +2257,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add grand total error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items, rollbackFailedInsert]);
+  }, [quoteId, items, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add sub-item to a parent ──────────────────────────────────────────
 

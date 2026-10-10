@@ -47,6 +47,16 @@ describe('recalculateParentTotals', () => {
     expect(parent.totalPrice).toBe(200);
   });
 
+  it('SET with quantity=0: totalPrice = 0 (unitPrice still the per-set sum)', () => {
+    const items: QuoteItemData[] = [
+      makeItem({ id: 'parent', itemType: 'SET', quantity: 0 }),
+      makeItem({ id: 'child1', parentItemId: 'parent', totalPrice: 100 }),
+    ];
+    const parent = recalculateParentTotals(items, 'parent').find((i) => i.id === 'parent')!;
+    expect(parent.unitPrice).toBe(100);
+    expect(parent.totalPrice).toBe(0);
+  });
+
   it('SET with quantity=3: totalPrice = 3 × unitPrice', () => {
     const items: QuoteItemData[] = [
       makeItem({ id: 'parent', itemType: 'SET', quantity: 3, discountPct: 0, listPrice: 0, katsayi: 1 }),

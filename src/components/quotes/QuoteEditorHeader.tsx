@@ -252,7 +252,17 @@ export function QuoteEditorHeader({
           {/* Back button */}
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => {
+              // Client-side navigation skips beforeunload — confirm here so
+              // unsaved edits (and deferred deletes) aren't dropped silently.
+              if (
+                hasChanges &&
+                !window.confirm('Kaydedilmemiş değişiklikler var. Kaydetmeden çıkmak istediğinize emin misiniz?')
+              ) {
+                return;
+              }
+              router.back();
+            }}
             className="p-1.5 hover:bg-primary-100 rounded-lg text-primary-500 transition-colors cursor-pointer shrink-0"
             title="Geri"
           >

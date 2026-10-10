@@ -10,5 +10,6 @@ interface PageProps {
 export default function QuoteEditPage({ params }: PageProps) {
   const { id } = use(params);
 
-  return <QuoteEditor quoteId={id} />;
+  // key: never carry one quote's editor state (incl. undo history) into another
+  return <QuoteEditor key={id} quoteId={id} />;
 }

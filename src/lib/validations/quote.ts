@@ -89,9 +89,17 @@ export const quoteItemUpdateSchema = quoteItemSchema.extend({
   serviceMeta: z.any().nullish(),
 });
 
-export const bulkQuoteItemUpdateSchema = z.object({
-  items: z.array(quoteItemUpdateSchema).min(1, 'At least one item is required'),
-});
+export const bulkQuoteItemUpdateSchema = z
+  .object({
+    items: z.array(quoteItemUpdateSchema).default([]),
+    /** Rows the editor removed since its last load/save (deletes are
+     *  deferred to the save so undo stays consistent — client 10.2026). */
+    deletedIds: z.array(z.string().min(1)).max(1000, 'Tek seferde en fazla 1000 satır silinebilir').optional(),
+  })
+  .refine((d) => d.items.length > 0 || (d.deletedIds?.length ?? 0) > 0, {
+    message: 'Kaydedilecek kalem bulunamadı',
+    path: ['items'],
+  });
 
 export const languageEnum = z.enum(['TR', 'EN']);
 
