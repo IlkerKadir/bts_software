@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { defaultVisibleRoleIds, projectRoleWhere } from '@/lib/project-role-visibility';
 import { projectSchema, projectQuerySchema } from '@/lib/validations/project';
 import { getSession } from '@/lib/session';
 import { Prisma } from '@prisma/client';
@@ -75,8 +76,8 @@ export async function GET(request: NextRequest) {
         { visibility: 'EVERYONE' },
         // Projects where user has explicit access
         { visibility: 'SPECIFIC_USERS', visibleTo: { some: { userId: user.id } } },
-        // Projects visible to the user's role (client 30.06)
-        { visibility: 'ROLE', visibleToRoleId: user.roleId },
+        // Projects visible to the user's role — primary or linked (client 30.06 / 10.2026)
+        ...(user.roleId ? [projectRoleWhere(user.roleId)] : []),
       ];
       andGroups.push({ OR: visibilityOR });
     }
@@ -123,6 +124,13 @@ export async function POST(request: NextRequest) {
 
     // Transform date strings to Date objects if provided
     // Convert empty string clientId to null
+    // Default visibility: the creator's role + every role linked to it in
+    // role settings ("Bu rolün projelerini şu roller de görsün", client
+    // 10.2026) + managers. Snapshotted here, so older projects keep the
+    // visibility they were created with. Adjustable later from the
+    // project's Görünürlük panel.
+    const visibleRoleIds = await defaultVisibleRoleIds(db, user.roleId);
+
     const project = await db.project.create({
       data: {
         name: validatedData.name,
@@ -130,10 +138,9 @@ export async function POST(request: NextRequest) {
         status: validatedData.status as any,
         clientId: validatedData.clientId || null,
         createdById: user.id,
-        // Default visibility (client 30.06): the creator's role + managers.
-        // Adjustable afterwards from the project's Görünürlük panel.
         visibility: 'ROLE',
-        visibleToRoleId: user.roleId,
+        visibleToRoleId: user.roleId, // primary role (rollback-safe)
+        visibleRoles: { create: visibleRoleIds.map((roleId) => ({ roleId })) },
         estimatedStart: validatedData.estimatedStart ? new Date(validatedData.estimatedStart) : null,
         estimatedEnd: validatedData.estimatedEnd ? new Date(validatedData.estimatedEnd) : null,
         notes: validatedData.notes || null,

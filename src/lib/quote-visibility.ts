@@ -3,7 +3,9 @@
  *
  * Regular users see a quote only if they created it, or if the
  * quote's project has `EVERYONE` visibility, or if the user has
- * been explicitly granted access through `ProjectUserAccess`.
+ * been explicitly granted access through `ProjectUserAccess`, or if
+ * the project is ROLE-visible to the user's role (primary or linked —
+ * see project-role-visibility.ts).
  *
  * Managers (`canApprove` or `canManageUsers`) bypass the filter
  * entirely — they see every quote in the system.
@@ -12,6 +14,7 @@
  * so dashboard cards, profit summaries, and other aggregations can
  * apply the same scope without duplicating the conditions.
  */
+import { projectRoleWhere } from '@/lib/project-role-visibility';
 
 import { Prisma } from '@prisma/client';
 
@@ -51,11 +54,9 @@ export function quoteVisibilityWhere(user: UserLike): Prisma.QuoteWhereInput {
           visibleTo: { some: { userId: user.id } },
         },
       },
-      // ROLE mode (client 30.06): everyone holding the project's
-      // visibleToRole (+ managers, handled above) sees it.
-      ...(user.roleId
-        ? [{ project: { visibility: 'ROLE' as const, visibleToRoleId: user.roleId } }]
-        : []),
+      // ROLE mode (client 30.06; multi-role 10.2026): holders of the
+      // project's primary or linked roles (+ managers, above) see it.
+      ...(user.roleId ? [{ project: projectRoleWhere(user.roleId) }] : []),
     ],
   };
 }

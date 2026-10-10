@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { projectRoleMatches } from '@/lib/project-role-visibility';
 import { projectSchema } from '@/lib/validations/project';
 import { getSession } from '@/lib/session';
 
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       include: {
         client: { select: { id: true, name: true } },
         visibleTo: { select: { userId: true } },
+        visibleRoles: { select: { roleId: true } },
         quotes: {
           select: {
             id: true,
@@ -53,7 +55,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const hasOwnQuote = project.quotes.some(q => q.createdById === user.id);
       const isEveryone = project.visibility === 'EVERYONE';
       const isSpecific = project.visibility === 'SPECIFIC_USERS' && project.visibleTo.some(a => a.userId === user.id);
-      const isRoleMatch = project.visibility === 'ROLE' && project.visibleToRoleId === user.roleId;
+      const isRoleMatch = projectRoleMatches(project, user.roleId);
       if (!isCreator && !hasOwnQuote && !isEveryone && !isSpecific && !isRoleMatch) {
         return NextResponse.json({ error: 'Bu projeyi görüntüleme yetkiniz bulunmamaktadır' }, { status: 403 });
       }

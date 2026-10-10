@@ -5,7 +5,7 @@ const order = (over: Partial<Parameters<typeof canAccessOrder>[0]> = {}) => ({
   createdById: 'creator',
   quote: {
     createdById: 'quoteCreator',
-    project: { visibility: 'SPECIFIC_USERS', visibleTo: [{ userId: 'allowed' }] },
+    project: { visibility: 'SPECIFIC_USERS', visibleTo: [{ userId: 'allowed' }], visibleRoles: [] },
   },
   ...over,
 });
@@ -28,7 +28,7 @@ describe('canAccessOrder', () => {
   });
 
   it('grants everyone access when the project is EVERYONE', () => {
-    const o = order({ quote: { createdById: 'q', project: { visibility: 'EVERYONE' } } });
+    const o = order({ quote: { createdById: 'q', project: { visibility: 'EVERYONE', visibleRoles: [] } } });
     expect(canAccessOrder(o, 'stranger', false)).toBe(true);
   });
 
@@ -42,11 +42,26 @@ describe('canAccessOrder', () => {
 
   it('grants role members access when the project visibility is ROLE', () => {
     const o = order({
-      quote: { createdById: 'q', project: { visibility: 'ROLE', visibleToRoleId: 'role-sales' } },
+      quote: { createdById: 'q', project: { visibility: 'ROLE', visibleToRoleId: 'role-sales', visibleRoles: [] } },
     });
     expect(canAccessOrder(o, 'stranger', false, 'role-sales')).toBe(true);
     expect(canAccessOrder(o, 'stranger', false, 'role-other')).toBe(false);
     expect(canAccessOrder(o, 'stranger', false)).toBe(false); // no roleId passed
+  });
+
+  it('grants access to a LINKED role (multi-role ROLE visibility, client 10.2026)', () => {
+    const o = order({
+      quote: {
+        createdById: 'q',
+        project: {
+          visibility: 'ROLE',
+          visibleToRoleId: 'role-sales',
+          visibleRoles: [{ roleId: 'role-sales' }, { roleId: 'role-sales-director' }],
+        },
+      },
+    });
+    expect(canAccessOrder(o, 'ozkan', false, 'role-sales-director')).toBe(true);
+    expect(canAccessOrder(o, 'stranger', false, 'role-other')).toBe(false);
   });
 });
 
@@ -79,7 +94,12 @@ describe('orderVisibilityWhere', () => {
   it('adds the ROLE branch when the user carries a roleId', () => {
     const where = orderVisibilityWhere({ ...regular, roleId: 'role-sales' });
     expect(where.OR).toContainEqual({
-      quote: { project: { visibility: 'ROLE', visibleToRoleId: 'role-sales' } },
+      quote: {
+        project: {
+          visibility: 'ROLE',
+          OR: [{ visibleToRoleId: 'role-sales' }, { visibleRoles: { some: { roleId: 'role-sales' } } }],
+        },
+      },
     });
   });
 });

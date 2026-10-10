@@ -12,6 +12,8 @@ export const createRoleSchema = z.object({
   canEditProducts: z.boolean().optional().default(false),
   canDelete: z.boolean().optional().default(false),
   canDeleteProducts: z.boolean().optional().default(false),
+  /** "Bu rolün projelerini şu roller de görsün" (client 10.2026). */
+  linkedRoleIds: z.array(z.string()).max(50).optional(),
 });
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
@@ -29,6 +31,7 @@ export const updateRoleSchema = z.object({
   canEditProducts: z.boolean().optional(),
   canDelete: z.boolean().optional(),
   canDeleteProducts: z.boolean().optional(),
+  linkedRoleIds: z.array(z.string()).max(50).optional(),
 });
 
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;

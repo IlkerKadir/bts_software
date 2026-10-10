@@ -17,6 +17,7 @@ interface Role {
   canEditProducts: boolean;
   canDelete: boolean;
   canDeleteProducts: boolean;
+  linkedRoleIds?: string[];
   userCount: number;
   createdAt: string;
 }
@@ -194,6 +195,15 @@ export function RolesList() {
                   <PermissionBadge enabled={role.canDelete} label="Kayit Silme" />
                   <PermissionBadge enabled={role.canDeleteProducts} label="Ürün Silme" />
                 </div>
+                {role.linkedRoleIds && role.linkedRoleIds.length > 0 && (
+                  <p className="mt-2 text-xs text-primary-500">
+                    Projelerini de görenler:{' '}
+                    {role.linkedRoleIds
+                      .map((rid) => roles.find((r) => r.id === rid)?.name)
+                      .filter(Boolean)
+                      .join(', ') || `${role.linkedRoleIds.length} rol`}
+                  </p>
+                )}
               </div>
             </Card>
           ))}

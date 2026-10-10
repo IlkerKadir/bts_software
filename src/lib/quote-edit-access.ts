@@ -21,7 +21,7 @@ export interface QuoteEditShape extends QuoteAccessShape {
 
 /** Prisma `include` that loads exactly what the rule needs. */
 export const quoteEditAccessInclude = {
-  project: { include: { visibleTo: { select: { userId: true } } } },
+  project: { include: { visibleTo: { select: { userId: true } }, visibleRoles: { select: { roleId: true } } } },
 } as const;
 
 export interface QuoteEditDenial {

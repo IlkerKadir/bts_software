@@ -17,9 +17,9 @@ describe('getQuoteEditDenial', () => {
   });
 
   it('allows a non-creator who can see the quote through project visibility (client 02.09)', () => {
-    const quote = { createdById: 'a', status: 'TASLAK', project: { visibility: 'EVERYONE' } };
+    const quote = { createdById: 'a', status: 'TASLAK', project: { visibility: 'EVERYONE', visibleRoles: [] } };
     expect(getQuoteEditDenial(sales('b'), quote)).toBeNull();
-    const roleQuote = { createdById: 'a', status: 'TASLAK', project: { visibility: 'ROLE', visibleToRoleId: 'role-sales' } };
+    const roleQuote = { createdById: 'a', status: 'TASLAK', project: { visibility: 'ROLE', visibleToRoleId: 'role-sales', visibleRoles: [] } };
     expect(getQuoteEditDenial(sales('b'), roleQuote)).toBeNull();
     expect(getQuoteEditDenial(sales('b', 'role-other'), roleQuote)).not.toBeNull();
   });

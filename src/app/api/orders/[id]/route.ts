@@ -6,6 +6,7 @@ import { stfUpdateSchema } from '@/lib/validations/stf';
 import { computeStfTotals } from '@/lib/stf/stf-totals';
 import { canAccessOrder, isStfEditable, orderAccessInclude } from '@/lib/orders/order-access';
 import type { ZodError } from 'zod';
+import { projectAccessSelect } from '@/lib/project-role-visibility';
 
 const VALID_ORDER_STATUSES: string[] = Object.values(OrderStatus);
 
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         quote: {
           include: {
             company: true,
-            project: { select: { id: true, name: true, visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
+            project: { select: { id: true, name: true, ...projectAccessSelect } },
             items: {
               where: { parentItemId: null },
               orderBy: { sortOrder: 'asc' },

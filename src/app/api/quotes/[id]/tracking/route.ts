@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session';
 import { quoteTrackingSchema } from '@/lib/validations/quote-tracking';
 import { canUserAccessQuote } from '@/lib/quote-access';
 import type { ZodError } from 'zod';
+import { projectAccessSelect } from '@/lib/project-role-visibility';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -31,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         id: true,
         status: true,
         createdById: true,
-        project: { select: { visibility: true, visibleToRoleId: true, visibleTo: { select: { userId: true } } } },
+        project: { select: projectAccessSelect },
       },
     });
     if (!existing) {

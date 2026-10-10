@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import { getSession } from '@/lib/session';
 import { updateRoleSchema } from '@/lib/validations/role';
 
@@ -33,6 +34,7 @@ export async function GET(
         _count: {
           select: { users: true },
         },
+        projectLinksOut: { select: { targetRoleId: true } },
       },
     });
 
@@ -43,11 +45,13 @@ export async function GET(
       );
     }
 
+    const { projectLinksOut, ...roleRest } = role;
     return NextResponse.json({
       role: {
-        ...role,
+        ...roleRest,
         userCount: role._count.users,
         _count: undefined,
+        linkedRoleIds: projectLinksOut.map((l) => l.targetRoleId),
       },
     });
   } catch (error) {
@@ -108,9 +112,30 @@ export async function PUT(
       }
     }
 
+    // Linked roles (client 10.2026): replace the set when provided.
+    // Only affects projects created AFTER the change — existing projects
+    // keep the visibility they were created with.
+    // NB: `deleteMany` must come BEFORE `create` — Prisma runs nested writes
+    // in key order; the reverse would delete the links just created.
+    let linksWrite: { projectLinksOut?: Prisma.RoleUpdateInput['projectLinksOut'] } = {};
+    if (validatedData.linkedRoleIds !== undefined) {
+      const wanted = Array.from(new Set(validatedData.linkedRoleIds.filter((rid) => rid !== id)));
+      const targets = wanted.length
+        ? await db.role.findMany({ where: { id: { in: wanted } }, select: { id: true } })
+        : [];
+      // Replace the set inside the same update (atomic with the role fields).
+      linksWrite = {
+        projectLinksOut: {
+          deleteMany: {},
+          create: targets.map((t) => ({ targetRoleId: t.id })),
+        },
+      };
+    }
+
     const updatedRole = await db.role.update({
       where: { id },
       data: {
+        ...linksWrite,
         ...(validatedData.name && { name: validatedData.name }),
         ...(validatedData.canViewCosts !== undefined && { canViewCosts: validatedData.canViewCosts }),
         ...(validatedData.canApprove !== undefined && { canApprove: validatedData.canApprove }),

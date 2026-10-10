@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
           _count: {
             select: { users: true },
           },
+          projectLinksOut: { select: { targetRoleId: true } },
         },
         orderBy: { name: 'asc' },
         skip: (query.page - 1) * query.limit,
@@ -52,10 +53,11 @@ export async function GET(request: NextRequest) {
     ]);
 
     return NextResponse.json({
-      roles: roles.map(role => ({
+      roles: roles.map(({ projectLinksOut, ...role }) => ({
         ...role,
         userCount: role._count.users,
         _count: undefined,
+        linkedRoleIds: projectLinksOut.map((l) => l.targetRoleId),
       })),
       pagination: {
         page: query.page,
@@ -103,8 +105,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Linked roles: new projects created by this role's members are also
+    // visible to these roles (client 10.2026). Unknown ids are ignored.
+    const linkTargets = validatedData.linkedRoleIds?.length
+      ? await db.role.findMany({ where: { id: { in: validatedData.linkedRoleIds } }, select: { id: true } })
+      : [];
+
+    // Role + its links in one write (nested create is atomic).
     const role = await db.role.create({
       data: {
+        ...(linkTargets.length
+          ? { projectLinksOut: { create: linkTargets.map((t) => ({ targetRoleId: t.id })) } }
+          : {}),
         name: validatedData.name,
         canViewCosts: validatedData.canViewCosts ?? false,
         canApprove: validatedData.canApprove ?? false,

@@ -21,7 +21,7 @@ type VisibilityMode = 'CREATOR_ONLY' | 'SPECIFIC_USERS' | 'EVERYONE' | 'ROLE';
 const VISIBILITY_OPTIONS: { value: VisibilityMode; label: string; description: string; icon: typeof Lock }[] = [
   { value: 'CREATOR_ONLY', label: 'Sadece Oluşturan', description: 'Yalnızca teklifi oluşturan ve yöneticiler görebilir', icon: Lock },
   { value: 'SPECIFIC_USERS', label: 'Belirli Kullanıcılar', description: 'Seçilen kullanıcılar ve yöneticiler görebilir', icon: Users },
-  { value: 'ROLE', label: 'Rol Bazlı', description: 'Seçilen roldeki tüm kullanıcılar ve yöneticiler görebilir', icon: Shield },
+  { value: 'ROLE', label: 'Rol Bazlı', description: 'Seçilen rollerdeki tüm kullanıcılar ve yöneticiler görebilir', icon: Shield },
   { value: 'EVERYONE', label: 'Herkes', description: 'Tüm kullanıcılar görebilir', icon: Globe },
 ];
 
@@ -37,7 +37,9 @@ export function ProjectVisibility({ projectId }: Props) {
   const [currentUsers, setCurrentUsers] = useState<VisibilityUser[]>([]);
   const [allUsers, setAllUsers] = useState<{ id: string; fullName: string; username: string }[]>([]);
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
+  // ROLE mode is multi-role (client 10.2026); ordered, first = primary.
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [initialPrimaryRoleId, setInitialPrimaryRoleId] = useState<string | null>(null);
   const [createdBy, setCreatedBy] = useState<VisibilityUser | null>(null);
 
   // Check if user is a manager and load visibility data
@@ -67,7 +69,11 @@ export function ProjectVisibility({ projectId }: Props) {
           const visData = await visRes.json();
           setVisibility(visData.visibility);
           setRoles(visData.roles || []);
-          setSelectedRoleId(visData.role?.id ?? '');
+          setSelectedRoleIds(
+            (visData.selectedRoles as { id: string }[] | undefined)?.map((r) => r.id) ??
+              (visData.role?.id ? [visData.role.id] : [])
+          );
+          setInitialPrimaryRoleId(visData.role?.id ?? null);
           setCreatedBy(visData.createdBy ?? null);
           setCurrentUsers(visData.users || []);
           setSelectedUserIds(new Set((visData.users || []).map((u: VisibilityUser) => u.id)));
@@ -101,13 +107,16 @@ export function ProjectVisibility({ projectId }: Props) {
         body: JSON.stringify({
           visibility,
           userIds: visibility === 'SPECIFIC_USERS' ? Array.from(selectedUserIds) : [],
-          roleId: visibility === 'ROLE' ? selectedRoleId || undefined : undefined,
+          roleIds: visibility === 'ROLE' ? selectedRoleIds : undefined,
         }),
       });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Kaydetme hatası');
       }
+      // The saved primary role is now the reference for re-tick ordering.
+      const saved = await res.json().catch(() => null);
+      setInitialPrimaryRoleId(saved?.role?.id ?? (visibility === 'ROLE' ? selectedRoleIds[0] ?? null : null));
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
@@ -115,7 +124,7 @@ export function ProjectVisibility({ projectId }: Props) {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, visibility, selectedUserIds, selectedRoleId]);
+  }, [projectId, visibility, selectedUserIds, selectedRoleIds]);
 
   const toggleUser = useCallback((userId: string) => {
     setSelectedUserIds(prev => {
@@ -234,20 +243,38 @@ export function ProjectVisibility({ projectId }: Props) {
       {visibility === 'ROLE' && (
         <div className="border border-primary-200 rounded-lg p-3 space-y-2">
           <p className="text-xs font-medium text-primary-500 uppercase tracking-wider">
-            Görebilecek Rol
+            Görebilecek Roller
           </p>
-          <select
-            value={selectedRoleId}
-            onChange={(e) => setSelectedRoleId(e.target.value)}
-            className="w-full px-3 py-2 border border-primary-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-500"
-          >
-            <option value="">Rol seçin...</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </select>
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {roles.map((r) => {
+              const checked = selectedRoleIds.includes(r.id);
+              return (
+                <label
+                  key={r.id}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors',
+                    checked ? 'bg-accent-50' : 'hover:bg-primary-50'
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() =>
+                      setSelectedRoleIds((prev) => {
+                        if (prev.includes(r.id)) return prev.filter((id) => id !== r.id);
+                        // Re-ticking the originally-first (primary) role keeps it first.
+                        return r.id === initialPrimaryRoleId ? [r.id, ...prev] : [...prev, r.id];
+                      })
+                    }
+                    className="rounded border-primary-300 text-accent-600 focus:ring-accent-500"
+                  />
+                  <span className="text-sm text-primary-800">{r.name}</span>
+                </label>
+              );
+            })}
+          </div>
           <p className="text-xs text-primary-400">
-            Yöneticiler her durumda tüm projeleri görür.
+            Seçilen rollerdeki herkes bu projeyi görür. Yöneticiler her durumda tüm projeleri görür.
           </p>
         </div>
       )}
@@ -259,7 +286,7 @@ export function ProjectVisibility({ projectId }: Props) {
           size="sm"
           onClick={handleSave}
           isLoading={isSaving}
-          disabled={isSaving || (visibility === 'ROLE' && !selectedRoleId)}
+          disabled={isSaving || (visibility === 'ROLE' && selectedRoleIds.length === 0)}
         >
           Kaydet
         </Button>

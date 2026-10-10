@@ -11,6 +11,9 @@ vi.mock('@/lib/db', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    roleProjectLink: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -83,6 +86,34 @@ describe('POST /api/projects', () => {
         data: expect.objectContaining({
           visibility: 'ROLE',
           visibleToRoleId: 'role-sales',
+          visibleRoles: { create: [{ roleId: 'role-sales' }] },
+        }),
+      }),
+    );
+  });
+
+  it('adds the roles linked to the creator role (client 10.2026)', async () => {
+    vi.mocked(getSession).mockResolvedValue(makeUser() as any);
+    vi.mocked(db.project.create).mockResolvedValue({ id: 'proj-2' } as any);
+    vi.mocked(db.roleProjectLink.findMany).mockResolvedValueOnce([
+      { targetRoleId: 'role-sales-director' },
+    ] as any);
+
+    const req = new NextRequest('http://localhost/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Özkan Bey projesi', status: 'TEKLIF_ASAMASINDA' }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    expect(db.roleProjectLink.findMany).toHaveBeenCalledWith({
+      where: { sourceRoleId: 'role-sales' },
+      select: { targetRoleId: true },
+    });
+    expect(db.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          visibleToRoleId: 'role-sales', // primary stays the creator's role
+          visibleRoles: { create: [{ roleId: 'role-sales' }, { roleId: 'role-sales-director' }] },
         }),
       }),
     );

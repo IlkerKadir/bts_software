@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: { id },
       include: {
         company: true,
-        project: { include: { visibleTo: { select: { userId: true } } } },
+        project: { include: { visibleTo: { select: { userId: true } }, visibleRoles: { select: { roleId: true } } } },
         createdBy: { select: { id: true, fullName: true } },
         approvedBy: { select: { id: true, fullName: true } },
         lastEditedBy: { select: { id: true, fullName: true } },
@@ -76,43 +76,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Add profit data for Yonetim users
     let profitSummary = null;
     if (user.role.canViewCosts) {
-      const { calculateQuoteProfitSummary } = await import('@/lib/quote-calculations');
-      const mapped = quote.items.map(item => {
-        // Include ek maliyet delta in effective cost price for profit calc
-        const baseCost = item.costPrice != null ? Number(item.costPrice) : null;
-        const delta = item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : 0;
-        const effectiveCost = delta > 0 ? (baseCost ?? 0) + delta : baseCost;
-        return {
-          id: item.id,
-          totalPrice: Number(item.totalPrice),
-          costPrice: effectiveCost,
-          listPrice: item.listPrice != null ? Number(item.listPrice) : null,
-          quantity: Number(item.quantity),
-          itemType: item.itemType,
-          parentItemId: item.parentItemId,
-          priceLabel: item.priceLabel,
-          currency: item.currency ?? null,
-          // SUBTOTAL rows carry the section discount; without this the
-          // profit calc treats every section as 0% and overstates revenue.
-          sectionDiscountPct:
-            item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
-        };
-      });
-      // Only build a currency ctx when the quote actually has a set
-      // with a non-null currency override. Pure single-currency quotes
-      // take the identity path inside calculateQuoteProfitSummary.
-      const hasMixedCurrency = mapped.some(
-        (i) => i.currency && i.currency !== quote.currency
-      );
-      const protectionPct = Number(quote.protectionPct || 0);
-      const protectedRate = Number(quote.exchangeRate || 1);
-      const baseForeignRate = protectionPct > 0
-        ? protectedRate / (1 + protectionPct / 100)
-        : protectedRate;
-      const ctx = hasMixedCurrency
-        ? { quoteCurrency: quote.currency, baseForeignRate }
-        : undefined;
-      const raw = calculateQuoteProfitSummary(mapped, 0, ctx);
+      // Shared mapping with the dashboard (src/lib/quote-profit.ts).
+      const { computeQuoteProfit } = await import('@/lib/quote-profit');
+      const raw = computeQuoteProfit(quote);
       profitSummary = {
         totalCost: raw.totalCost,
         totalProfit: raw.totalProfit,
@@ -160,7 +126,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const existingQuote = await db.quote.findUnique({
       where: { id },
-      include: { project: { include: { visibleTo: { select: { userId: true } } } } },
+      include: { project: { include: { visibleTo: { select: { userId: true } }, visibleRoles: { select: { roleId: true } } } } },
     });
     if (!existingQuote) {
       return NextResponse.json({ error: 'Teklif bulunamadı' }, { status: 404 });

@@ -7,6 +7,7 @@ import { nextStfNumber } from '@/lib/stf/stf-number';
 import { buildStfSnapshot } from '@/lib/stf/stf-snapshot';
 import { orderVisibilityWhere } from '@/lib/orders/order-access';
 import { canUserAccessQuote } from '@/lib/quote-access';
+import { projectAccessSelect } from '@/lib/project-role-visibility';
 
 export async function GET(request: NextRequest) {
   try {
@@ -179,14 +180,7 @@ export async function POST(request: NextRequest) {
       where: { id: quoteId },
       include: {
         company: { select: { name: true, address: true, phone: true, taxNumber: true } },
-        project: {
-          select: {
-            name: true,
-            visibility: true,
-            visibleToRoleId: true,
-            visibleTo: { select: { userId: true } },
-          },
-        },
+        project: { select: { name: true, ...projectAccessSelect } },
         items: { orderBy: { sortOrder: 'asc' } },
         commercialTerms: {
           select: { category: true, value: true, sortOrder: true },

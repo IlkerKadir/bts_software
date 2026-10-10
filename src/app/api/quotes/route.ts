@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import { generateQuoteNumber, getNextSequence, getInitials, getInitialsPrefix } from '@/lib/quote-number';
 import { fetchTcmbDirectRates, buildRateMatrix } from '@/lib/services/tcmb-service';
 import { expandTurkishVariants } from '@/lib/search-helpers';
+import { projectRoleWhere } from '@/lib/project-role-visibility';
 
 /**
  * Resolve the "root" id for a quote used in revision grouping. A row
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
         // See quotes in projects where user has explicit access
         { project: { visibility: 'SPECIFIC_USERS', visibleTo: { some: { userId: user.id } } } },
         // See quotes in projects visible to the user's role (client 30.06)
-        { project: { visibility: 'ROLE', visibleToRoleId: user.roleId } },
+        ...(user.roleId ? [{ project: projectRoleWhere(user.roleId) }] : []),
       ];
 
       // If there's already an OR from search, we need to AND them together

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { canUserAccessQuote } from '@/lib/quote-access';
+import { projectAccessSelect } from '@/lib/project-role-visibility';
 
 interface RouteParams {
   params: Promise<{ id: string; interactionId: string }>;
@@ -29,13 +30,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
         quote: {
           select: {
             createdById: true,
-            project: {
-              select: {
-                visibility: true,
-                visibleToRoleId: true,
-                visibleTo: { select: { userId: true } },
-              },
-            },
+            project: { select: projectAccessSelect },
           },
         },
       },

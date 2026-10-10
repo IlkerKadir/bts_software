@@ -6,16 +6,20 @@
  * source quote's creator / project visibility.
  */
 import type { Prisma } from '@prisma/client';
+import {
+  projectAccessSelect,
+  projectRoleMatches,
+  projectRoleWhere,
+  type RoleVisibleProject,
+} from '@/lib/project-role-visibility';
 
 export interface OrderForAccess {
   createdById: string;
   quote?: {
     createdById: string;
-    project?: {
-      visibility: string;
-      visibleToRoleId?: string | null;
+    project?: (RoleVisibleProject & {
       visibleTo?: { userId: string }[];
-    } | null;
+    }) | null;
   } | null;
 }
 
@@ -29,13 +33,7 @@ export const orderAccessInclude = {
   quote: {
     select: {
       createdById: true,
-      project: {
-        select: {
-          visibility: true,
-          visibleToRoleId: true,
-          visibleTo: { select: { userId: true } },
-        },
-      },
+      project: { select: projectAccessSelect },
     },
   },
 } as const;
@@ -60,9 +58,7 @@ export function canAccessOrder(
       if (quote.project.visibility === 'SPECIFIC_USERS') {
         if (quote.project.visibleTo?.some((a) => a.userId === userId)) return true;
       }
-      if (quote.project.visibility === 'ROLE') {
-        if (userRoleId && quote.project.visibleToRoleId === userRoleId) return true;
-      }
+      if (projectRoleMatches(quote.project, userRoleId)) return true;
     }
   }
   return false;
@@ -94,9 +90,7 @@ export function orderVisibilityWhere(user: {
           },
         },
       },
-      ...(user.roleId
-        ? [{ quote: { project: { visibility: 'ROLE' as const, visibleToRoleId: user.roleId } } }]
-        : []),
+      ...(user.roleId ? [{ quote: { project: projectRoleWhere(user.roleId) } }] : []),
     ],
   };
 }

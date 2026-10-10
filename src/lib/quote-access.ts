@@ -1,3 +1,5 @@
+import { projectRoleMatches, type RoleVisibleProject } from '@/lib/project-role-visibility';
+
 /**
  * Quote visibility rule, shared by the quote detail route and the Teklif Takip
  * (tracking / interactions) routes so they all enforce the same boundary.
@@ -7,11 +9,9 @@
  */
 export interface QuoteAccessShape {
   createdById: string;
-  project?: {
-    visibility: string;
-    visibleToRoleId?: string | null;
+  project?: (RoleVisibleProject & {
     visibleTo?: { userId: string }[];
-  } | null;
+  }) | null;
 }
 
 export function canUserAccessQuote(
@@ -31,11 +31,8 @@ export function canUserAccessQuote(
     ) {
       return true;
     }
-    if (
-      quote.project.visibility === 'ROLE' &&
-      userRoleId != null &&
-      quote.project.visibleToRoleId === userRoleId
-    ) {
+    // ROLE: primary role or any linked role (multi-role, client 10.2026)
+    if (projectRoleMatches(quote.project, userRoleId)) {
       return true;
     }
   }

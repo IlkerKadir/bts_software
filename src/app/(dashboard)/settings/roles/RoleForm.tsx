@@ -14,6 +14,8 @@ interface RoleFormData {
   canEditProducts: boolean;
   canDelete: boolean;
   canDeleteProducts: boolean;
+  /** "Bu rolün projelerini şu roller de görsün" (client 10.2026). */
+  linkedRoleIds?: string[];
 }
 
 interface RoleFormProps {
@@ -39,6 +41,7 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [allRoles, setAllRoles] = useState<{ id: string; name: string }[]>([]);
   const [formData, setFormData] = useState<RoleFormData>({
     name: '',
     canViewCosts: false,
@@ -64,10 +67,31 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
         canEditProducts: initialData?.canEditProducts ?? false,
         canDelete: initialData?.canDelete ?? false,
         canDeleteProducts: initialData?.canDeleteProducts ?? false,
+        linkedRoleIds: initialData?.linkedRoleIds ?? [],
       });
       setError('');
     }
   }, [isOpen, initialData]);
+
+  // Role list for the linked-roles picker (this page is canManageUsers-only).
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/roles?limit=100')
+      .then((r) => (r.ok ? r.json() : { roles: [] }))
+      .then((d) => setAllRoles((d.roles || []).map((r: { id: string; name: string }) => ({ id: r.id, name: r.name }))))
+      .catch(() => setAllRoles([]));
+  }, [isOpen]);
+
+  const toggleLinkedRole = (roleId: string) => {
+    setFormData((prev) => {
+      const cur = prev.linkedRoleIds ?? [];
+      return {
+        ...prev,
+        linkedRoleIds: cur.includes(roleId) ? cur.filter((x) => x !== roleId) : [...cur, roleId],
+      };
+    });
+  };
+  const linkableRoles = allRoles.filter((r) => r.id !== initialData?.id);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,6 +188,36 @@ export function RoleForm({ isOpen, onClose, onSuccess, initialData }: RoleFormPr
               </div>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-primary-700 mb-1">
+            Bu rolün projelerini şu roller de görsün
+          </label>
+          <p className="text-xs text-primary-500 mb-3">
+            Bu roldeki biri yeni proje açtığında, proje seçilen rollere de otomatik görünür.
+            Mevcut projeler değişmez; gerekirse proje sayfasındaki Görünürlük panelinden eklenebilir.
+          </p>
+          {linkableRoles.length === 0 ? (
+            <p className="text-xs text-primary-400">Başka rol bulunmuyor.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {linkableRoles.map((r) => (
+                <label
+                  key={r.id}
+                  className="flex items-center gap-2 p-2 rounded-lg border border-primary-200 hover:bg-primary-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={(formData.linkedRoleIds ?? []).includes(r.id)}
+                    onChange={() => toggleLinkedRole(r.id)}
+                    className="w-4 h-4 rounded border-primary-300 text-accent-600 focus:ring-accent-500"
+                  />
+                  <span className="text-sm text-primary-900">{r.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       </form>
     </Modal>

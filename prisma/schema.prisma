@@ -34,6 +34,12 @@ model Role {
   updatedAt          DateTime @updatedAt
   users              User[]
   visibleProjects    Project[] @relation("ProjectVisibleToRole")
+  /// Projects (ROLE visibility) this role may see — multi-role (client 10.2026).
+  projectVisibility  ProjectVisibleRole[]
+  /// "Bu rolün projelerini şu roller de görsün": new projects created by a
+  /// member of THIS role are also made visible to each target role.
+  projectLinksOut    RoleProjectLink[] @relation("RoleProjectLinkSource")
+  projectLinksIn     RoleProjectLink[] @relation("RoleProjectLinkTarget")
 }
 
 model User {
@@ -127,7 +133,9 @@ model Project {
   createdBy      User?             @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   status         ProjectStatus     @default(TEKLIF_ASAMASINDA)
   visibility     ProjectVisibility @default(EVERYONE)
-  /// Set when visibility == ROLE: the role whose members see the project.
+  /// Set when visibility == ROLE: the PRIMARY role whose members see the
+  /// project. Kept in sync with the first entry of `visibleRoles` (so the
+  /// pre-multi-role code still works after a rollback).
   visibleToRoleId String?
   visibleToRole   Role?            @relation("ProjectVisibleToRole", fields: [visibleToRoleId], references: [id], onDelete: SetNull)
   estimatedStart DateTime?
@@ -140,9 +148,38 @@ model Project {
   activities     ProjectActivity[]
   reminders      Reminder[]
   visibleTo      ProjectUserAccess[]
+  /// ROLE visibility, multi-role (client 10.2026). Snapshotted at project
+  /// creation from the creator's role + its linked roles; editable later.
+  visibleRoles   ProjectVisibleRole[]
 
   @@index([createdById])
   @@index([visibleToRoleId])
+}
+
+model ProjectVisibleRole {
+  id        String   @id @default(cuid())
+  projectId String
+  roleId    String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, roleId])
+  @@index([roleId])
+}
+
+/// "Projects created by members of sourceRole are also visible to
+/// targetRole" — applied when a project is created (client 10.2026).
+model RoleProjectLink {
+  id           String   @id @default(cuid())
+  sourceRoleId String
+  targetRoleId String
+  sourceRole   Role     @relation("RoleProjectLinkSource", fields: [sourceRoleId], references: [id], onDelete: Cascade)
+  targetRole   Role     @relation("RoleProjectLinkTarget", fields: [targetRoleId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([sourceRoleId, targetRoleId])
+  @@index([targetRoleId])
 }
 
 model ProjectDocument {

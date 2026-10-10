@@ -84,3 +84,28 @@ describe('GET /api/projects/[id]/visibility', () => {
     expect(body.createdBy).toBeNull();
   });
 });
+
+describe('GET /api/projects/[id]/visibility — multi-role', () => {
+  it('returns all selected roles, primary first, deduped', async () => {
+    vi.mocked(getSession).mockResolvedValue(managerUser as any);
+    vi.mocked(db.project.findUnique).mockResolvedValue({
+      id: 'proj-3',
+      name: 'Rol projesi',
+      visibility: 'ROLE',
+      visibleTo: [],
+      createdBy: null,
+      visibleToRole: { id: 'r-sales', name: 'Satış' },
+      visibleRoles: [
+        { role: { id: 'r-sales', name: 'Satış' } },
+        { role: { id: 'r-dir', name: 'Satış Direktörü' } },
+      ],
+    } as any);
+    const res = await GET(new NextRequest('http://localhost/api/projects/proj-3/visibility'), makeParams('proj-3'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.selectedRoles).toEqual([
+      { id: 'r-sales', name: 'Satış' },
+      { id: 'r-dir', name: 'Satış Direktörü' },
+    ]);
+  });
+});

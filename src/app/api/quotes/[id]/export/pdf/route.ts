@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: { id: quoteId },
       include: {
         company: true,
-        project: { include: { visibleTo: { select: { userId: true } } } },
+        project: { include: { visibleTo: { select: { userId: true } }, visibleRoles: { select: { roleId: true } } } },
         items: {
           include: { product: true },
           orderBy: { sortOrder: 'asc' },

@@ -10,8 +10,27 @@ interface RouteParams {
 const visibilityUpdateSchema = z.object({
   visibility: z.enum(['CREATOR_ONLY', 'SPECIFIC_USERS', 'EVERYONE', 'ROLE']),
   userIds: z.array(z.string()).optional(),
+  /** ROLE mode: one or more roles (client 10.2026). First = primary. */
+  roleIds: z.array(z.string()).optional(),
+  /** Legacy single-role payload — still accepted. */
   roleId: z.string().optional(),
 });
+
+/** Primary role first, then the rest of visibleRoles (deduped). */
+function selectedRoles(project: {
+  visibleToRole?: { id: string; name: string } | null;
+  visibleRoles?: { role: { id: string; name: string } }[];
+}): { id: string; name: string }[] {
+  const out: { id: string; name: string }[] = [];
+  const seen = new Set<string>();
+  for (const r of [project.visibleToRole, ...(project.visibleRoles ?? []).map((v) => v.role)]) {
+    if (r && !seen.has(r.id)) {
+      seen.add(r.id);
+      out.push(r);
+    }
+  }
+  return out;
+}
 
 /**
  * GET /api/projects/[id]/visibility
@@ -41,6 +60,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         name: true,
         visibility: true,
         visibleToRole: { select: { id: true, name: true } },
+        visibleRoles: { select: { role: { select: { id: true, name: true } } } },
         createdBy: {
           select: {
             id: true,
@@ -77,6 +97,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       projectName: project.name,
       visibility: project.visibility,
       role: project.visibleToRole ?? null,
+      selectedRoles: selectedRoles(project),
       roles,
       createdBy: project.createdBy ?? null,
       users: project.visibleTo.map((access) => ({
@@ -98,7 +119,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  * PUT /api/projects/[id]/visibility
  * Updates the project visibility setting and user access list.
  * Requires canManageUsers or canApprove role.
- * Body: { visibility: 'CREATOR_ONLY' | 'SPECIFIC_USERS' | 'EVERYONE', userIds?: string[] }
+ * Body: { visibility: 'CREATOR_ONLY' | 'SPECIFIC_USERS' | 'EVERYONE' | 'ROLE', userIds?: string[], roleIds?: string[] }
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
@@ -126,7 +147,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const { visibility, userIds, roleId } = validation.data;
+    const { visibility, userIds } = validation.data;
+    const roleIds = Array.from(
+      new Set(validation.data.roleIds ?? (validation.data.roleId ? [validation.data.roleId] : []))
+    );
 
     // Check that the project exists
     const project = await db.project.findUnique({ where: { id } });
@@ -134,16 +158,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Proje bulunamadı' }, { status: 404 });
     }
 
-    // If ROLE, validate the role exists
+    // If ROLE, validate the roles exist (at least one)
     if (visibility === 'ROLE') {
-      if (!roleId) {
+      if (roleIds.length === 0) {
         return NextResponse.json(
-          { error: 'Rol bazlı görünürlük için bir rol seçilmelidir' },
+          { error: 'Rol bazlı görünürlük için en az bir rol seçilmelidir' },
           { status: 400 }
         );
       }
-      const role = await db.role.findUnique({ where: { id: roleId }, select: { id: true } });
-      if (!role) {
+      const found = await db.role.findMany({ where: { id: { in: roleIds } }, select: { id: true } });
+      if (found.length !== roleIds.length) {
         return NextResponse.json({ error: 'Geçersiz rol' }, { status: 400 });
       }
     }
@@ -179,9 +203,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         where: { id },
         data: {
           visibility,
-          visibleToRoleId: visibility === 'ROLE' ? roleId : null,
+          // Primary role = first selected (rollback-safe single column)
+          visibleToRoleId: visibility === 'ROLE' ? roleIds[0] : null,
         },
       });
+
+      // Multi-role set (client 10.2026)
+      await tx.projectVisibleRole.deleteMany({ where: { projectId: id } });
+      if (visibility === 'ROLE') {
+        await tx.projectVisibleRole.createMany({
+          data: roleIds.map((roleId) => ({ projectId: id, roleId })),
+        });
+      }
 
       // Remove all existing access entries for this project
       await tx.projectUserAccess.deleteMany({
@@ -207,6 +240,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         name: true,
         visibility: true,
         visibleToRole: { select: { id: true, name: true } },
+        visibleRoles: { select: { role: { select: { id: true, name: true } } } },
         createdBy: {
           select: {
             id: true,
@@ -233,6 +267,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       projectName: updatedProject!.name,
       visibility: updatedProject!.visibility,
       role: updatedProject!.visibleToRole ?? null,
+      selectedRoles: selectedRoles(updatedProject!),
       createdBy: updatedProject!.createdBy ?? null,
       users: updatedProject!.visibleTo.map((access) => ({
         id: access.user.id,
