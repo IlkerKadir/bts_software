@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
     const sheet = workbook.addWorksheet('Teklifler');
     sheet.columns = [
       { key: 'quoteNumber', header: 'Teklif No', width: 15 },
+      { key: 'refNo', header: 'Ref No', width: 12 },
       { key: 'company', header: 'Firma', width: 28 },
       { key: 'project', header: 'Proje', width: 22 },
       { key: 'subject', header: 'Teklif Adı', width: 22 },
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
       const created = new Date(q.createdAt);
       const row = sheet.addRow({
         quoteNumber: q.quoteNumber,
+        refNo: q.refNo || '-',
         company: q.company.name,
         project: q.project?.name || '-',
         subject: q.subject || '-',
@@ -148,7 +150,7 @@ export async function GET(request: NextRequest) {
       row.getCell('contactHistory').alignment = { wrapText: true, vertical: 'top' };
     }
 
-    sheet.autoFilter = { from: 'A1', to: `Q${quotes.length + 1}` };
+    sheet.autoFilter = { from: 'A1', to: `R${quotes.length + 1}` };
 
     const buffer = await workbook.xlsx.writeBuffer();
     return new NextResponse(buffer, {
