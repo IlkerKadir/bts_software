@@ -84,6 +84,18 @@ export async function POST(request: NextRequest) {
         })
       : { count: 0 };
 
+    // A product that became used between the read and the delete was
+    // skipped by the re-check — report it as blocked too.
+    if (result.count < deletableIds.length) {
+      const stillThere = await db.product.findMany({
+        where: { id: { in: deletableIds } },
+        select: { id: true, code: true, name: true, _count: { select: { quoteItems: true } } },
+      });
+      for (const p of stillThere) {
+        blocked.push({ id: p.id, code: p.code, name: p.name, quoteItemCount: p._count.quoteItems });
+      }
+    }
+
     return NextResponse.json({ deleted: result.count, blocked });
   } catch (error) {
     console.error('Products bulk-delete error:', error);

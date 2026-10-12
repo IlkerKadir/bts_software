@@ -22,6 +22,7 @@ import { insertItemBefore } from '@/lib/quote-item-order';
 import { isTempId, remapTempIds, scrubIds, computeDeletedIds } from '@/lib/quote-editor-history';
 import { RateDriftBanner } from '@/components/quotes/RateDriftBanner';
 import { RateUpdateDialog } from '@/components/quotes/RateUpdateDialog';
+import { LEAVE_CONFIRM_MESSAGE, setUnsavedChanges } from '@/lib/unsaved-changes';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -631,6 +632,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   // ── Unsaved changes warning ────────────────────────────────────────────────
 
+  // Let app-wide navigations (header search, notifications, logout) know.
+  useEffect(() => {
+    setUnsavedChanges(hasChanges);
+    return () => setUnsavedChanges(false);
+  }, [hasChanges]);
+
   useEffect(() => {
     if (!hasChanges) return;
 
@@ -648,7 +655,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
       const url = new URL(a.href, window.location.href);
       if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
-      if (!window.confirm('Kaydedilmemiş değişiklikler var. Kaydetmeden çıkmak istediğinize emin misiniz?')) {
+      if (!window.confirm(LEAVE_CONFIRM_MESSAGE)) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -679,9 +686,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // All items go into the unified table (no service split)
   // Build parent-child relationships from the flat items list so sub-rows
   // always appear under their parent, even when created sequentially.
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
+  // Mirror the latest items synchronously (an effect could lag a fast
+  // POST resolution and misjudge whether a temp row is still present).
+  itemsRef.current = items;
 
   const topLevelItems = useMemo(() => {
     const top = items.filter((item) => !item.parentItemId);
@@ -965,10 +972,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // including during a header-only save or the terms save above)
       if (itemsVersionRef.current !== versionAtStart) editedDuringSave = true;
       savedHeaderRef.current = { ...headerFields };
-      if (!editedDuringSave) {
-        itemsDirtyRef.current = false;
-        setHasChanges(false);
-      }
+      if (!editedDuringSave) itemsDirtyRef.current = false;
+      // Header fields typed while the save was in flight are not in it —
+      // they must keep the editor "unsaved" (Kaydet enabled, leave guards on).
+      setHasChanges(editedDuringSave || hasUnsavedHeaderChangesRef.current());
       // An "add blocked while saving" notice is obsolete once saved.
       setError((prev) => (prev && prev.startsWith('Kaydetme sürerken') ? null : prev));
       setSuccessMessage('Teklif başarıyla kaydedildi');
@@ -983,6 +990,19 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       setIsSaving(false);
     }
   }, [quote, quoteId, headerFields, items, exchangeRates, checkHeaderChanges]);
+
+  // Latest header fields, for change checks after async work.
+  const headerFieldsRef = useRef(headerFields);
+  headerFieldsRef.current = headerFields;
+  // Header only: the terms section's hasChanges() reads its last render and
+  // is still "dirty" right after its own save; it reports edits made during
+  // the save itself via onTermsChange.
+  const hasUnsavedHeaderChanges = useCallback(
+    () => checkHeaderChanges(headerFieldsRef.current),
+    [checkHeaderChanges]
+  );
+  const hasUnsavedHeaderChangesRef = useRef(hasUnsavedHeaderChanges);
+  hasUnsavedHeaderChangesRef.current = hasUnsavedHeaderChanges;
 
   // Latest doSave (its closure holds the current items/header).
   const doSaveRef = useRef(doSave);
@@ -1002,7 +1022,15 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     if (inFlight) {
       // Join the running save; if the user changed things meanwhile, save
       // once more with the latest state (so export/preview get it too).
-      return inFlight.then((ok) => (ok && itemsDirtyRef.current ? start() : ok));
+      // Several joiners share ONE follow-up save (never two concurrent ones).
+      // Only item edits trigger it: when items were not edited the first save
+      // reloaded state, and a follow-up started before React re-renders would
+      // run with the pre-reload items closure (and could delete rows another
+      // session added). Header edits made during the save stay "unsaved"
+      // (step 4) and go out on the next Kaydet.
+      return inFlight.then((ok) =>
+        ok && itemsDirtyRef.current ? (savePromiseRef.current ?? start()) : ok
+      );
     }
     return start();
   }, []);

@@ -27,6 +27,7 @@ import { ExchangeRateModal } from './ExchangeRateModal';
 import { PdfPreviewModal } from './PdfPreviewModal';
 import { RefNoBuilderModal } from './RefNoBuilderModal';
 import { TeklifNoBuilderModal } from './TeklifNoBuilderModal';
+import { LEAVE_CONFIRM_MESSAGE } from '@/lib/unsaved-changes';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ export function QuoteEditorHeader({
               // unsaved edits (and deferred deletes) aren't dropped silently.
               if (
                 hasChanges &&
-                !window.confirm('Kaydedilmemiş değişiklikler var. Kaydetmeden çıkmak istediğinize emin misiniz?')
+                !window.confirm(LEAVE_CONFIRM_MESSAGE)
               ) {
                 return;
               }

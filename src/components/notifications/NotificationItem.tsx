@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, CheckCircle, XCircle, Clock, AlertTriangle, Info, Trash2 } from 'lucide-react';
 import type { NotificationType } from '@/lib/services/notification-service';
 import type { Notification } from '@/lib/types/notification';
+import { confirmLeaveIfUnsaved } from '@/lib/unsaved-changes';
 
 interface NotificationItemProps {
   notification: Notification;
@@ -50,6 +51,8 @@ export function NotificationItem({ notification, onMarkAsRead, onDelete }: Notif
   const colorClasses = typeColors[notification.type] || 'text-primary-500 bg-primary-50';
 
   const handleClick = async () => {
+    // Confirm leaving an editor with unsaved changes BEFORE marking as read.
+    if (notification.link && !confirmLeaveIfUnsaved()) return;
     if (!notification.isRead) {
       onMarkAsRead(notification.id);
     }

@@ -161,6 +161,17 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
     setSelectedProducts(new Set());
   }, [page, filterKey]);
 
+  // A refetch (e.g. after an edit) can drop selected rows from the list:
+  // keep only ids that are still on screen so counts always agree.
+  useEffect(() => {
+    setSelectedProducts((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(products.map((p) => p.id));
+      const next = new Set(Array.from(prev).filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [products]);
+
   const handleEdit = (product: Product) => {
     setEditingProduct({
       ...product,
@@ -751,7 +762,11 @@ export function ProductList({ canViewCosts, canEditProducts, canDelete }: Produc
             >
               İptal
             </Button>
-            <Button variant="danger" onClick={handleBulkDelete} disabled={isBulkDeleting}>
+            <Button
+              variant="danger"
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting || selectedProductsForBulk.length === 0}
+            >
               {isBulkDeleting ? 'Siliniyor...' : 'Sil'}
             </Button>
           </>

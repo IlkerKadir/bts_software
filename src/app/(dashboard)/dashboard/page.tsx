@@ -88,7 +88,12 @@ export default async function DashboardPage() {
       </div>
 
       {/* Profit Summary - conditional on canViewCosts */}
-      {canViewCosts && <ProfitSummary data={profitData} />}
+      {canViewCosts &&
+        (profitData ? (
+          <ProfitSummary data={profitData} />
+        ) : (
+          <p className="text-sm text-primary-500">Kar özeti şu anda hesaplanamadı. Sayfayı yenilemeyi deneyin.</p>
+        ))}
 
       {/* Charts - conditional on canViewCosts */}
       {canViewCosts && <DashboardCharts />}

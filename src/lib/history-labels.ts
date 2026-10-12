@@ -13,6 +13,7 @@ export const FIELD_LABELS: Record<string, string> = {
   notes: 'Notlar',
   status: 'Durum',
   itemsUpdated: 'Güncellenen Kalem Sayısı',
+  itemsDeleted: 'Silinen Kalem Sayısı',
 };
 
 // Fields to skip in display (internal/noise)

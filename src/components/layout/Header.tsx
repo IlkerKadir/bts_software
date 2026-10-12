@@ -6,6 +6,7 @@ import { Bell, LogOut, User, ChevronDown, Search, FileText, Building2, Package, 
 import { NotificationPanel } from '@/components/notifications/NotificationPanel';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
+import { confirmLeaveIfUnsaved } from '@/lib/unsaved-changes';
 
 interface SearchResult {
   id: string;
@@ -157,12 +158,14 @@ export function Header({ user, notificationCount: initialCount = 0 }: HeaderProp
   };
 
   const handleResultClick = (href: string) => {
+    if (!confirmLeaveIfUnsaved()) return;
     setShowSearchResults(false);
     setSearchQuery('');
     router.push(href);
   };
 
   const handleLogout = async () => {
+    if (!confirmLeaveIfUnsaved()) return;
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
     router.refresh();

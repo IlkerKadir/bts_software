@@ -553,7 +553,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         quoteId,
         userId: user.id,
         action: 'UPDATE',
-        changes: { itemsUpdated: updatedCount, itemsDeleted: deletedCount },
+        changes: {
+          itemsUpdated: updatedCount,
+          ...(deletedCount > 0 ? { itemsDeleted: deletedCount } : {}),
+        },
       },
     });
 
