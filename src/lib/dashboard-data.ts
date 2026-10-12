@@ -11,7 +11,10 @@ import {
   familyDecisions,
   monthlyWonEur,
   monthlyWinRate,
-  sentThisMonth,
+  sentInPeriod,
+  wonInPeriod,
+  SUMMARY_PERIOD_MONTHS,
+  type SummaryPeriod,
 } from '@/lib/dashboard-metrics';
 
 interface DashboardUser {
@@ -85,65 +88,83 @@ async function loadDashQuotes(user: DashboardUser, now: Date): Promise<DashQuote
   }));
 }
 
-export interface DashboardProfitData {
+export interface DashboardSummaryData {
+  period: SummaryPeriod;
+  /** Activity: quotes SENT in the period (one per revision family). */
   sentCount: number;
-  totalRevenue: number;
-  totalProfit: number;
-  avgMargin: number;
-  /** Share (0–100) of this month's sent revenue whose cost is unknown —
-   *  excluded from profit/margin and shown as a note. */
+  sentAmount: number;
+  /** Quotes WON in the period (by win date, one per revision family). */
+  wonCount: number;
+  wonAmount: number;
+  /** Realised profit of the won quotes (rows without a known cost excluded). */
+  wonProfit: number;
+  wonMargin: number;
+  /** Share (0–100) of the won revenue whose cost is unknown. */
   uncostedPct: number;
-  /** Sent quotes counted but left out of the amounts (no known EUR rate). */
+  /** Quotes counted but left out of the amounts (no known EUR rate). */
   noRateCount: number;
 }
 
+const PROFIT_ITEM_SELECT = {
+  id: true,
+  currency: true,
+  exchangeRate: true,
+  protectionPct: true,
+  items: {
+    orderBy: { sortOrder: 'asc' as const },
+    select: {
+      id: true, totalPrice: true, costPrice: true, ekMaliyetDelta: true, listPrice: true,
+      quantity: true, itemType: true, parentItemId: true, priceLabel: true, currency: true,
+      sectionDiscountPct: true,
+    },
+  },
+} as const;
+
 /**
- * "Kar Özeti (Bu Ay)": quotes SENT this month (send date from history, one
- * per revision family), amounts in EUR, profit via the shared
- * computeQuoteProfit; rows without a known cost are left out of the
- * margin instead of counting as 100% profit.
+ * Dashboard summary for a period (client 10.2026): the profit cards are
+ * based on quotes WON in the period (realised, by win date); quotes SENT
+ * in the period are shown as an activity figure. Amounts in EUR, one per
+ * revision family; rows without a known cost are left out of profit/margin
+ * instead of counting as 100% profit.
  */
-export async function getDashboardProfitSummary(user: DashboardUser): Promise<DashboardProfitData> {
+export async function getDashboardSummary(
+  user: DashboardUser,
+  period: SummaryPeriod = 'month',
+): Promise<DashboardSummaryData> {
   const now = new Date();
   const [quotes, eurRate] = await Promise.all([loadDashQuotes(user, now), loadEurRateLookup()]);
-  const sent = sentThisMonth(quotes, istanbulMonthKey(now));
+  const monthKeys = new Set(lastMonths(now, SUMMARY_PERIOD_MONTHS[period]).map((m) => m.key));
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  // A quote sent AND won in the period without a known rate counts once.
+  const noRateIds = new Set<string>();
 
-  const itemRows = sent.length
-    ? await db.quote.findMany({
-        where: { id: { in: sent.map((s) => s.quote.id) } },
-        select: {
-          id: true,
-          currency: true,
-          exchangeRate: true,
-          protectionPct: true,
-          items: {
-            orderBy: { sortOrder: 'asc' },
-            select: {
-              id: true, totalPrice: true, costPrice: true, ekMaliyetDelta: true, listPrice: true,
-              quantity: true, itemType: true, parentItemId: true, priceLabel: true, currency: true,
-              sectionDiscountPct: true,
-            },
-          },
-        },
-      })
+  // Activity: sent
+  const sent = sentInPeriod(quotes, monthKeys);
+  let sentAmount = 0;
+  for (const { quote, at } of sent) {
+    const eur = toEur(quote.grandTotal, quote.currency, quote.rateSnapshot, at, eurRate);
+    if (eur == null) noRateIds.add(quote.id);
+    else sentAmount += eur;
+  }
+
+  // Realised: won
+  const won = wonInPeriod(familyDecisions(quotes), monthKeys);
+  const itemRows = won.length
+    ? await db.quote.findMany({ where: { id: { in: won.map((w) => w.quote.id) } }, select: PROFIT_ITEM_SELECT })
     : [];
   const byId = new Map(itemRows.map((r) => [r.id, r]));
 
-  let revenueEur = 0;
+  let wonAmount = 0;
   let costedRevenueEur = 0;
   let profitEur = 0;
   let uncostedEur = 0;
-  let noRateCount = 0;
-
-  for (const { quote, at } of sent) {
+  for (const { quote, at } of won) {
     const rate = toEur(1, quote.currency, quote.rateSnapshot, at, eurRate);
     if (rate == null) {
-      // Counted (a count needs no rate) but left out of the amounts rather
-      // than added raw as if it were EUR.
-      noRateCount++;
+      noRateIds.add(quote.id);
       continue;
     }
-    revenueEur += quote.grandTotal * rate;
+    wonAmount += quote.grandTotal * rate;
     const full = byId.get(quote.id);
     if (!full) continue;
     const p = computeQuoteProfit(full);
@@ -153,14 +174,16 @@ export async function getDashboardProfitSummary(user: DashboardUser): Promise<Da
     uncostedEur += p.uncostedRevenue * rate;
   }
 
-  const round2 = (v: number) => Math.round(v * 100) / 100;
   return {
+    period,
     sentCount: sent.length,
-    noRateCount,
-    totalRevenue: round2(revenueEur),
-    totalProfit: round2(profitEur),
-    avgMargin: costedRevenueEur > 0 ? round2((profitEur / costedRevenueEur) * 100) : 0,
-    uncostedPct: revenueEur > 0 ? round2(Math.min(100, (uncostedEur / revenueEur) * 100)) : 0,
+    sentAmount: round2(sentAmount),
+    wonCount: won.length,
+    wonAmount: round2(wonAmount),
+    wonProfit: round2(profitEur),
+    wonMargin: costedRevenueEur > 0 ? round2((profitEur / costedRevenueEur) * 100) : 0,
+    uncostedPct: wonAmount > 0 ? round2(Math.min(100, (uncostedEur / wonAmount) * 100)) : 0,
+    noRateCount: noRateIds.size,
   };
 }
 

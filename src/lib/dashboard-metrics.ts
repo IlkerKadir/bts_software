@@ -211,33 +211,51 @@ export function monthlyWinRate(decisions: FamilyDecision[], months: { key: strin
   return months.map((_, i) => (won[i] + lost[i] > 0 ? Math.round((won[i] / (won[i] + lost[i])) * 1000) / 10 : null));
 }
 
-/** When the quote was sent within the month (last GONDERILDI change in it), or null. */
-function sentInMonth(q: DashQuote, monthKey: string): Date | null {
+/** Last GONDERILDI change of the quote that falls in one of `monthKeys`, or null. */
+function sentInMonths(q: DashQuote, monthKeys: ReadonlySet<string>): Date | null {
   let last: Date | null = null;
   for (const e of q.events) {
-    if (e.to === 'GONDERILDI' && istanbulMonthKey(e.at) === monthKey && (!last || e.at > last)) last = e.at;
+    if (e.to === 'GONDERILDI' && monthKeys.has(istanbulMonthKey(e.at)) && (!last || e.at > last)) last = e.at;
   }
   // Legacy rows without any GONDERILDI history but currently GONDERILDI.
   if (!last && q.status === 'GONDERILDI' && !q.events.some((e) => e.to === 'GONDERILDI')) {
-    if (istanbulMonthKey(q.updatedAt) === monthKey) last = q.updatedAt;
+    if (monthKeys.has(istanbulMonthKey(q.updatedAt))) last = q.updatedAt;
   }
   return last;
 }
 
 /**
- * Quotes sent in the month, one per revision family (the latest sent
- * version) — a quote revised and re-sent counts once, at its final value.
- * Independent of the CURRENT status (a sent quote already won still counts).
+ * Quotes sent in the given months, one per revision family (the latest
+ * sent version) — a quote revised and re-sent counts once, at its final
+ * value. Independent of the CURRENT status (a sent quote already won still
+ * counts).
  */
-export function sentThisMonth(quotes: DashQuote[], monthKey: string): { quote: DashQuote; at: Date }[] {
+export function sentInPeriod(quotes: DashQuote[], monthKeys: ReadonlySet<string>): { quote: DashQuote; at: Date }[] {
   const out: { quote: DashQuote; at: Date }[] = [];
   for (const members of groupFamilies(quotes).values()) {
     let best: { quote: DashQuote; at: Date } | null = null;
     for (const m of members) {
-      const at = sentInMonth(m, monthKey);
+      const at = sentInMonths(m, monthKeys);
       if (at && (!best || at > best.at)) best = { quote: m, at };
     }
     if (best) out.push(best);
   }
   return out;
+}
+
+/** Single-month convenience wrapper. */
+export function sentThisMonth(quotes: DashQuote[], monthKey: string): { quote: DashQuote; at: Date }[] {
+  return sentInPeriod(quotes, new Set([monthKey]));
+}
+
+/** Families WON in the given months (one per family, at the win date). */
+export function wonInPeriod(decisions: FamilyDecision[], monthKeys: ReadonlySet<string>): FamilyDecision[] {
+  return decisions.filter((d) => d.kind === 'won' && monthKeys.has(istanbulMonthKey(d.at)));
+}
+
+export type SummaryPeriod = 'month' | '3m' | '6m' | '12m';
+export const SUMMARY_PERIOD_MONTHS: Record<SummaryPeriod, number> = { month: 1, '3m': 3, '6m': 6, '12m': 12 };
+export function isSummaryPeriod(v: unknown): v is SummaryPeriod {
+  // own keys only — `in` would accept "toString", "constructor", …
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(SUMMARY_PERIOD_MONTHS, v);
 }

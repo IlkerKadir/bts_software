@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   istanbulMonthKey, lastMonths, toEur, makeEurRateLookup, familyKey,
-  familyDecisions, monthlyWonEur, monthlyWinRate, sentThisMonth, type DashQuote,
+  familyDecisions, monthlyWonEur, monthlyWinRate, sentThisMonth, sentInPeriod, wonInPeriod,
+  isSummaryPeriod, type DashQuote,
 } from './dashboard-metrics';
 
 const q = (over: Partial<DashQuote> & { id: string }): DashQuote => ({
@@ -100,5 +101,23 @@ describe('dashboard-metrics', () => {
     ];
     const sent = sentThisMonth(quotes, '2026-10');
     expect(sent.map((s) => s.quote.id).sort()).toEqual(['S', 'T.2']);
+  });
+
+  it('period helpers: sent and won over several months, one per family', () => {
+    const quotes = [
+      q({ id: 'A', status: 'KAZANILDI', events: [
+        { to: 'GONDERILDI', at: new Date('2026-08-10T10:00:00Z') },
+        { to: 'KAZANILDI', at: new Date('2026-09-05T10:00:00Z') },
+      ] }),
+      q({ id: 'B', status: 'GONDERILDI', events: [{ to: 'GONDERILDI', at: new Date('2026-10-02T10:00:00Z') }] }),
+      q({ id: 'C', status: 'KAZANILDI', events: [{ to: 'KAZANILDI', at: new Date('2026-05-01T10:00:00Z') }] }),
+    ];
+    const last3 = new Set(lastMonths(new Date('2026-10-10T12:00:00Z'), 3).map((m) => m.key)); // Aug–Oct
+    expect(sentInPeriod(quotes, last3).map((s) => s.quote.id).sort()).toEqual(['A', 'B']);
+    expect(wonInPeriod(familyDecisions(quotes), last3).map((d) => d.quote.id)).toEqual(['A']); // C won in May
+    expect(isSummaryPeriod('6m')).toBe(true);
+    expect(isSummaryPeriod('2y')).toBe(false);
+    expect(isSummaryPeriod('toString')).toBe(false);
+    expect(isSummaryPeriod('constructor')).toBe(false);
   });
 });

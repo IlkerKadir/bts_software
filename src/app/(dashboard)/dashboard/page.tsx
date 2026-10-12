@@ -9,7 +9,7 @@ import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { UpcomingReminders } from '@/components/dashboard/UpcomingReminders';
 import { quoteVisibilityWhere } from '@/lib/quote-visibility';
 import { Prisma } from '@prisma/client';
-import { getDashboardProfitSummary } from '@/lib/dashboard-data';
+import { getDashboardSummary } from '@/lib/dashboard-data';
 
 interface DashboardUser {
   id: string;
@@ -47,11 +47,11 @@ async function getPipelineCounts(user: DashboardUser) {
   };
 }
 
-// Kar Özeti (Bu Ay) — sent-this-month quotes in EUR with shared profit
-// math (src/lib/dashboard-data.ts). The previous inline copy summed mixed
-// currencies as euros and counted uncosted rows as 100% margin.
+// Kâr Özeti (default period "Bu Ay"; the card switches period client-side
+// via /api/dashboard/summary): realised profit of quotes WON in the period,
+// plus quotes SENT as an activity figure — src/lib/dashboard-data.ts.
 async function getProfitSummary(user: DashboardUser) {
-  return getDashboardProfitSummary(user);
+  return getDashboardSummary(user, 'month');
 }
 
 export default async function DashboardPage() {
@@ -92,7 +92,7 @@ export default async function DashboardPage() {
         (profitData ? (
           <ProfitSummary data={profitData} />
         ) : (
-          <p className="text-sm text-primary-500">Kar özeti şu anda hesaplanamadı. Sayfayı yenilemeyi deneyin.</p>
+          <p className="text-sm text-primary-500">Kâr özeti şu anda hesaplanamadı. Sayfayı yenilemeyi deneyin.</p>
         ))}
 
       {/* Charts - conditional on canViewCosts */}
