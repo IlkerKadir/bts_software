@@ -18,7 +18,7 @@ import { roundUnitPrice, computeRowTotal, round2 } from '@/lib/quote-rounding';
 import { buildRateMatrix, maxRateDriftPct, type TcmbDirectRate } from '@/lib/services/tcmb-service';
 import { reconvertEkMaliyetTotal, type EkMaliyetEntryLike } from '@/lib/ek-maliyet-reconvert';
 import { isRateSensitiveRow } from '@/lib/quote-item-classification';
-import { insertItemBefore } from '@/lib/quote-item-order';
+import { insertItemBefore, nextSortOrder, renumberByDisplayOrder } from '@/lib/quote-item-order';
 import { isTempId, remapTempIds, scrubIds, computeDeletedIds } from '@/lib/quote-editor-history';
 import { RateDriftBanner } from '@/components/quotes/RateDriftBanner';
 import { RateUpdateDialog } from '@/components/quotes/RateUpdateDialog';
@@ -235,9 +235,15 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   //    so undoing a delete or an add never leaves state and DB apart.
   const tempIdMapRef = useRef<Map<string, string>>(new Map());
   const knownServerIdsRef = useRef<Set<string>>(new Set());
+  // Rows an order persist skipped because their POST was still in flight;
+  // once one resolves, the order is persisted again (persistItemsOrder is
+  // defined further down, hence the ref).
+  const skippedTempIdsRef = useRef<Set<string>>(new Set());
+  const persistOrderRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const noteResolvedId = useCallback((tempId: string, serverId: string) => {
     tempIdMapRef.current.set(tempId, serverId);
     knownServerIdsRef.current.add(serverId);
+    if (skippedTempIdsRef.current.delete(tempId)) void persistOrderRef.current();
     // The user removed the row (delete / undo) before its POST came back:
     // it now exists on the server only, so the editor has an unsaved delete.
     if (!itemsRef.current.some((it) => it.id === tempId)) {
@@ -355,6 +361,11 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // cleared. Null means "nothing to persist for rateSnapshot".
   const pendingRateSnapshotRef = useRef<Record<string, Record<string, number>> | null>(null);
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Leaving the editor discards unsaved changes, including a drag's pending
+  // order persist.
+  useEffect(() => () => {
+    if (reorderTimerRef.current) clearTimeout(reorderTimerRef.current);
+  }, []);
   const commercialTermsRef = useRef<CommercialTermsSectionHandle>(null);
 
   // Guard to prevent infinite re-render loop in the auto-recalculate effect
@@ -714,14 +725,20 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     const versionAtStart = itemsVersionRef.current;
     setError(null);
     let editedDuringSave = false;
-    // A pending reorder persist would later overwrite this save with the
-    // array it captured — the save already sends the current order.
+    // The save sends the current order itself; a pending reorder persist
+    // would only repeat it.
     if (reorderTimerRef.current) {
       clearTimeout(reorderTimerRef.current);
       reorderTimerRef.current = null;
     }
 
     try {
+      // Queued order persists (copy, "Üstüne Ekle") land first — also when
+      // the items are clean, so export / preview read the new order.
+      if (persistPromisesRef.current.size > 0) {
+        await Promise.all(Array.from(persistPromisesRef.current)).catch(() => {});
+      }
+
       // Pre-flight: catch rows the server would reject BEFORE sending,
       // with a message that NAMES the row. Otherwise one bad cell
       // anywhere fails the whole bulk save with an opaque error and the
@@ -855,6 +872,12 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         };
 
         const presentIds = new Set(items.map((it) => it.id));
+        // Store the order the user sees: rows numbered 1..n in display order.
+        // Heals ties/overlaps left by older inserts, which otherwise came
+        // back in an arbitrary order on reload (client 13.10).
+        const displaySortOrder = new Map(
+          renumberByDisplayOrder(items).map((it) => [it.id, it.sortOrder])
+        );
         const bulkItems = items
           .filter((item) => !item.parentItemId || presentIds.has(item.parentItemId))
           .map((item) => {
@@ -862,7 +885,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           return {
             id: item.id,
             itemType: item.itemType,
-            sortOrder: item.sortOrder,
+            sortOrder: displaySortOrder.get(item.id) ?? item.sortOrder,
             productId: item.productId,
             parentItemId: item.parentItemId || null,
             code: item.code || '',
@@ -1217,49 +1240,107 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     []
   );
 
+  // Persist the row ORDER only (drag-reorder, copy, "Üstüne Ekle") via
+  // PATCH /items/order — the bulk PUT it used to send also wrote every row's
+  // values: unsaved edits, and prices without ek maliyet (client 13.10).
+  // Each run numbers the LATEST rows in display order, so a later run never
+  // restores an older order; runs go out one at a time. The same numbers are
+  // mirrored into local state (nextSortOrder relies on them). Rows still in
+  // flight keep temp ids and are skipped — their own insert persists again
+  // once resolved. On failure the editor stays dirty so Kaydet writes it.
+  const persistChainRef = useRef<Promise<void>>(Promise.resolve());
+  const persistItemsOrder = useCallback((): Promise<void> => {
+    const run = async () => {
+      const numbered = renumberByDisplayOrder(itemsRef.current);
+      const resolvedIds = tempIdMapRef.current;
+      const numberOf = new Map<string, number>();
+      const order: { id: string; sortOrder: number }[] = [];
+      for (const it of numbered) {
+        numberOf.set(it.id, it.sortOrder);
+        const id = resolvedIds.get(it.id) ?? it.id;
+        numberOf.set(id, it.sortOrder);
+        if (isTempId(id)) skippedTempIdsRef.current.add(id);
+        else order.push({ id, sortOrder: it.sortOrder });
+      }
+      if (order.length === 0) return;
+      setItemsRaw((prev) => {
+        let changed = false;
+        const next = prev.map((it) => {
+          const n = numberOf.get(it.id);
+          if (n == null || n === it.sortOrder) return it;
+          changed = true;
+          return { ...it, sortOrder: n };
+        });
+        return changed ? next : prev;
+      });
+      try {
+        const res = await fetch(`/api/quotes/${quoteId}/items/order`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order }),
+          // A hung request must not block later persists and Kaydet.
+          signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(15000) : undefined,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        console.error('Persist items order failed:', err);
+        itemsDirtyRef.current = true;
+        setHasChanges(true);
+      }
+    };
+    const p: Promise<void> = persistChainRef.current.then(run, run).finally(() => {
+      persistPromisesRef.current.delete(p);
+    });
+    persistChainRef.current = p;
+    persistPromisesRef.current.add(p);
+    return p;
+  }, [quoteId]);
+  persistOrderRef.current = persistItemsOrder;
+
   const handleItemDuplicate = useCallback(
     async (itemId: string) => {
       if (blockIfSaving()) return;
-      const original = items.find((item) => item.id === itemId);
+      // Latest rendered rows (not this callback's closure: the bulk toolbar
+      // calls this repeatedly and must see the previous copies).
+      const current = itemsRef.current;
+      const original = current.find((item) => item.id === itemId);
       if (!original) return;
 
       // Find sub-rows that belong to this item
-      const originalSubRows = items.filter((item) => item.parentItemId === itemId);
+      const originalSubRows = current.filter((item) => item.parentItemId === itemId);
 
       const tempId = generateId();
-      const duplicated: QuoteItemData = {
-        ...original,
-        id: tempId,
-        sortOrder: original.sortOrder + 1,
-      };
+      const duplicated: QuoteItemData = { ...original, id: tempId };
 
       // Create temp sub-rows with temp IDs pointing to the new parent temp ID
       const tempSubRows = originalSubRows.map((sub) => ({
         ...sub,
         id: generateId(),
         parentItemId: tempId,
-        sortOrder: sub.sortOrder + 1,
       }));
 
-      // Insert after original (and its sub-rows) in local state
-      setItems((prev) => {
-        // Find the last index of the original item or its sub-rows
-        let insertAfterIdx = prev.findIndex((item) => item.id === itemId);
-        for (let i = insertAfterIdx + 1; i < prev.length; i++) {
-          if (prev[i].parentItemId === itemId) {
+      // Insert after the original (and its sub-rows) and number every row in
+      // display order. The copy is POSTed with this number and the whole
+      // order is persisted below — it used to be POSTed as "original + 1",
+      // colliding with the next row, while the renumbering stayed local, so
+      // the copy jumped on reload (client 13.10).
+      const insertCopy = (list: QuoteItemData[]): QuoteItemData[] => {
+        let insertAfterIdx = list.findIndex((item) => item.id === itemId);
+        if (insertAfterIdx < 0) return list;
+        for (let i = insertAfterIdx + 1; i < list.length; i++) {
+          if (list[i].parentItemId === itemId) {
             insertAfterIdx = i;
           } else {
             break;
           }
         }
-        const next = [...prev];
+        const next = [...list];
         next.splice(insertAfterIdx + 1, 0, duplicated, ...tempSubRows);
-        // Reassign sort orders
-        return next.map((item, idx) => ({
-          ...item,
-          sortOrder: idx + 1,
-        }));
-      });
+        return renumberByDisplayOrder(next);
+      };
+      const inserted = insertCopy(current);
+      const sortOf = new Map(inserted.map((item) => [item.id, item.sortOrder]));
+      setItems((prev) => insertCopy(prev));
 
       // POST parent to API
       try {
@@ -1282,7 +1363,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             vatRate: duplicated.vatRate,
             notes: duplicated.notes || undefined,
             priceLabel: duplicated.priceLabel || undefined,
-            sortOrder: duplicated.sortOrder,
+            sortOrder: sortOf.get(tempId),
           }),
         });
 
@@ -1294,7 +1375,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           // ID resolution isn't a user action.
           setItemsRaw((prev) =>
             prev.map((item) => {
-              if (item.id === tempId) return mapApiItemToLocal(data.item);
+              if (item.id === tempId) return { ...mapApiItemToLocal(data.item), sortOrder: item.sortOrder };
               // Children still waiting for their own POST must point at the
               // parent's server id, or they're orphaned (invisible) meanwhile.
               if (item.parentItemId === tempId) return { ...item, parentItemId: newParentId };
@@ -1324,7 +1405,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
                     discountPct: tempSub.discountPct,
                     vatRate: tempSub.vatRate,
                     notes: tempSub.notes || undefined,
-                    sortOrder: tempSub.sortOrder,
+                    sortOrder: sortOf.get(tempSub.id),
                   }),
                 })
                   .then(async (subRes) => ({
@@ -1356,7 +1437,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
             if (replacements.size > 0) {
               setItemsRaw((prev) =>
-                prev.map((item) => replacements.get(item.id) ?? item)
+                prev.map((item) => {
+                  const r = replacements.get(item.id);
+                  return r ? { ...r, sortOrder: item.sortOrder } : item;
+                })
               );
             }
 
@@ -1370,6 +1454,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
               });
             }
           }
+
+          // The POSTs saved only the new rows; persist the renumbered order
+          // of every row (same pattern as "Üstüne Ekle").
+          await persistItemsOrder();
         } else {
           rollbackFailedInsert([tempId, ...tempSubRows.map((s) => s.id)], {
             message: 'Satır kopyalanamadı — lütfen tekrar deneyin.',
@@ -1382,67 +1470,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         });
       }
     },
-    [items, quoteId, rollbackFailedInsert, noteResolvedId, blockIfSaving]
-  );
-
-  // Build the bulk PUT payload for /items. Used by both drag-reorder and
-  // positional insert so persisted `sortOrder` values stay consistent.
-  // NOTE: priceLabel MUST be included — the PUT writes `priceLabel || null`,
-  // so omitting it wipes "dahildir"/"tarafınızca sağlanacaktır" labels.
-  // (Other fields omitted here use an undefined-guard in the route.)
-  const buildBulkItemsPayload = useCallback((flatItems: QuoteItemData[]) => {
-    return flatItems.map((item) => ({
-      id: item.id,
-      itemType: item.itemType,
-      sortOrder: item.sortOrder,
-      productId: item.productId,
-      parentItemId: item.parentItemId || null,
-      code: item.code || '',
-      brand: item.brand || '',
-      model: item.model || '',
-      description: item.description,
-      quantity: item.quantity,
-      unit: item.unit,
-      listPrice: item.listPrice,
-      katsayi: item.katsayi,
-      unitPrice: item.unitPrice,
-      totalPrice: item.totalPrice,
-      isManualPrice: item.isManualPrice || false,
-      discountPct: item.discountPct,
-      vatRate: item.vatRate,
-      costPrice: item.costPrice ?? null,
-      notes: item.notes || '',
-      priceLabel: item.priceLabel ?? null,
-    }));
-  }, []);
-
-  // Persist the current ordering of `flatItems` immediately (bulk PUT).
-  const persistItemsOrder = useCallback(
-    (flatItems: QuoteItemData[]): Promise<void> => {
-      const run = async () => {
-      try {
-        // Rows still in flight (temp ids) aren't on the server yet. Never
-        // clear itemsDirtyRef here: `flatItems` is a captured (possibly
-        // stale) array, so edits made since must still go out on Save.
-        const res = await fetch(`/api/quotes/${quoteId}/items`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: buildBulkItemsPayload(flatItems.filter((it) => !isTempId(it.id))),
-          }),
-        });
-        if (!res.ok) console.error('Persist items order failed:', res.status);
-      } catch (err) {
-        console.error('Persist items order error:', err);
-      }
-      };
-      const p: Promise<void> = run().finally(() => {
-        persistPromisesRef.current.delete(p);
-      });
-      persistPromisesRef.current.add(p);
-      return p;
-    },
-    [quoteId, buildBulkItemsPayload]
+    [quoteId, rollbackFailedInsert, noteResolvedId, blockIfSaving, persistItemsOrder]
   );
 
   const handleReorder = useCallback(
@@ -1459,7 +1487,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           }
         }
       }
-      setItems(flatItems);
+      // Number rows in display order (the table renumbers top-level rows
+      // only, so children kept old numbers overlapping theirs).
+      const renumbered = renumberByDisplayOrder(flatItems);
+      setItems(renumbered);
       itemsDirtyRef.current = true;
       setHasChanges(true);
 
@@ -1468,7 +1499,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
         clearTimeout(reorderTimerRef.current);
       }
       reorderTimerRef.current = setTimeout(() => {
-        void persistItemsOrder(flatItems);
+        void persistItemsOrder();
       }, 1000);
     },
     [persistItemsOrder]
@@ -1512,7 +1543,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       // appending. Only for top-level rows (never while adding a sub-item).
       const doInsertAbove = !isSubItem && !!insertBeforeId;
       const insertIdx = doInsertAbove ? items.findIndex((i) => i.id === insertBeforeId) : -1;
-      const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : items.length + 1;
+      const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : nextSortOrder(items);
 
       // When the new row is a sub-item of a SET with a per-SET
       // currency override, prices must be converted into the SET's
@@ -1678,10 +1709,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
             // One-shot: clear the target so the next catalog add appends
             // normally instead of stacking above the same row.
             setInsertBeforeId(null);
-            const persisted = insertedList.map((item) =>
-              item.id === tempId ? serverItem : item
-            );
-            await persistItemsOrder(persisted);
+            await persistItemsOrder();
           }
         } else {
           rollbackFailedInsert(tempId, { message: 'Ürün eklenemedi — lütfen tekrar deneyin.' });
@@ -1904,7 +1932,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     if (blockIfSaving()) return;
     const tempId = generateId();
     const insertIdx = beforeId ? items.findIndex((i) => i.id === beforeId) : -1;
-    const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : items.length + 1;
+    const newSortOrder = insertIdx >= 0 ? insertIdx + 1 : nextSortOrder(items);
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'HEADER',
@@ -1955,10 +1983,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           })
         );
         if (insertedList) {
-          const persisted = insertedList.map((item) =>
-            item.id === tempId ? { ...item, ...serverItem, description: item.description } : item
-          );
-          await persistItemsOrder(persisted);
+          await persistItemsOrder();
         }
       } else {
         rollbackFailedInsert(tempId);
@@ -1977,7 +2002,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'NOTE',
-      sortOrder: items.length + 1,
+      sortOrder: nextSortOrder(items),
       description: 'Not...',
       quantity: 0,
       unit: 'Adet',
@@ -2026,7 +2051,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add note error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
+  }, [quoteId, items, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add custom item ──────────────────────────────────────────────────────
 
@@ -2036,7 +2061,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'CUSTOM',
-      sortOrder: items.length + 1,
+      sortOrder: nextSortOrder(items),
       description: 'Serbest Kalem',
       quantity: 1,
       unit: 'Adet',
@@ -2088,24 +2113,20 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add custom item error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, defaultVatRate, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
+  }, [quoteId, items, defaultVatRate, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add custom sub-item to a SET ─────────────────────────────────────────
 
   const handleAddCustomSubItem = useCallback(async (parentId: string) => {
     if (blockIfSaving()) return;
     const tempId = generateId();
-    // Insert after the last child of the parent SET
-    const parentIdx = items.findIndex((i) => i.id === parentId);
-    let insertIdx = parentIdx + 1;
-    while (insertIdx < items.length && items[insertIdx].parentItemId === parentId) {
-      insertIdx++;
-    }
-
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'CUSTOM',
-      sortOrder: insertIdx,
+      // Last child of the SET: appended to the rows (children render under
+      // their parent in row order) and numbered after every row, so it shows
+      // and reloads in the same place (client 13.10).
+      sortOrder: nextSortOrder(items),
       description: 'Serbest Kalem',
       quantity: 1,
       unit: 'Adet',
@@ -2119,11 +2140,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       parentItemId: parentId,
     };
 
-    setItems((prev) => {
-      const copy = [...prev];
-      copy.splice(insertIdx, 0, newItem);
-      return copy;
-    });
+    setItems((prev) => [...prev, newItem]);
 
     try {
       const res = await fetch(`/api/quotes/${quoteId}/items`, {
@@ -2140,7 +2157,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           totalPrice: 0,
           vatRate: defaultVatRate,
           discountPct: 0,
-          sortOrder: insertIdx,
+          sortOrder: newItem.sortOrder,
           isManualPrice: false,
           parentItemId: parentId,
         }),
@@ -2173,7 +2190,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'SUBTOTAL',
-      sortOrder: items.length + 1,
+      sortOrder: nextSortOrder(items),
       description: 'Ara Toplam',
       quantity: 0,
       unit: 'Adet',
@@ -2221,7 +2238,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
       console.error('Add subtotal error:', err);
       rollbackFailedInsert(tempId);
     }
-  }, [quoteId, items.length, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
+  }, [quoteId, items, rollbackFailedInsert, noteResolvedId, blockIfSaving]);
 
   // ── Add grand total row ────────────────────────────────────────────────
   // A single "GENEL TOPLAM" item appended at the end of the quote. Renders
@@ -2233,7 +2250,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     if (blockIfSaving()) return;
     if (items.some((i) => i.itemType === 'GRAND_TOTAL')) return;
     const tempId = generateId();
-    const sortOrder = items.length + 1;
+    const sortOrder = nextSortOrder(items);
     const newItem: QuoteItemData = {
       id: tempId,
       itemType: 'GRAND_TOTAL',
@@ -2369,6 +2386,18 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
 
   const handleSubmitForApproval = useCallback(async () => {
     if (!quote || hasChanges) return;
+    if (itemsRef.current.some((it) => isTempId(it.id))) {
+      setError('Satırlar hâlâ kaydediliyor — birkaç saniye sonra tekrar deneyin.');
+      return;
+    }
+    // A queued order persist must land while the quote is still editable.
+    if (persistPromisesRef.current.size > 0) {
+      await Promise.all(Array.from(persistPromisesRef.current)).catch(() => {});
+      if (itemsDirtyRef.current) {
+        setError('Satır sırası kaydedilemedi — lütfen önce Kaydet\'e basın.');
+        return;
+      }
+    }
 
     try {
       const res = await fetch(`/api/quotes/${quoteId}/status`, {
