@@ -166,6 +166,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             ? sourceQuote.projectId
             : overrideProjectId,
           subject: sourceQuote.subject,
+          // Sistem Başlık (second title line on the PDF) — revisions already copy it.
+          description: sourceQuote.description,
           currency: sourceQuote.currency,
           exchangeRate: resolvedExchangeRate,
           rateSnapshot,

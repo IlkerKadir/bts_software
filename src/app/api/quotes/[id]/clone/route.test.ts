@@ -172,6 +172,31 @@ describe('POST /api/quotes/[id]/clone', () => {
     expect(labels).toEqual([['p', 'dahildir'], ['c', 'tarafınızca sağlanacaktır']]);
   });
 
+  it('copies the Sistem Başlık (description) with the Teklif Adı', async () => {
+    vi.mocked(db.quote.findUnique).mockResolvedValue({
+      ...mockSourceQuote,
+      subject: 'Teklif Adı',
+      description: 'ADRESLİ YANGIN ALGILAMA SİSTEMİ',
+    } as never);
+    const quoteCreate = vi.fn().mockResolvedValue({ ...mockSourceQuote, id: 'new1', quoteNumber: 'X1' });
+    vi.mocked(db.$transaction).mockImplementation((async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        quote: { findFirst: vi.fn().mockResolvedValue(null), create: quoteCreate },
+        quoteItem: { create: vi.fn() },
+        quoteCommercialTerm: { createMany: vi.fn() },
+        quoteEkMaliyet: { createMany: vi.fn() },
+        quoteHistory: { create: vi.fn() },
+      })) as never
+    );
+
+    const res = await POST(new NextRequest('http://localhost/api/quotes/source1/clone', { method: 'POST' }), makeParams());
+    expect(res.status).toBe(201);
+    expect(quoteCreate.mock.calls[0][0].data).toMatchObject({
+      subject: 'Teklif Adı',
+      description: 'ADRESLİ YANGIN ALGILAMA SİSTEMİ',
+    });
+  });
+
   it('returns 404 if source quote not found', async () => {
     vi.mocked(db.quote.findUnique).mockResolvedValue(null);
 
