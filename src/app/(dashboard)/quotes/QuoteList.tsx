@@ -37,6 +37,8 @@ interface Quote {
   company: { id: string; name: string };
   project?: { id: string; name: string } | null;
   subject?: string | null;
+  /** "Sistem Başlık" in the editor (PDF second title line). */
+  description?: string | null;
   currency: string;
   grandTotal: number | { toNumber: () => number };
   profitMargin?: number | null;
@@ -363,7 +365,7 @@ export function QuoteList({ userId, canApprove, canViewCosts, canManageUsers }: 
     );
   };
 
-  const colCount = canViewCosts ? 11 : 10;
+  const colCount = canViewCosts ? 12 : 11;
 
   const toggleQuoteSelection = (quoteId: string) => {
     setSelectedQuoteIds((prev) => {
@@ -428,7 +430,7 @@ export function QuoteList({ userId, canApprove, canViewCosts, canManageUsers }: 
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-400" />
               <input
                 type="text"
-                placeholder="Teklif no, firma veya proje ara..."
+                placeholder="Teklif no, firma, proje veya başlık ara..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
@@ -566,6 +568,7 @@ export function QuoteList({ userId, canApprove, canViewCosts, canManageUsers }: 
                 </th>
                 <th>Proje</th>
                 <th>Teklif Adı</th>
+                <th>Sistem Başlık</th>
                 <th
                   className="text-right cursor-pointer select-none"
                   onClick={() => handleSort('grandTotal')}
@@ -901,6 +904,9 @@ function QuoteGroupRows({
       <td className="text-xs text-primary-600">
         {quote.subject || '-'}
       </td>
+      <td className="text-xs text-primary-600">
+        {quote.description || '-'}
+      </td>
       <td className="text-right text-xs tabular-nums font-medium">
         {formatCurrency(quote.grandTotal, quote.currency)}
       </td>
@@ -978,6 +984,9 @@ function QuoteGroupRows({
           {/* Firma — same as parent, show dash */}
           <td className="text-xs text-primary-400">—</td>
           {/* Proje — same as parent, show dash */}
+          <td className="text-xs text-primary-400">—</td>
+          {/* Teklif Adı + Sistem Başlık — same as parent, show dash */}
+          <td className="text-xs text-primary-400">—</td>
           <td className="text-xs text-primary-400">—</td>
           {/* Tutar */}
           <td className="text-right text-xs tabular-nums text-primary-500">

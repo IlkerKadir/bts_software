@@ -21,14 +21,25 @@ export function isTempId(id: string): boolean {
 
 /**
  * Rewrite temp ids (and children's parentItemId) to their resolved server
- * ids. Returns the SAME array when nothing changed.
+ * ids. Follows chains (a re-created row can be deleted and re-created
+ * again: original → s1 → temp → s2), so older undo steps always land on
+ * the current row. Returns the SAME array when nothing changed.
  */
 export function remapTempIds<T extends HistoryRow>(rows: T[], map: ReadonlyMap<string, string>): T[] {
   if (map.size === 0) return rows;
+  const resolve = (id: string): string | undefined => {
+    let cur = id;
+    for (let step = 0; step < 32; step++) {
+      const next = map.get(cur);
+      if (next === undefined || next === cur) break;
+      cur = next;
+    }
+    return cur === id ? undefined : cur;
+  };
   let changed = false;
   const next = rows.map((row) => {
-    const id = map.get(row.id);
-    const parent = row.parentItemId ? map.get(row.parentItemId) : undefined;
+    const id = resolve(row.id);
+    const parent = row.parentItemId ? resolve(row.parentItemId) : undefined;
     if (!id && !parent) return row;
     changed = true;
     return { ...row, ...(id ? { id } : {}), ...(parent ? { parentItemId: parent } : {}) };
@@ -56,4 +67,44 @@ export function scrubIds<T extends HistoryRow>(rows: T[], ids: ReadonlySet<strin
 export function computeDeletedIds(knownServerIds: ReadonlySet<string>, rows: HistoryRow[]): string[] {
   const present = new Set(rows.map((r) => r.id));
   return Array.from(knownServerIds).filter((id) => !present.has(id));
+}
+
+/**
+ * "Geri Al" across a save (client 06.11): rows of an undo snapshot that a
+ * save already deleted on the server (id neither temp nor known) get a new
+ * temp id, and their children are re-pointed to it, so they can be
+ * re-created like inserts. With `revivable`, only those ids come back —
+ * any other missing row (deleted by another session) is dropped together
+ * with its children. Returns the rows (the same array when nothing is
+ * missing) and new temp id → original id for every revived row.
+ */
+export function reviveGhostRows<T extends HistoryRow>(
+  rows: T[],
+  knownServerIds: ReadonlySet<string>,
+  newId: () => string,
+  revivable?: ReadonlySet<string>
+): { rows: T[]; revived: Map<string, string> } {
+  const missing = (row: T) => !isTempId(row.id) && !knownServerIds.has(row.id);
+  const dropped = new Set<string>();
+  for (const row of rows) {
+    if (missing(row) && revivable && !revivable.has(row.id)) dropped.add(row.id);
+  }
+  for (const row of rows) {
+    if (row.parentItemId && dropped.has(row.parentItemId)) dropped.add(row.id);
+  }
+  const tempOf = new Map<string, string>();
+  for (const row of rows) {
+    if (missing(row) && !dropped.has(row.id)) tempOf.set(row.id, newId());
+  }
+  const revived = new Map<string, string>();
+  if (tempOf.size === 0 && dropped.size === 0) return { rows, revived };
+  for (const [original, temp] of tempOf) revived.set(temp, original);
+  const next: T[] = [];
+  for (const row of rows) {
+    if (dropped.has(row.id)) continue;
+    const id = tempOf.get(row.id);
+    const parent = row.parentItemId ? tempOf.get(row.parentItemId) : undefined;
+    next.push(!id && !parent ? row : { ...row, ...(id ? { id } : {}), ...(parent ? { parentItemId: parent } : {}) });
+  }
+  return { rows: next, revived };
 }

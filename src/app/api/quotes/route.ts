@@ -48,6 +48,8 @@ export async function GET(request: NextRequest) {
         { company: { name: { contains: v, mode: 'insensitive' as const } } },
         { project: { name: { contains: v, mode: 'insensitive' as const } } },
         { subject: { contains: v, mode: 'insensitive' as const } },
+        // "Sistem Başlık" (client 06.11)
+        { description: { contains: v, mode: 'insensitive' as const } },
       ]);
     }
 

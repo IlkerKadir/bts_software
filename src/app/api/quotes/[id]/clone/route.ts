@@ -222,6 +222,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               isManualPrice: item.isManualPrice,
               costPrice: item.costPrice,
               ekMaliyetDelta: item.ekMaliyetDelta,
+              // "dahildir" / "tarafınızca sağlanacaktır" (client 06.11 — lost on copy)
+              priceLabel: item.priceLabel,
               serviceMeta: item.serviceMeta ?? undefined,
               currency: item.currency,
               sectionDiscountPct: item.sectionDiscountPct,
@@ -257,6 +259,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               isManualPrice: item.isManualPrice,
               costPrice: item.costPrice,
               ekMaliyetDelta: item.ekMaliyetDelta,
+              // "dahildir" / "tarafınızca sağlanacaktır" (client 06.11 — lost on copy)
+              priceLabel: item.priceLabel,
               serviceMeta: item.serviceMeta ?? undefined,
               currency: item.currency,
               sectionDiscountPct: item.sectionDiscountPct,

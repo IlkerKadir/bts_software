@@ -19,12 +19,15 @@ import { buildRateMatrix, maxRateDriftPct, type TcmbDirectRate } from '@/lib/ser
 import { reconvertEkMaliyetTotal, type EkMaliyetEntryLike } from '@/lib/ek-maliyet-reconvert';
 import { isRateSensitiveRow } from '@/lib/quote-item-classification';
 import { insertItemBefore, nextSortOrder, renumberByDisplayOrder } from '@/lib/quote-item-order';
-import { isTempId, remapTempIds, scrubIds, computeDeletedIds } from '@/lib/quote-editor-history';
+import { isTempId, remapTempIds, scrubIds, computeDeletedIds, reviveGhostRows } from '@/lib/quote-editor-history';
 import { RateDriftBanner } from '@/components/quotes/RateDriftBanner';
 import { RateUpdateDialog } from '@/components/quotes/RateUpdateDialog';
 import { LEAVE_CONFIRM_MESSAGE, setUnsavedChanges } from '@/lib/unsaved-changes';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** "Geri Al" steps kept per editor session (client 06.11: 30 → 50). */
+const UNDO_LIMIT = 50;
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -240,6 +243,14 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   // defined further down, hence the ref).
   const skippedTempIdsRef = useRef<Set<string>>(new Set());
   const persistOrderRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  // Re-creates rows an undo brings back after a save deleted them
+  // (recreateUndoneRows is defined further down, hence the ref).
+  const recreateRowsRef = useRef<(rows: QuoteItemData[], originalIdOf: Map<string, string>) => Promise<void>>(
+    () => Promise.resolve()
+  );
+  // Rows this editor deleted through a successful save — the only rows an
+  // undo may re-create (a row another session deleted stays deleted).
+  const deletedBySaveRef = useRef<Set<string>>(new Set());
   const noteResolvedId = useCallback((tempId: string, serverId: string) => {
     tempIdMapRef.current.set(tempId, serverId);
     knownServerIdsRef.current.add(serverId);
@@ -287,7 +298,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           } else {
             const stack = itemsHistoryRef.current;
             stack.push(prev);
-            if (stack.length > 30) stack.shift();
+            if (stack.length > UNDO_LIMIT) stack.shift();
             setUndoDepth(stack.length);
           }
           lastSnapshottedPrevRef.current = prev;
@@ -302,9 +313,27 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
   const handleUndo = useCallback(() => {
     const stack = itemsHistoryRef.current;
     if (stack.length === 0) return;
+    // The save would drop rows this undo brings back (its deletes); the
+    // save takes a moment — undo right after it.
+    if (isSavingRef.current) {
+      setError('Kaydetme sürerken geri alınamaz — birkaç saniye sonra tekrar deneyin.');
+      return;
+    }
     // Rows inserted while this snapshot was taken may still carry their
     // temp id — map them to the server ids they resolved to.
-    const prev = remapTempIds(stack.pop()!, tempIdMapRef.current);
+    const remapped = remapTempIds(stack.pop()!, tempIdMapRef.current);
+    // History survives saves (client 06.11): rows a save deleted on the
+    // server come back under new temp ids and are re-created below.
+    const { rows: prev, revived } = reviveGhostRows(
+      remapped,
+      knownServerIdsRef.current,
+      generateId,
+      deletedBySaveRef.current
+    );
+    // Older steps holding the same rows map to the re-created ones (the
+    // in-flight temp ids now, the server ids once resolved) — never a
+    // second copy, e.g. while Ctrl+Z is held down.
+    for (const [temp, original] of revived) tempIdMapRef.current.set(original, temp);
     // A pending reorder persist belongs to the state being undone.
     if (reorderTimerRef.current) {
       clearTimeout(reorderTimerRef.current);
@@ -320,6 +349,9 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     setUndoDepth(stack.length);
     itemsDirtyRef.current = true;
     setHasChanges(true);
+    if (revived.size > 0) {
+      void recreateRowsRef.current(prev.filter((r) => revived.has(r.id)), revived);
+    }
   }, []);
   const canUndo = undoDepth > 0;
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -967,20 +999,29 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
               // deleted are gone server-side — forget them everywhere.
               editedDuringSave = true;
               const gone = new Set(deletedIds);
-              for (const id of gone) knownServerIdsRef.current.delete(id);
-              itemsHistoryRef.current = itemsHistoryRef.current.map((snap) => scrubIds(snap, gone));
+              for (const id of gone) {
+                knownServerIdsRef.current.delete(id);
+                deletedBySaveRef.current.add(id);
+              }
+              // Undo steps keep these rows: undoing re-creates them.
               setItemsRaw((prev) => scrubIds(prev, gone));
             } else {
               const reloaded = flattenSubRows(itemsData.items.map(mapApiItemToLocal));
+              for (const id of deletedIds) deletedBySaveRef.current.add(id);
               setItemsRaw(reloaded);
               knownServerIdsRef.current = new Set(reloaded.map((it) => it.id));
-              // The editor now mirrors the server exactly. Undo snapshots
-              // from before this save could resurrect deleted rows or drop
-              // rows other sessions added (and delete them on the next
-              // save) — so undo starts fresh after every successful save.
-              itemsHistoryRef.current = [];
               lastSnapshottedPrevRef.current = null;
-              setUndoDepth(0);
+              // Undo survives the save (client 06.11) — rows it deleted are
+              // re-created if undone. But if another session added or
+              // removed rows meanwhile, older steps would delete or revive
+              // their rows: start fresh then.
+              const sentIds = new Set(bulkItems.map((b) => b.id));
+              const foreignChange =
+                reloaded.length !== sentIds.size || reloaded.some((it) => !sentIds.has(it.id));
+              if (foreignChange) {
+                itemsHistoryRef.current = [];
+                setUndoDepth(0);
+              }
             }
           }
         }
@@ -1240,6 +1281,99 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
     []
   );
 
+  // Rows an undo brings back after a save deleted them on the server
+  // (client 06.11): POSTed like inserts — parents first, then their
+  // children — under new ids. The local row keeps all its values (undo
+  // marked the editor dirty, so Kaydet writes the fields a POST does not
+  // take). The original id is aliased to the new one, so older undo steps
+  // that still hold it map to the re-created row instead of re-creating it.
+  const recreateUndoneRows = useCallback(
+    async (rows: QuoteItemData[], originalIdOf: Map<string, string>) => {
+      const tempIds = new Set(rows.map((r) => r.id));
+      const post = async (r: QuoteItemData, parentItemId: string | null | undefined): Promise<string | null> => {
+        try {
+          const res = await fetch(`/api/quotes/${quoteId}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              itemType: r.itemType,
+              productId: r.productId || undefined,
+              parentItemId: parentItemId || undefined,
+              code: r.code || undefined,
+              brand: r.brand || undefined,
+              model: r.model || undefined,
+              description: r.description,
+              quantity: r.quantity,
+              unit: r.unit,
+              listPrice: r.listPrice,
+              katsayi: r.katsayi,
+              discountPct: r.discountPct,
+              vatRate: r.vatRate,
+              notes: r.notes || undefined,
+              priceLabel: r.priceLabel || undefined,
+              costPrice: r.costPrice ?? undefined,
+              ekMaliyetDelta: r.ekMaliyetDelta ?? undefined,
+              sortOrder: r.sortOrder,
+            }),
+          });
+          if (!res.ok) return null;
+          const data = await res.json();
+          return (data?.item?.id as string | undefined) ?? null;
+        } catch {
+          return null;
+        }
+      };
+      const resolve = (tempId: string, serverId: string) => {
+        noteResolvedId(tempId, serverId);
+        const original = originalIdOf.get(tempId);
+        if (original) tempIdMapRef.current.set(original, serverId);
+        setItemsRaw((prev) =>
+          prev.map((it) => {
+            if (it.id === tempId) return { ...it, id: serverId };
+            if (it.parentItemId === tempId) return { ...it, parentItemId: serverId };
+            return it;
+          })
+        );
+      };
+      const failed: string[] = [];
+      const serverIdOf = new Map<string, string>();
+      const parents = rows.filter((r) => !r.parentItemId || !tempIds.has(r.parentItemId));
+      const children = rows.filter((r) => r.parentItemId && tempIds.has(r.parentItemId));
+      await Promise.all(
+        parents.map(async (r) => {
+          const id = await post(r, r.parentItemId);
+          if (id) {
+            serverIdOf.set(r.id, id);
+            resolve(r.id, id);
+          } else {
+            failed.push(r.id);
+          }
+        })
+      );
+      await Promise.all(
+        children.map(async (r) => {
+          const parentId = serverIdOf.get(r.parentItemId as string);
+          const id = parentId ? await post(r, parentId) : null;
+          if (id) resolve(r.id, id);
+          else failed.push(r.id);
+        })
+      );
+      if (failed.length > 0) {
+        const failedSet = new Set(failed);
+        for (const [from, to] of tempIdMapRef.current) {
+          if (failedSet.has(to)) tempIdMapRef.current.delete(from);
+        }
+        rollbackFailedInsert(failed, {
+          message: 'Geri alınan satırlardan bazıları geri getirilemedi — lütfen kontrol edip kaydedin.',
+        });
+      }
+      // Their numbers come from the undo step; store the current order.
+      if (serverIdOf.size > 0) void persistOrderRef.current();
+    },
+    [quoteId, noteResolvedId, rollbackFailedInsert]
+  );
+  recreateRowsRef.current = recreateUndoneRows;
+
   // Persist the row ORDER only (drag-reorder, copy, "Üstüne Ekle") via
   // PATCH /items/order — the bulk PUT it used to send also wrote every row's
   // values: unsaved edits, and prices without ek maliyet (client 13.10).
@@ -1405,6 +1539,7 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
                     discountPct: tempSub.discountPct,
                     vatRate: tempSub.vatRate,
                     notes: tempSub.notes || undefined,
+                    priceLabel: tempSub.priceLabel || undefined,
                     sortOrder: sortOf.get(tempSub.id),
                   }),
                 })
@@ -3078,10 +3213,10 @@ export function QuoteEditor({ quoteId }: QuoteEditorProps) {
           <button
             type="button"
             onClick={handleUndo}
-            disabled={!canUndo}
+            disabled={!canUndo || isSaving}
             title="Son işlemi geri al (Ctrl+Z)"
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border transition-colors ${
-              canUndo
+              canUndo && !isSaving
                 ? 'border-primary-300 bg-white text-primary-700 hover:bg-primary-50 cursor-pointer'
                 : 'border-primary-200 bg-primary-50 text-primary-400 cursor-not-allowed'
             }`}

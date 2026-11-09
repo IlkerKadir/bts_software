@@ -140,6 +140,38 @@ describe('POST /api/quotes/[id]/clone', () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 
+  it('copies price labels ("dahildir" / "tarafınızca") on parent and sub rows', async () => {
+    const item = (id: string, priceLabel: string | null, parentItemId: string | null = null) => ({
+      id, parentItemId, itemType: 'PRODUCT', sortOrder: 1, productId: null, code: null, brand: null,
+      model: null, description: id, quantity: 1, unit: 'Adet', listPrice: 0, katsayi: 1, unitPrice: 0,
+      discountPct: 0, vatRate: 20, totalPrice: 0, notes: null, priceLabel, isManualPrice: false,
+      costPrice: null, ekMaliyetDelta: null, serviceMeta: null, currency: null,
+      sectionDiscountPct: null, sectionDiscountLabel: null,
+    });
+    vi.mocked(db.quote.findUnique).mockResolvedValue({
+      ...mockSourceQuote,
+      items: [item('p', 'dahildir'), item('c', 'tarafınızca sağlanacaktır', 'p')],
+    } as never);
+    const itemCreate = vi.fn().mockImplementation(async (args: { data: { description: string } }) => ({ id: `new-${args.data.description}` }));
+    vi.mocked(db.$transaction).mockImplementation((async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        quote: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ ...mockSourceQuote, id: 'new1', quoteNumber: 'X1' }),
+        },
+        quoteItem: { create: itemCreate },
+        quoteCommercialTerm: { createMany: vi.fn() },
+        quoteEkMaliyet: { createMany: vi.fn() },
+        quoteHistory: { create: vi.fn() },
+      })) as never
+    );
+
+    const res = await POST(new NextRequest('http://localhost/api/quotes/source1/clone', { method: 'POST' }), makeParams());
+    expect(res.status).toBe(201);
+    const labels = itemCreate.mock.calls.map(([a]) => [a.data.description, a.data.priceLabel]);
+    expect(labels).toEqual([['p', 'dahildir'], ['c', 'tarafınızca sağlanacaktır']]);
+  });
+
   it('returns 404 if source quote not found', async () => {
     vi.mocked(db.quote.findUnique).mockResolvedValue(null);
 

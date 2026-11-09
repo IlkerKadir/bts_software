@@ -20,6 +20,11 @@ interface BrandProfitSummaryProps {
   exchangeRate?: number;
   protectionPct?: number;
   canViewCosts: boolean;
+  /** Brands selected in the items table's filter — the summary then covers
+   *  only rows of those brands. The table always lets SET rows through, so
+   *  every SET's brand used to leak into the summary (client 06.11).
+   *  Empty / undefined = all brands. */
+  brandFilter?: ReadonlySet<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +115,7 @@ export function BrandProfitSummary({
   exchangeRate = 1,
   protectionPct = 0,
   canViewCosts,
+  brandFilter,
 }: BrandProfitSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [selectedSection, setSelectedSection] = useState<string>('all');
@@ -185,6 +191,19 @@ export function BrandProfitSummary({
     return map;
   }, [items]);
 
+  // ---- Brand filter: only top-level rows of the selected brands ----
+  // (a SET's children are costed through their parent from the full list).
+  const scopedItems = useMemo(() => {
+    if (!brandFilter || brandFilter.size === 0) return filteredItems;
+    const setIds = new Set(items.filter((it) => it.itemType === 'SET').map((it) => it.id));
+    return filteredItems.filter(
+      (it) =>
+        !!it.brand &&
+        brandFilter.has(it.brand) &&
+        (!it.parentItemId || !setIds.has(it.parentItemId))
+    );
+  }, [items, filteredItems, brandFilter]);
+
   // ---- Manager mode computation (cost-based) ----
   // Delegated to a pure, unit-tested helper (src/lib/brand-profit-summary.ts).
   // It also fixes cross-brand SET cost attribution (a SET child's cost is
@@ -193,9 +212,9 @@ export function BrandProfitSummary({
   const managerData = useMemo(
     () =>
       canViewCosts
-        ? computeManagerProfitSummary(items, filteredItems, { currency, exchangeRate, protectionPct })
+        ? computeManagerProfitSummary(items, scopedItems, { currency, exchangeRate, protectionPct })
         : null,
-    [items, filteredItems, canViewCosts, currency, exchangeRate, protectionPct]
+    [items, scopedItems, canViewCosts, currency, exchangeRate, protectionPct]
   );
 
   // ---- Sales mode computation (katsayi-based) ----
@@ -206,7 +225,7 @@ export function BrandProfitSummary({
         { totalRevenue: number; katsayiWeightedSum: number; revenueWeightSum: number; count: number }
       > = {};
 
-      for (const item of filteredItems) {
+      for (const item of scopedItems) {
         if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
         if (item.priceLabel) continue;
         if (item.parentItemId) continue;
@@ -255,7 +274,7 @@ export function BrandProfitSummary({
       // Compute overall weighted katsayi
       let totalWeightedK = 0;
       let totalWeightSum = 0;
-      for (const item of filteredItems) {
+      for (const item of scopedItems) {
         if (item.itemType === 'HEADER' || item.itemType === 'NOTE' || item.itemType === 'SUBTOTAL' || item.itemType === 'GRAND_TOTAL') continue;
         if (item.priceLabel) continue;
         if (item.parentItemId) continue;
@@ -282,7 +301,7 @@ export function BrandProfitSummary({
       };
     }
     return null;
-  }, [filteredItems, canViewCosts, itemIdToSectionDiscountPct, baseForeignRate, currency, setCurrencyByParentId]);
+  }, [scopedItems, canViewCosts, itemIdToSectionDiscountPct, baseForeignRate, currency, setCurrencyByParentId]);
 
   const totalItems = canViewCosts ? managerData?.totals.itemCount ?? 0 : salesData?.totals.itemCount ?? 0;
   const brandCount = canViewCosts ? managerData?.brands.length ?? 0 : salesData?.brands.length ?? 0;

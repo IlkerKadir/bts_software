@@ -1429,6 +1429,7 @@ export function QuoteItemsTable({
         exchangeRate={exchangeRate}
         protectionPct={protectionPct}
         canViewCosts={canViewCosts}
+        brandFilter={brandFilter}
       />
 
       {/* ---- Profit margin warning ---- */}
