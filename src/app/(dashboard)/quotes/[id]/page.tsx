@@ -42,6 +42,7 @@ import { AddReminderButton } from '@/components/reminders/AddReminderButton';
 import { QuoteTrackingPanel } from '@/components/quotes/QuoteTrackingPanel';
 import { PdfPreviewModal } from '@/components/quotes/PdfPreviewModal';
 import { BrandProfitSummary } from '@/components/quotes/BrandProfitSummary';
+import { toBrandSummaryItems } from '@/components/quotes/brand-summary-items';
 import { cn } from '@/lib/cn';
 import type { ApprovalCheckResult } from '@/lib/quote-approval';
 import { calculateSectionBreakdown, calculateGrandTotalAtIndex, type QuoteCurrencyContext } from '@/lib/quote-calculations';
@@ -1161,32 +1162,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
       {/* ================================================================== */}
       {quote.items.length > 0 && (
         <BrandProfitSummary
-          items={quote.items.map((item) => ({
-            id: item.id,
-            parentItemId: item.parentItemId ?? null,
-            itemType: item.itemType,
-            sortOrder: item.sortOrder,
-            code: item.code,
-            brand: item.brand,
-            description: item.description,
-            quantity: Number(item.quantity),
-            unit: item.unit,
-            listPrice: Number(item.listPrice),
-            katsayi: Number(item.katsayi),
-            unitPrice: Number(item.unitPrice),
-            discountPct: Number(item.discountPct),
-            // Section discount lives on SUBTOTAL rows; the summary reads
-            // it to compute net (discounted) revenue per brand.
-            sectionDiscountPct:
-              item.sectionDiscountPct != null ? Number(item.sectionDiscountPct) : null,
-            vatRate: Number(item.vatRate),
-            totalPrice: Number(item.totalPrice),
-            notes: item.notes,
-            isManualPrice: item.isManualPrice,
-            costPrice: item.costPrice != null ? Number(item.costPrice) : null,
-            ekMaliyetDelta: item.ekMaliyetDelta != null ? Number(item.ekMaliyetDelta) : null,
-            currency: item.currency ?? null,
-          }))}
+          items={toBrandSummaryItems(quote.items)}
           currency={quote.currency}
           exchangeRate={Number(quote.exchangeRate) || 1}
           protectionPct={Number(quote.protectionPct) || 0}
